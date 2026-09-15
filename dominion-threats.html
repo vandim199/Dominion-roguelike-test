@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dominion: Crisis — threat prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Crimson+Pro:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#1A1526; --ink-2:#231D33; --ink-3:#2E2743; --edge:#453A5F;
+  --parch:#E9DEC4; --parch-2:#D8C9A5;
+  --gold:#C9A24A; --crimson:#AE3546; --green:#5E8C54; --violet:#7A5AA8; --blue:#4C6E9C;
+  --text:#EDE6D8; --dim:#9C90B0;
+  --card-w:110px; --card-h:156px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:radial-gradient(1200px 700px at 50% -10%, #2E2743 0%, transparent 60%),
+             linear-gradient(180deg,#191426 0%,#120F1C 100%);
+  color:var(--text);font-family:"Crimson Pro",Georgia,serif;font-size:16px;overflow:hidden;
+}
+button{font-family:inherit;color:inherit;cursor:pointer;background:none;border:none}
+button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+#app{display:grid;grid-template-columns:1fr 260px;grid-template-rows:auto 1fr auto;height:100vh}
+#topbar{grid-column:1/3;display:flex;align-items:center;gap:14px;padding:8px 16px;border-bottom:1px solid var(--edge);background:rgba(0,0,0,.25);flex-wrap:wrap}
+.brand{font-family:Cinzel,serif;font-weight:700;letter-spacing:.06em;color:var(--gold);font-size:15px}
+.chip{font-family:Cinzel,serif;font-size:13px;padding:3px 12px;border:1px solid var(--edge);border-radius:2px;background:var(--ink-2)}
+.chip.soon{border-color:#C0762F;color:#EFB463}
+.chip.now{border-color:var(--crimson);color:#F09090;animation:pulse 1.1s infinite}
+@keyframes pulse{50%{opacity:.5}}
+.spacer{flex:1}
+.tbtn{font-family:Cinzel,serif;font-size:12px;padding:5px 12px;border:1px solid var(--edge);border-radius:2px;background:var(--ink-2)}
+.tbtn:hover{border-color:var(--gold)}
+
+#main{position:relative;display:flex;flex-direction:column;min-height:0;padding:10px 14px 0}
+#side{border-left:1px solid var(--edge);background:rgba(0,0,0,.2);display:flex;flex-direction:column;min-height:0}
+
+/* market */
+.market-rail{display:flex;align-items:center;gap:10px}
+.rail-label{font-family:Cinzel,serif;font-size:11px;letter-spacing:.14em;color:var(--dim);writing-mode:vertical-rl;transform:rotate(180deg);height:var(--card-h);display:flex;align-items:center;justify-content:center}
+.market{display:flex;gap:8px}
+.market .slot{position:relative}
+.slot.leaving::after{content:"";position:absolute;inset:-3px;border:2px dashed var(--crimson);border-radius:6px;pointer-events:none}
+.leaving-tag{position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-family:Cinzel,serif;font-size:9px;background:var(--crimson);padding:1px 5px;border-radius:2px;white-space:nowrap;z-index:3}
+
+/* threats */
+#threats{flex:1;display:flex;align-items:center;justify-content:center;gap:18px;min-height:0;padding:10px 0}
+.tslot{width:250px;min-height:212px;border-radius:6px;border:1px solid var(--edge);background:linear-gradient(170deg,#2A2340,#1D1830);
+  display:flex;flex-direction:column;padding:12px;gap:8px;position:relative;box-shadow:0 6px 18px rgba(0,0,0,.45)}
+.tslot.empty{border-style:dashed;border-color:#3A3150;background:rgba(255,255,255,.015);align-items:center;justify-content:center;color:#5C5175;font-family:Cinzel,serif;font-size:12px;letter-spacing:.12em;box-shadow:none}
+.tslot.ready{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 6px 18px rgba(0,0,0,.45)}
+.tslot.new{animation:drop .45s ease-out}
+@keyframes drop{0%{transform:translateY(-26px);opacity:0}100%{transform:none;opacity:1}}
+.tslot.done{animation:vanish .4s ease-in forwards}
+@keyframes vanish{100%{transform:scale(.88);opacity:0}}
+.thead{display:flex;align-items:center;gap:9px}
+.tart{font-size:29px;line-height:1}
+.tname{font-family:Cinzel,serif;font-size:14.5px;line-height:1.15}
+.tkind{font-size:11px;color:var(--dim);letter-spacing:.06em}
+.tdesc{font-size:13px;line-height:1.35;color:#CFC5DC;flex:1}
+.tbar{height:9px;background:#150F20;border:1px solid var(--edge);border-radius:2px;overflow:hidden}
+.tfill{height:100%;background:linear-gradient(180deg,#D8B45C,#9A7526);transition:width .3s}
+.tfill.cash{background:linear-gradient(180deg,#D8B45C,#9A7526)}
+.tfill.act{background:linear-gradient(180deg,#B487E0,#6B47A0)}
+.tfill.buy{background:linear-gradient(180deg,#71A7DE,#3D6DA5)}
+.tfill.blood{background:linear-gradient(180deg,#D06A72,#8A2632)}
+.tnum{font-family:Cinzel,serif;font-size:12.5px;display:flex;justify-content:space-between}
+.tbtn2{font-family:Cinzel,serif;font-size:13px;padding:8px 10px;border-radius:3px;border:1px solid var(--edge);background:var(--ink-3);width:100%}
+.tbtn2.go{background:linear-gradient(180deg,#8E6C1E,#5C4411);border-color:var(--gold)}
+.tbtn2.go:hover{filter:brightness(1.2)}
+.tbtn2.blood{background:linear-gradient(180deg,#8E2A38,#5C1A22);border-color:#C05263}
+.tbtn2:disabled{opacity:.36;cursor:default}
+.warnpip{position:absolute;top:-9px;right:8px;font-size:10px;font-family:Cinzel,serif;background:var(--crimson);padding:1px 7px;border-radius:2px}
+
+/* resource bar */
+#bar{display:flex;align-items:center;gap:8px;padding:7px 4px;border-top:1px solid var(--edge);border-bottom:1px solid var(--edge);background:rgba(0,0,0,.22)}
+.res{display:flex;align-items:center;gap:6px;padding:3px 11px;border:1px solid var(--edge);border-radius:2px;background:var(--ink-2);font-size:14px}
+.res b{font-family:Cinzel,serif;font-size:16px}
+.res.spent{opacity:.32}
+.res.coin{border-color:var(--gold);color:#F0D48E}
+.pile{font-size:13px;color:var(--dim);border:1px solid var(--edge);border-radius:2px;padding:3px 9px;background:var(--ink-2)}
+.pile:hover{color:var(--text);border-color:var(--gold)}
+#endturn{font-family:Cinzel,serif;font-size:14px;letter-spacing:.06em;padding:7px 20px;background:linear-gradient(180deg,#3F6B39,#28461F);border:1px solid #6FA362;border-radius:3px}
+#endturn:hover{filter:brightness(1.18)}
+#endturn:disabled{filter:grayscale(1) brightness(.6);cursor:default}
+
+/* hand */
+#handwrap{padding:12px 14px 16px;display:flex;justify-content:center;align-items:flex-end;min-height:calc(var(--card-h) + 26px)}
+#hand{display:flex;justify-content:center}
+#hand .card{margin:0 -13px;transition:transform .14s}
+#hand .card:hover{transform:translateY(-18px) scale(1.06);z-index:20}
+
+/* cards */
+.card{width:var(--card-w);height:var(--card-h);flex:0 0 auto;position:relative;border-radius:5px;padding:5px;
+  display:flex;flex-direction:column;background:linear-gradient(170deg,var(--parch),var(--parch-2));
+  color:#241C12;border:1px solid #6A5A3A;box-shadow:0 4px 10px rgba(0,0,0,.5);text-align:center;user-select:none}
+.card .banner{font-family:Cinzel,serif;font-size:10.5px;font-weight:700;line-height:1.15;padding:3px 2px;border-radius:3px 3px 0 0;color:#1B1420;background:#D5CBB4;border-bottom:1px solid #8A7752}
+.card.t-treasure .banner{background:#E2C266}
+.card.t-victory .banner{background:#B9CC86}
+.card.t-junk .banner{background:#9A8FA8}
+.card.t-curse .banner{background:#8E76BE;color:#160F1E}
+.card .art{flex:0 0 32px;display:flex;align-items:center;justify-content:center;font-size:23px;background:rgba(0,0,0,.06)}
+.card .tx{flex:1;font-size:9.4px;line-height:1.24;padding:4px 3px;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.card .foot{font-family:Cinzel,serif;font-size:9px;display:flex;justify-content:space-between;border-top:1px solid #8A7752;padding-top:2px}
+.card .cost{position:absolute;left:-6px;bottom:-6px;width:23px;height:23px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#F0D68F,#B5872E);border:1px solid #6A4E17;color:#33240A;
+  font-family:Cinzel,serif;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 5px rgba(0,0,0,.5)}
+.card.playable{cursor:pointer;box-shadow:0 0 0 2px var(--gold),0 4px 12px rgba(0,0,0,.55)}
+.card.buyable{cursor:pointer;box-shadow:0 0 0 2px var(--green),0 4px 12px rgba(0,0,0,.55)}
+.card.selected{box-shadow:0 0 0 3px #E8A33D,0 4px 12px rgba(0,0,0,.55);transform:translateY(-10px)}
+.card.dead{filter:grayscale(.6) brightness(.78)}
+
+/* log */
+.side-h{font-family:Cinzel,serif;font-size:11px;letter-spacing:.14em;color:var(--dim);padding:8px 12px 4px}
+#log{flex:1;overflow-y:auto;padding:0 12px 12px;font-size:13.5px;line-height:1.42}
+#log div{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+#log .hl{color:var(--gold)}
+#log .bad{color:#E07A7A}
+#log .good{color:#89C27E}
+#log .turn{color:var(--dim);font-family:Cinzel,serif;font-size:11px;letter-spacing:.1em;padding-top:8px}
+#log::-webkit-scrollbar{width:7px}
+#log::-webkit-scrollbar-thumb{background:var(--edge);border-radius:4px}
+
+/* modal */
+#veil{position:fixed;inset:0;background:rgba(8,5,14,.87);display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:100;padding:24px}
+#veil.on{display:flex}
+#veil h2{font-family:Cinzel,serif;font-size:19px;font-weight:500;text-align:center;max-width:640px}
+#veil .sub{color:var(--dim);font-size:14px;margin-top:-8px;text-align:center;max-width:640px}
+#pool{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:980px;max-height:56vh;overflow-y:auto;padding:6px}
+#pool .card{cursor:pointer}
+.opts{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+.opt{font-family:Cinzel,serif;font-size:14px;padding:10px 20px;border:1px solid var(--edge);border-radius:3px;background:var(--ink-2)}
+.opt:hover{border-color:var(--gold);background:var(--ink-3)}
+.mbtns{display:flex;gap:10px}
+.mbtn{font-family:Cinzel,serif;font-size:13px;padding:8px 22px;border:1px solid var(--edge);border-radius:3px;background:var(--ink-2)}
+.mbtn.go{background:linear-gradient(180deg,#3F6B39,#28461F);border-color:#6FA362}
+.mbtn:disabled{opacity:.35;cursor:default}
+#over{position:fixed;inset:0;background:rgba(8,5,14,.94);display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:200;text-align:center;padding:24px}
+#over.on{display:flex}
+#over h1{font-family:Cinzel,serif;font-size:40px;color:var(--crimson)}
+#over h1.win{color:var(--gold)}
+#over p{font-size:17px;color:var(--dim);max-width:520px;line-height:1.5}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+@media (max-width:1180px){:root{--card-w:94px;--card-h:132px}#side{display:none}#app{grid-template-columns:1fr}#topbar{grid-column:1}.tslot{width:208px}}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="topbar">
+    <span class="brand">Dominion: Crisis</span>
+    <span class="chip" id="cTurn">Turn 1</span>
+    <span class="chip" id="cQueue">Threats remaining 0/0</span>
+    <span class="chip" id="cNext">Next threat in 3 turns</span>
+    <span class="spacer"></span>
+    <button class="tbtn" id="btnDeck">Deck</button>
+    <button class="tbtn" id="btnDiscard">Discard</button>
+    <button class="tbtn" id="btnTrash">Trash</button>
+    <button class="tbtn" id="btnRestart">New encounter</button>
+  </div>
+
+  <div id="main">
+    <div class="market-rail">
+      <div class="rail-label">Market</div>
+      <div class="market" id="market"></div>
+    </div>
+
+    <div id="threats"></div>
+
+    <div id="bar">
+      <div class="res" id="rAct">⚡ Actions <b>1</b></div>
+      <div class="res" id="rBuy">🛒 Buys <b>1</b></div>
+      <div class="res coin" id="rCoin">🪙 Coin <b>0</b></div>
+      <span class="spacer"></span>
+      <button class="pile" id="pDeck">Draw 5</button>
+      <button class="pile" id="pDisc">Discard 0</button>
+      <button id="endturn">End turn</button>
+    </div>
+
+    <div id="handwrap"><div id="hand"></div></div>
+  </div>
+
+  <div id="side">
+    <div class="side-h">Ledger</div>
+    <div id="log"></div>
+  </div>
+</div>
+
+<div id="veil">
+  <h2 id="mTitle"></h2>
+  <div class="sub" id="mSub"></div>
+  <div id="pool"></div>
+  <div class="opts" id="mOpts"></div>
+  <div class="mbtns" id="mBtns"></div>
+</div>
+
+<div id="over">
+  <h1 id="overTitle">Encounter lost</h1>
+  <p id="overText"></p>
+  <button class="mbtn go" id="overBtn">Start a new encounter</button>
+</div>
+
+<script>
+"use strict";
+/* ==========================================================
+   Dominion: Crisis — a deckbuilder with no combat.
+   You build an engine; threats queue up and demand resources.
+   ========================================================== */
+
+const rnd  = n => Math.floor(Math.random()*n);
+const pick = a => a[rnd(a.length)];
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=rnd(i+1);[a[i],a[j]]=[a[j],a[i]];}return a;}
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+
+const TUNE = {
+  slots:3,
+  spawnEvery:3,          // a threat arrives at the end of every Nth turn
+  queueMin:1, queueMax:8,
+  startDeck:'estates',   // 'estates' -> 7 Copper + 3 Estate | 'cellar' -> 9 Copper + 1 Cellar
+  coinWeights: t => (t<6 ? [['copper',48],['silver',40],['gold',12]]
+                         : [['copper',30],['silver',44],['gold',26]])
+};
+
+/* ==========================================================
+   CARDS — pure Dominion Base + Intrigue engine pieces.
+   No Attacks, no Reactions, no multiplayer text.
+   ========================================================== */
+const DB={};
+function def(k,o){ DB[k]=Object.assign({key:k},o); }
+
+def('copper',{n:'Copper',c:0,t:'treasure',v:1,art:'🥉',tx:'+1 Coin'});
+def('silver',{n:'Silver',c:3,t:'treasure',v:2,art:'🥈',tx:'+2 Coin'});
+def('gold',  {n:'Gold',  c:6,t:'treasure',v:3,art:'🥇',tx:'+3 Coin'});
+const TREASURES=['copper','silver','gold'];
+
+def('estate',{n:'Estate',c:2,t:'victory',art:'🏡',tx:'Dead weight. It does nothing in your hand — trash it or feed it to a threat.'});
+def('curse', {n:'Curse', c:0,t:'curse',  art:'💀',tx:'Dead weight. Cannot be played. Trash it with a card effect to be rid of it.'});
+def('bulk',  {n:'Bulk',  c:0,t:'junk',   art:'📦',tx:'Salvage left behind by a cleared threat. Spend 1 Action to trash it for good.'});
+
+const A = n => G.actions += n;
+const B = n => G.buys    += n;
+const C = n => G.coin    += n;
+
+/* --- cost 2 --- */
+def('cellar',{n:'Cellar',c:2,t:'action',art:'🪜',tx:'+1 Action. Discard any number of cards, then draw that many.',
+  fx:async()=>{ A(1);
+    const s=await chooseCards(G.hand,{min:0,max:99,title:'Cellar',sub:'Discard any number, then draw that many.'});
+    s.forEach(c=>{pull(G.hand,c);G.discard.push(c);}); draw(s.length); }});
+def('chapel',{n:'Chapel',c:2,t:'action',art:'⛪',tx:'Trash up to 4 cards from your hand.',
+  fx:async()=>{ const s=await chooseCards(G.hand,{min:0,max:4,title:'Chapel',sub:'Trash up to 4 cards.'});
+    s.forEach(c=>{pull(G.hand,c);trashCard(c);}); }});
+def('courtyard',{n:'Courtyard',c:2,t:'action',art:'🏛',tx:'+3 Cards. Put a card from your hand on top of your deck.',
+  fx:async()=>{ draw(3);
+    const s=await chooseCards(G.hand,{min:1,max:1,title:'Courtyard',sub:'Put one card back on top of your deck.'});
+    if(s[0]){pull(G.hand,s[0]);G.deck.unshift(s[0]);} }});
+def('pawn',{n:'Pawn',c:2,t:'action',art:'♟',tx:'Choose two: +1 Card; +1 Action; +1 Buy; +1 Coin.',
+  fx:async()=>{ const m={card:['+1 Card',()=>draw(1)],act:['+1 Action',()=>A(1)],buy:['+1 Buy',()=>B(1)],coin:['+1 Coin',()=>C(1)]};
+    const ks=Object.keys(m);
+    const a=await chooseOption('Pawn','Choose the first benefit.',ks.map(k=>[k,m[k][0]]));
+    const b=await chooseOption('Pawn','Choose the second.',ks.filter(k=>k!==a).map(k=>[k,m[k][0]]));
+    m[a][1](); m[b][1](); }});
+def('lurker',{n:'Lurker',c:2,t:'action',art:'🕯',tx:'+1 Action. Gain a card from the trash.',
+  fx:async()=>{ A(1); if(!G.trash.length){log('The trash is empty.');return;}
+    const s=await chooseCards(G.trash,{min:0,max:1,title:'Lurker',sub:'Take one card back out of the trash.'});
+    if(s[0]){pull(G.trash,s[0]);G.discard.push(s[0]);log(`Lurker recovers ${s[0].n}.`);} }});
+
+/* --- cost 3 --- */
+def('harbinger',{n:'Harbinger',c:3,t:'action',art:'📯',tx:'+1 Card, +1 Action. Put a card from your discard pile on top of your deck.',
+  fx:async()=>{ draw(1);A(1); if(!G.discard.length)return;
+    const s=await chooseCards(G.discard,{min:0,max:1,title:'Harbinger',sub:'Set one card on top of your deck.'});
+    if(s[0]){pull(G.discard,s[0]);G.deck.unshift(s[0]);} }});
+def('merchant',{n:'Merchant',c:3,t:'action',art:'⚖',tx:'+1 Card, +1 Action, +1 Coin.',fx:async()=>{draw(1);A(1);C(1);}});
+def('vassal',{n:'Vassal',c:3,t:'action',art:'🎺',tx:'+2 Coin. Discard the top card of your deck; if it is an Action you may play it free.',
+  fx:async()=>{ C(2); const top=popDeck(); if(!top)return; log(`Vassal turns up ${top.n}.`);
+    if(top.t==='action'&&DB[top.key].fx){
+      if(await chooseOption('Vassal',`Play ${top.n} for free?`,[['y','Play it'],['n','Discard it']])==='y'){
+        G.inPlay.push(top); G.actionsPlayed++; await DB[top.key].fx(top); return; } }
+    G.discard.push(top); }});
+def('village',{n:'Village',c:3,t:'action',art:'🏘',tx:'+1 Card, +2 Actions.',fx:async()=>{draw(1);A(2);}});
+def('workshop',{n:'Workshop',c:3,t:'action',art:'🔨',tx:'Gain a market card costing up to 4.',
+  fx:async()=>{ await gainFromMarket(4,'discard','Workshop'); }});
+def('shantytown',{n:'Shanty Town',c:3,t:'action',art:'🏚',tx:'+2 Actions. If you have no Action cards in hand, +2 Cards.',
+  fx:async()=>{ A(2); if(!G.hand.some(c=>c.t==='action')) draw(2); }});
+def('steward',{n:'Steward',c:3,t:'action',art:'🗝',tx:'Choose one: +2 Cards; or +2 Coin; or trash 2 cards from your hand.',
+  fx:async()=>{ const o=await chooseOption('Steward','Choose one.',[['c','+2 Cards'],['m','+2 Coin'],['t','Trash 2 cards']]);
+    if(o==='c')draw(2); else if(o==='m')C(2);
+    else{const s=await chooseCards(G.hand,{min:0,max:2,title:'Steward',sub:'Trash up to 2 cards.'});
+         s.forEach(c=>{pull(G.hand,c);trashCard(c);});} }});
+def('masquerade',{n:'Masquerade',c:3,t:'action',art:'🎭',tx:'+2 Cards. Trash a card from your hand.',
+  fx:async()=>{ draw(2);
+    const s=await chooseCards(G.hand,{min:0,max:1,title:'Masquerade',sub:'Trash one card.'});
+    if(s[0]){pull(G.hand,s[0]);trashCard(s[0]);} }});
+def('wishingwell',{n:'Wishing Well',c:3,t:'action',art:'🪣',tx:'+1 Card, +1 Action. Reveal the top card of your deck; if it is a Treasure, draw it.',
+  fx:async()=>{ draw(1);A(1); const top=peekDeck(); if(!top)return;
+    log(`Wishing Well reveals ${top.n}.`); if(top.t==='treasure')draw(1); }});
+
+/* --- cost 4 --- */
+def('moneylender',{n:'Moneylender',c:4,t:'action',art:'💰',tx:'Trash a Copper from your hand for +3 Coin.',
+  fx:async()=>{ const cop=G.hand.find(c=>c.key==='copper');
+    if(!cop){log('No Copper to lend against.');return;} pull(G.hand,cop);trashCard(cop);C(3); }});
+def('poacher',{n:'Poacher',c:4,t:'action',art:'🏹',tx:'+1 Card, +1 Action, +1 Coin.',fx:async()=>{draw(1);A(1);C(1);}});
+def('remodel',{n:'Remodel',c:4,t:'action',art:'🧱',tx:'Trash a card from your hand, then gain a market card costing up to 2 more.',
+  fx:async()=>{ const s=await chooseCards(G.hand,{min:1,max:1,title:'Remodel',sub:'Trash one card to rebuild.'});
+    if(!s[0])return; const base=DB[s[0].key].c; pull(G.hand,s[0]); trashCard(s[0]);
+    await gainFromMarket(base+2,'discard','Remodel'); }});
+def('smithy',{n:'Smithy',c:4,t:'action',art:'⚒',tx:'+3 Cards.',fx:async()=>{draw(3);}});
+def('throneroom',{n:'Throne Room',c:4,t:'action',art:'👑',tx:'Play an Action card from your hand twice, without spending an Action.',
+  fx:async()=>{ const cand=G.hand.filter(c=>c.t==='action'&&DB[c.key].fx);
+    if(!cand.length){log('No Action to double.');return;}
+    const s=await chooseCards(cand,{min:1,max:1,title:'Throne Room',sub:'Play this Action twice.'});
+    const c=s[0]; if(!c)return; pull(G.hand,c); G.inPlay.push(c); G.actionsPlayed+=2;
+    await DB[c.key].fx(c); render();
+    if(G.inPlay.includes(c)) await DB[c.key].fx(c); }});
+def('baron',{n:'Baron',c:4,t:'action',art:'🏰',tx:'+1 Buy, +2 Coin. You may discard an Estate for +2 more Coin.',
+  fx:async()=>{ B(1);C(2); const e=G.hand.find(c=>c.key==='estate');
+    if(e&&await chooseOption('Baron','Discard an Estate for +2 Coin?',[['y','Discard it'],['n','Keep it']])==='y'){
+      pull(G.hand,e);G.discard.push(e);C(2);} }});
+def('bridge',{n:'Bridge',c:4,t:'action',art:'🌉',tx:'+1 Buy, +1 Coin. Market cards cost 1 less this turn.',
+  fx:async()=>{B(1);C(1);G.discount++;}});
+def('conspirator',{n:'Conspirator',c:4,t:'action',art:'🗝',tx:'+2 Coin. If you have played 3 or more Actions this turn, +1 Card and +1 Action.',
+  fx:async()=>{ C(2); if(G.actionsPlayed>=3){draw(1);A(1);} }});
+def('ironworks',{n:'Ironworks',c:4,t:'action',art:'⚙',tx:'Gain a market card costing up to 4. If it is an Action +1 Action; a Treasure +1 Coin.',
+  fx:async()=>{ const g=await gainFromMarket(4,'discard','Ironworks'); if(!g)return;
+    if(g.t==='action')A(1); else if(g.t==='treasure')C(1); }});
+def('miningvillage',{n:'Mining Village',c:4,t:'action',art:'⛏',tx:'+1 Card, +2 Actions. You may trash this for +2 Coin.',
+  fx:async(self)=>{ draw(1);A(2);
+    if(self&&await chooseOption('Mining Village','Trash it for +2 Coin?',[['y','Trash for +2 Coin'],['n','Keep it']])==='y'){
+      pull(G.inPlay,self);trashCard(self);C(2);} }});
+def('secretpassage',{n:'Secret Passage',c:4,t:'action',art:'🚪',tx:'+1 Card, +1 Action. Put a card from your hand on top of your deck.',
+  fx:async()=>{ draw(1);A(1);
+    const s=await chooseCards(G.hand,{min:0,max:1,title:'Secret Passage',sub:'Hide one card on top of your deck.'});
+    if(s[0]){pull(G.hand,s[0]);G.deck.unshift(s[0]);} }});
+def('mill',{n:'Mill',c:4,t:'action',art:'🌾',tx:'+1 Card, +1 Action. You may discard 2 cards for +2 Coin.',
+  fx:async()=>{ draw(1);A(1);
+    const s=await chooseCards(G.hand,{min:0,max:2,title:'Mill',sub:'Discard exactly 2 cards for +2 Coin.'});
+    if(s.length===2){s.forEach(c=>{pull(G.hand,c);G.discard.push(c);});C(2);} }});
+
+/* --- cost 5 --- */
+def('festival',{n:'Festival',c:5,t:'action',art:'🎪',tx:'+2 Actions, +1 Buy, +2 Coin.',fx:async()=>{A(2);B(1);C(2);}});
+def('laboratory',{n:'Laboratory',c:5,t:'action',art:'⚗',tx:'+2 Cards, +1 Action.',fx:async()=>{draw(2);A(1);}});
+def('market',{n:'Market',c:5,t:'action',art:'🏪',tx:'+1 Card, +1 Action, +1 Buy, +1 Coin.',fx:async()=>{draw(1);A(1);B(1);C(1);}});
+def('library',{n:'Library',c:5,t:'action',art:'📚',tx:'Draw until you have 7 cards in hand.',
+  fx:async()=>{ let g=0; while(G.hand.length<7&&g++<20){ if(!draw(1))break; } }});
+def('mine',{n:'Mine',c:5,t:'action',art:'⛰',tx:'Trash a Treasure from your hand, then gain a Treasure costing up to 3 more, into your hand.',
+  fx:async()=>{ const tr=G.hand.filter(c=>c.t==='treasure');
+    if(!tr.length){log('No Treasure to mine.');return;}
+    const s=await chooseCards(tr,{min:1,max:1,title:'Mine',sub:'Trash a Treasure to upgrade it.'});
+    if(!s[0])return; const base=DB[s[0].key].c; pull(G.hand,s[0]); trashCard(s[0]);
+    const k=await chooseOption('Mine','Take a Treasure into your hand.',
+      TREASURES.filter(x=>DB[x].c<=base+3).map(x=>[x,`${DB[x].n} (${DB[x].c})`]));
+    G.hand.push(mk(k)); log(`Mine yields a ${DB[k].n}.`,'hl'); }});
+def('patrol',{n:'Patrol',c:5,t:'action',art:'🔦',tx:'+3 Cards.',fx:async()=>{draw(3);}});
+def('tradingpost',{n:'Trading Post',c:5,t:'action',art:'🏺',tx:'Trash 2 cards from your hand, then gain a Silver into your hand.',
+  fx:async()=>{ const s=await chooseCards(G.hand,{min:0,max:2,title:'Trading Post',sub:'Trash exactly 2 cards for a Silver.'});
+    if(s.length===2){s.forEach(c=>{pull(G.hand,c);trashCard(c);});G.hand.push(mk('silver'));log('Trading Post pays out a Silver.','hl');} }});
+def('upgrade',{n:'Upgrade',c:5,t:'action',art:'🔺',tx:'+1 Card, +1 Action. Trash a card from your hand, then gain a market card costing exactly 1 more.',
+  fx:async()=>{ draw(1);A(1);
+    const s=await chooseCards(G.hand,{min:0,max:1,title:'Upgrade',sub:'Trash one card to upgrade it.'});
+    if(!s[0])return; const base=DB[s[0].key].c; pull(G.hand,s[0]); trashCard(s[0]);
+    await gainFromMarket(base+1,'discard','Upgrade',base+1); }});
+def('sentry',{n:'Sentry',c:5,t:'action',art:'🔭',tx:'+1 Card, +1 Action. Trash up to 1 card from your hand.',
+  fx:async()=>{ draw(1);A(1);
+    const s=await chooseCards(G.hand,{min:0,max:1,title:'Sentry',sub:'Trash one card, or skip.'});
+    if(s[0]){pull(G.hand,s[0]);trashCard(s[0]);} }});
+
+/* --- cost 6 --- */
+def('artisan',{n:'Artisan',c:6,t:'action',art:'🎨',tx:'Gain a market card costing up to 5 into your hand, then put a card from your hand on top of your deck.',
+  fx:async()=>{ await gainFromMarket(5,'hand','Artisan');
+    const s=await chooseCards(G.hand,{min:1,max:1,title:'Artisan',sub:'Put one card on top of your deck.'});
+    if(s[0]){pull(G.hand,s[0]);G.deck.unshift(s[0]);} }});
+def('nobles',{n:'Nobles',c:6,t:'action',art:'🎩',tx:'Choose one: +3 Cards; or +2 Actions.',
+  fx:async()=>{ (await chooseOption('Nobles','Choose one.',[['c','+3 Cards'],['a','+2 Actions']]))==='c'?draw(3):A(2); }});
+
+const NON_MARKET=['copper','silver','gold','estate','curse','bulk'];
+const KINGDOM=Object.keys(DB).filter(k=>!NON_MARKET.includes(k));
+
+/* ==========================================================
+   THREATS
+   ========================================================== */
+const THREATS={
+  bribe:{n:'Royal Bribe',art:'💼',kind:'prog_coin',need:25,bar:'cash',
+    label:'Progressive — Coin',
+    desc:'A chain of officials must be paid off. Pour in whatever coin you have left at the end of each turn.'},
+  siege:{n:'Monster Siege',art:'🏯',kind:'once_coin',need:12,bar:'cash',
+    label:'One shot — Coin',
+    desc:'Mercenaries want the whole fee up front. You need 12 coin on the table in a single turn.'},
+  shrine:{n:'Corrupted Shrine',art:'🕍',kind:'sacrifice',need:3,bar:'blood',
+    label:'Sacrifice — Cards',
+    desc:'Feed it 3 cards from your hand. Bulk is not accepted. The cards are trashed for good.'},
+  redtape:{n:'Bureaucratic Red Tape',art:'📜',kind:'prog_action',need:6,bar:'act',
+    label:'Progressive — Actions',
+    desc:'Paperwork, endlessly. Spend 6 Actions into it across as many turns as you need.'},
+  embargo:{n:'Trade Embargo',art:'⛔',kind:'prog_buy',need:4,bar:'buy',
+    label:'Progressive — Buys',
+    desc:'Negotiating it away costs trade rights. Spend 4 Buys into it across turns.'},
+  offering:{n:'Dark Offering',art:'🩸',kind:'prog_discard',need:8,bar:'blood',
+    label:'Progressive — Discards',
+    desc:'It eats whatever you hand over. Discard 8 cards from your hand into it across turns.'},
+  pact:{n:'Blood Pact',art:'🤝',kind:'panic',curses:3,bar:'blood',
+    label:'Panic button',
+    desc:'Sign and it is gone at once — but 3 Curses go straight into your discard pile.'},
+  hoard:{n:"Dragon's Hoard",art:'🐉',kind:'once_hybrid',needCoin:15,needAct:2,bar:'cash',
+    label:'One shot — Coin + Actions',
+    desc:'Buying it off takes 15 coin and 2 Actions, all within a single turn.'},
+  anomaly:{n:'Magical Anomaly',art:'🌀',kind:'upgrade',bar:'act',
+    label:'Sacrifice — Treasure + Action',
+    desc:'Trash one Treasure and one Action card from your hand into the rift. Either order, any turn.'},
+  extort:{n:'Extortionist',art:'🗡',kind:'prog_coin',need:8,bar:'cash',penalty:true,
+    label:'Progressive — Coin, escalating',
+    desc:'Wants 8 coin. Every turn it is still standing at the end of your turn, a Curse lands in your discard.'}
+};
+const THREAT_KEYS=Object.keys(THREATS);
+
+/* ==========================================================
+   STATE
+   ========================================================== */
+let G=null, busy=false;
+function mk(key){const d=DB[key];return {uid:(mk._i=(mk._i||0)+1),key,n:d.n,c:d.c,t:d.t,v:d.v,art:d.art,tx:d.tx};}
+function pull(a,c){const i=a.indexOf(c);if(i>=0)a.splice(i,1);return i>=0;}
+
+function newEncounter(){
+  G={ deck:[],hand:[],discard:[],inPlay:[],trash:[],
+      coin:0,actions:1,buys:1,actionsPlayed:0,discount:0,
+      market:[],mDeck:[],mDiscard:[],
+      turn:0, slots:new Array(TUNE.slots).fill(null), queue:[], total:0, cleared:0, over:false };
+
+  if(TUNE.startDeck==='cellar'){ for(let i=0;i<9;i++)G.deck.push(mk('copper')); G.deck.push(mk('cellar')); }
+  else { for(let i=0;i<7;i++)G.deck.push(mk('copper')); for(let i=0;i<3;i++)G.deck.push(mk('estate')); }
+  shuffle(G.deck);
+
+  for(const k of KINGDOM) for(let i=0;i<4;i++) G.mDeck.push(mk(k));
+  shuffle(G.mDeck);
+  for(let i=0;i<4;i++) G.market.push(drawMarketCard());
+  G.market.splice(rnd(5),0,randomTreasure());
+
+  const n=TUNE.queueMin+rnd(TUNE.queueMax-TUNE.queueMin+1);
+  G.total=n;
+  for(let i=0;i<n;i++) G.queue.push(newThreat(pick(THREAT_KEYS)));
+
+  $('over').classList.remove('on');
+  log(`A crisis of ${n} threat${n>1?'s':''} is bearing down on your dominion.`,'hl');
+  spawnThreat(true);
+  startTurn();
+}
+
+function newThreat(key){
+  const d=THREATS[key];
+  return {key,...d,prog:0,tDone:false,aDone:false,id:(newThreat._i=(newThreat._i||0)+1)};
+}
+
+/* ---------- market ---------- */
+function randomTreasure(){
+  const w=TUNE.coinWeights(G?G.turn:1), tot=w.reduce((s,x)=>s+x[1],0); let r=rnd(tot);
+  for(const [k,n] of w){ if(r<n) return mk(k); r-=n; }
+  return mk('copper');
+}
+function drawMarketCard(){ if(!G.mDeck.length){G.mDeck=shuffle(G.mDiscard);G.mDiscard=[];} return G.mDeck.pop()||randomTreasure(); }
+function ensureCoin(){ if(!G.market.some(c=>c&&c.t==='treasure')){ const i=G.market.length-1;
+  if(G.market[i])G.mDiscard.push(G.market[i]); G.market[i]=randomTreasure(); } }
+function cycleMarket(){
+  const gone=G.market.splice(0,2); let coins=0;
+  for(const c of gone){ if(c.t==='treasure')coins++; else G.mDiscard.push(c); }
+  for(let i=0;i<2;i++){ if(coins>0){G.market.push(randomTreasure());coins--;} else G.market.push(drawMarketCard()); }
+  ensureCoin();
+  log(`Market rotates: ${gone.map(c=>c.n).join(' and ')} leave the stalls.`);
+}
+function refillSlot(i,wasT){ G.market[i]= wasT?randomTreasure():drawMarketCard(); ensureCoin(); }
+const costOf = c => Math.max(0,c.c-G.discount);
+
+/* ---------- deck ---------- */
+function popDeck(){
+  if(!G.deck.length){ if(!G.discard.length)return null;
+    G.deck=shuffle(G.discard.slice()); G.discard=[]; log('You shuffle your discard pile back into your deck.'); }
+  return G.deck.shift()||null;
+}
+function peekDeck(){ if(!G.deck.length){ if(!G.discard.length)return null;
+  G.deck=shuffle(G.discard.slice()); G.discard=[]; } return G.deck[0]; }
+function draw(n){ let g=0; for(let i=0;i<n;i++){const c=popDeck(); if(!c)break; G.hand.push(c); g++;} return g; }
+function trashCard(c){ G.trash.push(c); log(`${c.n} is trashed.`); }
+
+/* ==========================================================
+   THREAT FLOW
+   ========================================================== */
+function spawnThreat(first){
+  if(!G.queue.length) return true;
+  const idx=G.slots.findIndex(s=>s===null);
+  if(idx<0){
+    const t=G.queue[0];
+    lose(`${t.n} arrives with nowhere to stand.`,
+         `All three slots were still occupied when the next threat came due. You cleared ${G.cleared} of ${G.total}.`);
+    return false;
+  }
+  const t=G.queue.shift();
+  t.slot=idx; t.fresh=true;
+  G.slots[idx]=t;
+  log(`${t.n} takes slot ${idx+1}.`, first?'hl':'bad');
+  return true;
+}
+
+function completeThreat(t){
+  const i=G.slots.indexOf(t);
+  if(i>=0) G.slots[i]=null;
+  G.cleared++;
+  G.discard.push(mk('bulk'));
+  log(`${t.n} cleared. A Bulk card is left in your discard pile.`,'good');
+  checkWin();
+  render();
+}
+
+function checkWin(){
+  if(G.over) return;
+  if(!G.queue.length && G.slots.every(s=>s===null)){
+    G.over=true;
+    $('overTitle').textContent='Crisis averted';
+    $('overTitle').className='win';
+    $('overText').textContent=`All ${G.total} threat${G.total>1?'s':''} cleared in ${G.turn} turns. Your deck holds ${deckSize()} cards, ${countKey('bulk')} of them Bulk and ${countKey('curse')} Curses.`;
+    $('over').classList.add('on');
+  }
+}
+function lose(title,text){
+  G.over=true;
+  $('overTitle').textContent=title; $('overTitle').className='';
+  $('overText').textContent=text;
+  $('over').classList.add('on');
+}
+const deckSize = () => G.deck.length+G.hand.length+G.discard.length+G.inPlay.length;
+const countKey = k => [...G.deck,...G.hand,...G.discard,...G.inPlay].filter(c=>c.key===k).length;
+
+function threatReady(t){
+  switch(t.kind){
+    case 'prog_coin':     return G.coin>0;
+    case 'once_coin':     return G.coin>=t.need;
+    case 'prog_action':   return G.actions>0;
+    case 'prog_buy':      return G.buys>0;
+    case 'prog_discard':  return G.hand.length>0;
+    case 'sacrifice':     return G.hand.some(c=>c.key!=='bulk');
+    case 'panic':         return true;
+    case 'once_hybrid':   return G.coin>=t.needCoin && G.actions>=t.needAct;
+    case 'upgrade':       return G.hand.some(c=>(!t.tDone&&c.t==='treasure')||(!t.aDone&&c.t==='action'));
+  }
+  return false;
+}
+
+async function clickThreat(t){
+  if(busy||G.over||!threatReady(t)) return;
+  busy=true;
+  try{
+    switch(t.kind){
+      case 'prog_coin':{
+        const amt=Math.min(G.coin,t.need-t.prog);
+        G.coin-=amt; t.prog+=amt;
+        log(`You pour ${amt} coin into ${t.n} (${t.prog}/${t.need}).`,'hl');
+        if(t.prog>=t.need) completeThreat(t);
+        break; }
+      case 'once_coin':{
+        G.coin-=t.need; t.prog=t.need;
+        log(`You pay ${t.need} coin to ${t.n} in one stroke.`,'hl');
+        completeThreat(t); break; }
+      case 'prog_action':{
+        const amt=Math.min(G.actions,t.need-t.prog);
+        G.actions-=amt; t.prog+=amt;
+        log(`You burn ${amt} Action${amt>1?'s':''} on ${t.n} (${t.prog}/${t.need}).`,'hl');
+        if(t.prog>=t.need) completeThreat(t);
+        break; }
+      case 'prog_buy':{
+        const amt=Math.min(G.buys,t.need-t.prog);
+        G.buys-=amt; t.prog+=amt;
+        log(`You trade away ${amt} Buy${amt>1?'s':''} to ${t.n} (${t.prog}/${t.need}).`,'hl');
+        if(t.prog>=t.need) completeThreat(t);
+        break; }
+      case 'prog_discard':{
+        const s=await chooseCards(G.hand,{min:0,max:t.need-t.prog,title:t.n,
+          sub:`Discard cards into it. ${t.need-t.prog} still wanted.`});
+        s.forEach(c=>{pull(G.hand,c);G.discard.push(c);});
+        t.prog+=s.length;
+        if(s.length) log(`You feed ${s.length} card${s.length>1?'s':''} to ${t.n} (${t.prog}/${t.need}).`,'hl');
+        if(t.prog>=t.need) completeThreat(t);
+        break; }
+      case 'sacrifice':{
+        const elig=G.hand.filter(c=>c.key!=='bulk');
+        const s=await chooseCards(elig,{min:0,max:t.need-t.prog,title:t.n,
+          sub:`Trash cards into the shrine. ${t.need-t.prog} still wanted. Bulk is refused.`});
+        s.forEach(c=>{pull(G.hand,c);trashCard(c);});
+        t.prog+=s.length;
+        if(s.length) log(`You sacrifice ${s.length} card${s.length>1?'s':''} to ${t.n} (${t.prog}/${t.need}).`,'hl');
+        if(t.prog>=t.need) completeThreat(t);
+        break; }
+      case 'panic':{
+        const ok=await chooseOption(t.n,`Sign the pact? It clears at once and ${t.curses} Curses go into your discard pile.`,
+          [['y','Sign it'],['n','Step back']]);
+        if(ok!=='y') break;
+        for(let i=0;i<t.curses;i++) G.discard.push(mk('curse'));
+        log(`You sign the ${t.n}. ${t.curses} Curses join your discard pile.`,'bad');
+        completeThreat(t); break; }
+      case 'once_hybrid':{
+        G.coin-=t.needCoin; G.actions-=t.needAct;
+        log(`You hand ${t.n} ${t.needCoin} coin and ${t.needAct} Actions at once.`,'hl');
+        completeThreat(t); break; }
+      case 'upgrade':{
+        const elig=G.hand.filter(c=>(!t.tDone&&c.t==='treasure')||(!t.aDone&&c.t==='action'));
+        const s=await chooseCards(elig,{min:0,max:2,title:t.n,
+          sub:`Trash one Treasure and one Action into the rift. Still needed: ${!t.tDone?'a Treasure':''}${(!t.tDone&&!t.aDone)?' and ':''}${!t.aDone?'an Action':''}.`});
+        for(const c of s){
+          if(c.t==='treasure'&&!t.tDone){ t.tDone=true; }
+          else if(c.t==='action'&&!t.aDone){ t.aDone=true; }
+          else continue;
+          pull(G.hand,c); trashCard(c);
+          log(`${c.n} is swallowed by ${t.n}.`,'hl');
+        }
+        if(t.tDone&&t.aDone) completeThreat(t);
+        break; }
+    }
+  } finally { busy=false; render(); }
+}
+
+/* ==========================================================
+   CARD PLAY / BUY
+   ========================================================== */
+function canPlay(c){
+  if(G.over) return false;
+  if(c.t==='treasure') return true;
+  if(c.key==='bulk')   return G.actions>0;
+  if(c.t==='action')   return G.actions>0;
+  return false;                      // Estate, Curse
+}
+
+async function playCard(c){
+  if(busy||!canPlay(c)||!G.hand.includes(c)) return;
+  busy=true;
+  try{
+    if(c.t==='treasure'){
+      pull(G.hand,c); G.inPlay.push(c); C(c.v);
+      log(`${c.n} adds ${c.v} to your purse.`);
+    } else if(c.key==='bulk'){
+      G.actions--; pull(G.hand,c); G.trash.push(c);
+      log('You haul the Bulk away. It is gone from your deck for good.','good');
+    } else {
+      G.actions--; G.actionsPlayed++;
+      pull(G.hand,c); G.inPlay.push(c);
+      log(`You play ${c.n}.`,'hl');
+      await DB[c.key].fx(c);
+    }
+  } finally { busy=false; render(); }
+}
+
+function buyCard(i){
+  if(busy||G.over) return;
+  const c=G.market[i]; if(!c) return;
+  const price=costOf(c);
+  if(G.buys<1||G.coin<price) return;
+  G.buys--; G.coin-=price;
+  const wasT=(c.t==='treasure');
+  G.market[i]=null;
+  G.deck.push(c);
+  log(`You buy ${c.n} for ${price}. It waits at the bottom of your deck.`,'hl');
+  refillSlot(i,wasT);
+  render();
+}
+
+/* ==========================================================
+   TURN FLOW
+   ========================================================== */
+function startTurn(){
+  G.turn++;
+  G.actions=1; G.buys=1; G.coin=0; G.actionsPlayed=0; G.discount=0;
+  G.slots.forEach(t=>{ if(t) t.fresh=false; });
+  log(`— Turn ${G.turn} —`,'turn');
+  render();
+}
+
+async function endTurn(){
+  if(busy||G.over) return; busy=true;
+  try{
+    // clean up
+    for(const c of G.inPlay.splice(0)) G.discard.push(c);
+    for(const c of G.hand.splice(0))   G.discard.push(c);
+    G.coin=0;
+
+    // escalating threats punish you for leaving them standing
+    for(const t of G.slots){
+      if(t&&t.penalty){ G.discard.push(mk('curse'));
+        log(`${t.n} skims a Curse into your discard for the delay.`,'bad'); }
+    }
+
+    draw(5);
+    render(); await sleep(180);
+
+    cycleMarket(); render(); await sleep(200);
+
+    if(G.turn%TUNE.spawnEvery===0){
+      if(!G.queue.length){ log('No further threats are queued.'); }
+      else { if(!spawnThreat(false)) return; await sleep(220); }
+    }
+    checkWin();
+    if(G.over) return;
+    startTurn();
+  } finally { busy=false; render(); }
+}
+
+/* ==========================================================
+   MODALS
+   ========================================================== */
+function closeVeil(){ $('veil').classList.remove('on'); $('pool').innerHTML=''; $('mOpts').innerHTML=''; $('mBtns').innerHTML=''; }
+
+function chooseCards(pool,{min=0,max=1,title='Choose',sub=''}={}){
+  return new Promise(res=>{
+    if(!pool.length||max<=0){ res([]); return; }
+    const chosen=new Set();
+    $('mTitle').textContent=title; $('mSub').textContent=sub;
+    const p=$('pool'); p.innerHTML=''; $('mOpts').innerHTML=''; $('mBtns').innerHTML='';
+    const ok=document.createElement('button'); ok.className='mbtn go';
+    const upd=()=>{ ok.textContent=chosen.size?`Confirm ${chosen.size}`:(min===0?'Skip':'Confirm'); ok.disabled=chosen.size<min; };
+    pool.forEach(c=>{
+      const el=cardEl(c); el.style.cursor='pointer'; el.tabIndex=0;
+      const tog=()=>{ if(chosen.has(c))chosen.delete(c); else{ if(chosen.size>=max)return; chosen.add(c);} 
+        el.classList.toggle('selected',chosen.has(c)); upd(); };
+      el.onclick=tog; el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tog();}};
+      p.appendChild(el);
+    });
+    ok.onclick=()=>{closeVeil();res([...chosen]);};
+    $('mBtns').appendChild(ok); upd();
+    $('veil').classList.add('on'); ok.focus();
+  });
+}
+
+function chooseOption(title,sub,options){
+  return new Promise(res=>{
+    $('mTitle').textContent=title; $('mSub').textContent=sub;
+    $('pool').innerHTML=''; $('mBtns').innerHTML='';
+    const box=$('mOpts'); box.innerHTML='';
+    options.forEach(([k,label],i)=>{
+      const b=document.createElement('button'); b.className='opt'; b.textContent=label;
+      b.onclick=()=>{closeVeil();res(k);};
+      box.appendChild(b); if(i===0) setTimeout(()=>b.focus(),0);
+    });
+    $('veil').classList.add('on');
+  });
+}
+
+async function gainFromMarket(maxCost,dest,label,exact){
+  const elig=G.market.filter(c=>c&&(exact?c.c===exact:c.c<=maxCost));
+  if(!elig.length){ log(`${label} finds nothing suitable in the market.`); return null; }
+  const s=await chooseCards(elig,{min:0,max:1,title:label,
+    sub:exact?`Gain a card costing exactly ${exact}.`:`Gain a card costing up to ${maxCost}.`});
+  const c=s[0]; if(!c) return null;
+  const idx=G.market.indexOf(c), wasT=(c.t==='treasure');
+  G.market[idx]=null;
+  if(dest==='hand') G.hand.push(c); else if(dest==='deck') G.deck.unshift(c); else G.discard.push(c);
+  refillSlot(idx,wasT);
+  log(`${label} gains you ${c.n}.`,'hl');
+  return c;
+}
+
+function viewPile(title,pile,sorted){
+  const list=sorted?pile.slice().sort((a,b)=>a.n.localeCompare(b.n)):pile.slice();
+  $('mTitle').textContent=title; $('mSub').textContent=`${pile.length} card${pile.length===1?'':'s'}`;
+  const p=$('pool'); p.innerHTML=''; $('mOpts').innerHTML=''; $('mBtns').innerHTML='';
+  list.forEach(c=>p.appendChild(cardEl(c)));
+  const b=document.createElement('button'); b.className='mbtn'; b.textContent='Close'; b.onclick=closeVeil;
+  $('mBtns').appendChild(b); $('veil').classList.add('on'); b.focus();
+}
+
+/* ==========================================================
+   RENDER
+   ========================================================== */
+function cardEl(c){
+  const el=document.createElement('div');
+  el.className=`card t-${c.t}`;
+  const kind={treasure:'Treasure',action:'Action',victory:'Victory',junk:'Junk',curse:'Curse'}[c.t]||c.t;
+  el.innerHTML=`<div class="banner">${c.n}</div>
+    <div class="art">${c.art||'✦'}</div>
+    <div class="tx">${c.tx}</div>
+    <div class="foot"><span>${kind}</span><span></span></div>`;
+  const cost=document.createElement('div'); cost.className='cost'; cost.textContent=costOf(c);
+  el.appendChild(cost);
+  return el;
+}
+
+function threatProgress(t){
+  switch(t.kind){
+    case 'prog_coin':    return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} coin`, note:`${t.need-t.prog} still owed`};
+    case 'once_coin':    return {pct:Math.min(1,G.coin/t.need), left:`needs ${t.need} coin at once`, note:`you hold ${G.coin}`};
+    case 'prog_action':  return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} Actions`, note:`${t.need-t.prog} still owed`};
+    case 'prog_buy':     return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} Buys`, note:`${t.need-t.prog} still owed`};
+    case 'prog_discard': return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} cards fed`, note:`${t.need-t.prog} still wanted`};
+    case 'sacrifice':    return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} cards trashed`, note:`${t.need-t.prog} still wanted`};
+    case 'panic':        return {pct:0, left:'instant', note:`costs ${t.curses} Curses`};
+    case 'once_hybrid':  return {pct:Math.min(1,(Math.min(G.coin,t.needCoin)/t.needCoin*0.75)+(Math.min(G.actions,t.needAct)/t.needAct*0.25)),
+                                 left:`${t.needCoin} coin + ${t.needAct} Actions, one turn`,
+                                 note:`you hold ${G.coin} coin, ${G.actions} Actions`};
+    case 'upgrade':      return {pct:((t.tDone?1:0)+(t.aDone?1:0))/2,
+                                 left:`Treasure ${t.tDone?'✓':'—'}   Action ${t.aDone?'✓':'—'}`,
+                                 note:t.tDone&&t.aDone?'complete':'trash from hand'};
+  }
+  return {pct:0,left:'',note:''};
+}
+function threatButton(t){
+  switch(t.kind){
+    case 'prog_coin':    return `Deposit ${Math.min(G.coin,t.need-t.prog)} coin`;
+    case 'once_coin':    return `Pay ${t.need} coin`;
+    case 'prog_action':  return `Spend ${Math.min(G.actions,t.need-t.prog)} Action${Math.min(G.actions,t.need-t.prog)===1?'':'s'}`;
+    case 'prog_buy':     return `Spend ${Math.min(G.buys,t.need-t.prog)} Buy${Math.min(G.buys,t.need-t.prog)===1?'':'s'}`;
+    case 'prog_discard': return 'Feed cards';
+    case 'sacrifice':    return 'Sacrifice cards';
+    case 'panic':        return 'Sign the pact';
+    case 'once_hybrid':  return `Pay ${t.needCoin} coin + ${t.needAct} Actions`;
+    case 'upgrade':      return 'Trash into the rift';
+  }
+  return 'Act';
+}
+
+function render(){
+  if(!G) return;
+
+  $('cTurn').textContent=`Turn ${G.turn}`;
+  const remaining=G.queue.length+G.slots.filter(s=>s).length;
+  $('cQueue').textContent=`Threats remaining ${remaining} / ${G.total}`;
+  const untilSpawn=TUNE.spawnEvery-(G.turn%TUNE.spawnEvery||TUNE.spawnEvery);
+  const nx=$('cNext');
+  if(!G.queue.length){ nx.textContent='No more threats queued'; nx.className='chip'; }
+  else {
+    nx.textContent = untilSpawn===0 ? 'Next threat at end of this turn'
+                   : `Next threat in ${untilSpawn} turn${untilSpawn===1?'':'s'}`;
+    nx.className='chip'+(untilSpawn===0?' now':untilSpawn===1?' soon':'');
+  }
+
+  // market
+  const m=$('market'); m.innerHTML='';
+  G.market.forEach((c,i)=>{
+    const slot=document.createElement('div'); slot.className='slot'+(i<2?' leaving':'');
+    if(c){
+      const el=cardEl(c), price=costOf(c);
+      const afford=G.buys>0&&G.coin>=price&&!busy&&!G.over;
+      el.classList.toggle('buyable',afford); el.classList.toggle('dead',!afford);
+      if(afford){ el.tabIndex=0; el.onclick=()=>buyCard(i); el.onkeydown=e=>{if(e.key==='Enter')buyCard(i);}; }
+      slot.appendChild(el);
+      if(i<2){ const tag=document.createElement('div'); tag.className='leaving-tag'; tag.textContent='leaves this turn'; slot.appendChild(tag); }
+    }
+    m.appendChild(slot);
+  });
+
+  // threats
+  const T=$('threats'); T.innerHTML='';
+  G.slots.forEach((t,i)=>{
+    const box=document.createElement('div');
+    if(!t){ box.className='tslot empty'; box.textContent=`SLOT ${i+1} — CLEAR`; T.appendChild(box); return; }
+    const p=threatProgress(t), ready=threatReady(t)&&!busy&&!G.over;
+    box.className='tslot'+(ready?' ready':'')+(t.fresh?' new':'');
+    box.innerHTML=`
+      <div class="thead"><div class="tart">${t.art}</div>
+        <div><div class="tname">${t.n}</div><div class="tkind">${t.label}</div></div></div>
+      <div class="tdesc">${t.desc}</div>
+      <div class="tnum"><span>${p.left}</span><span style="color:var(--dim)">${p.note}</span></div>
+      <div class="tbar"><div class="tfill ${t.bar}" style="width:${Math.round(Math.max(0,Math.min(1,p.pct))*100)}%"></div></div>`;
+    if(t.penalty){ const w=document.createElement('div'); w.className='warnpip'; w.textContent='+1 Curse / turn'; box.appendChild(w); }
+    const b=document.createElement('button');
+    b.className='tbtn2'+(t.kind==='panic'?' blood':ready?' go':'');
+    b.textContent=threatButton(t); b.disabled=!ready;
+    b.onclick=()=>clickThreat(t);
+    box.appendChild(b);
+    T.appendChild(box);
+  });
+
+  // resources
+  const r=(id,v,label,icon)=>{const e=$(id); e.innerHTML=`${icon} ${label} <b>${v}</b>`; e.classList.toggle('spent',v<=0);};
+  r('rAct',G.actions,'Actions','⚡'); r('rBuy',G.buys,'Buys','🛒');
+  $('rCoin').innerHTML=`🪙 Coin <b>${G.coin}</b>`;
+  $('pDeck').textContent=`Draw ${G.deck.length}`;
+  $('pDisc').textContent=`Discard ${G.discard.length}`;
+  $('endturn').disabled=busy||G.over;
+
+  // hand
+  const h=$('hand'); h.innerHTML='';
+  G.hand.forEach(c=>{
+    const el=cardEl(c), ok=canPlay(c)&&!busy;
+    el.classList.toggle('playable',ok); el.classList.toggle('dead',!ok);
+    if(ok){ el.tabIndex=0; el.onclick=()=>playCard(c); el.onkeydown=e=>{if(e.key==='Enter')playCard(c);}; }
+    h.appendChild(el);
+  });
+}
+
+function log(msg,cls){
+  const d=document.createElement('div'); if(cls)d.className=cls; d.textContent=msg;
+  const l=$('log'); l.appendChild(d);
+  while(l.children.length>140) l.removeChild(l.firstChild);
+  l.scrollTop=l.scrollHeight;
+}
+
+/* ---------- wiring ---------- */
+$('endturn').onclick=endTurn;
+$('btnRestart').onclick=()=>{$('log').innerHTML='';newEncounter();};
+$('overBtn').onclick=()=>{$('log').innerHTML='';newEncounter();};
+$('btnDeck').onclick=()=>viewPile('Draw pile',G.deck,false);
+$('btnDiscard').onclick=()=>viewPile('Discard pile',G.discard,true);
+$('btnTrash').onclick=()=>viewPile('Trash',G.trash,true);
+$('pDeck').onclick=()=>viewPile('Draw pile',G.deck,false);
+$('pDisc').onclick=()=>viewPile('Discard pile',G.discard,true);
+document.addEventListener('keydown',e=>{
+  if($('veil').classList.contains('on')) return;
+  if(e.key==='e'&&!busy) endTurn();
+});
+
+newEncounter();
+</script>
+</body>
+</html>
