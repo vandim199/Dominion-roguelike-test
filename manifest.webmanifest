@@ -1,0 +1,11 @@
+{
+  "name": "Coinkeep",
+  "short_name": "Coinkeep",
+  "description": "A pocket deckbuilder. Build your deck, pay off the trouble, hold the town.",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#121838",
+  "theme_color": "#1A2354",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

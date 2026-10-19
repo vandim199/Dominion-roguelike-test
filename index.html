@@ -3,14 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#191426">
+<meta name="theme-color" content="#1A2354">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Dominion: Crisis — endless</title>
+<title>Coinkeep</title>
+<meta name="description" content="Coinkeep — a pocket deckbuilder. Build your deck, pay off the troubles, hold the town.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Crimson+Pro:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 <script src="js/data.js" defer></script>
 <script src="js/game.js" defer></script>
@@ -20,7 +24,7 @@
 
 <div id="app">
   <header id="topbar">
-    <span class="brand">Dominion: Crisis</span>
+    <span class="brand">🪙 Coinkeep</span>
     <div class="chips">
       <span class="chip wave" id="cWave"></span>
       <span class="chip" id="cTurn"></span>
@@ -32,7 +36,7 @@
     <button class="tbtn wide-only" id="btnDeck">Deck</button>
     <button class="tbtn wide-only" id="btnTrash">Trash</button>
     <button class="tbtn wide-only" id="btnNew">New run</button>
-    <button class="tbtn" id="btnLedger" aria-label="Ledger">📜<span class="long"> Ledger</span></button>
+    <button class="tbtn" id="btnLedger" aria-label="Log">📜<span class="long"> Log</span></button>
     <button class="tbtn" id="btnMenu" aria-label="Settings and menu">⚙<span class="long"> Settings</span></button>
   </header>
 
@@ -68,7 +72,7 @@
   </main>
 
   <aside id="side">
-    <div class="side-h"><span>LEDGER</span><button id="sideClose" aria-label="Close ledger">✕</button></div>
+    <div class="side-h"><span>TOWN LOG</span><button id="sideClose" aria-label="Close log">✕</button></div>
     <div id="log"></div>
   </aside>
 </div>
@@ -96,10 +100,11 @@
     <div class="srow btns">
       <button class="tbtn" id="mDeck">Deck</button>
       <button class="tbtn" id="mTrash">Trash</button>
-      <button class="tbtn" id="mLedger">Ledger</button>
+      <button class="tbtn" id="mLedger">Log</button>
+      <button class="tbtn" id="mHow">How to play</button>
       <button class="tbtn" id="mNew">New run</button>
     </div>
-    <p class="hint">Keys: <b>E</b> end turn · <b>T</b> play treasures · <b>+ / −</b> UI size · right-click any card to read it.</p>
+    <p class="hint keys">Keys: <b>E</b> end turn · <b>T</b> play treasures · <b>+ / −</b> UI size · right-click any card to read it.</p>
     <button class="mbtn go" id="mClose">Done</button>
   </div>
 </div>
@@ -113,9 +118,38 @@
 </div>
 
 <div id="over">
-  <h1 id="overTitle">Run over</h1>
+  <div class="over-art">🏚</div>
+  <h1 id="overTitle">The town falls</h1>
   <p id="overText"></p>
-  <button class="mbtn go" id="overBtn">Start a new run</button>
+  <button class="mbtn go big" id="overBtn">Try again</button>
+</div>
+
+<div id="banner" aria-hidden="true"></div>
+
+<div id="title" class="on" role="dialog" aria-modal="true" aria-labelledby="tName">
+  <div class="logo">
+    <div class="logo-art">🏰</div>
+    <h1 id="tName">Coinkeep</h1>
+    <p class="tag">Build a deck. Pay off the trouble. Hold the town.</p>
+  </div>
+  <p class="best" id="tBest"></p>
+  <button class="mbtn go big" id="tPlay">Play</button>
+  <button class="mbtn" id="tHow">How to play</button>
+</div>
+
+<div id="howto" role="dialog" aria-modal="true" aria-labelledby="hTitle">
+  <div class="sheet">
+    <h3 id="hTitle">How to play</h3>
+    <ol class="steps">
+      <li><b>🃏 Play your hand.</b> Action cards give Cards, Actions, Buys and Coin. Treasures give Coin.</li>
+      <li><b>👹 Deal with threats.</b> Each one wants something — Coin, Actions, Buys or cards. Tap its button to pay. Unpaid threats attack on a timer.</li>
+      <li><b>🛒 Shop the market.</b> Buy better cards. They go to the bottom of your deck. The two leftmost stalls leave each turn.</li>
+      <li><b>🏰 Hold all three slots.</b> If a threat arrives with every slot full, the town falls.</li>
+      <li><b>✨ Between waves</b> pick a charm that bends the rules, and visit the Inn to upgrade, copy or trash a card.</li>
+    </ol>
+    <p class="hint">Cards with ★ are upgraded. Upgrades stack — a Forge★ can turn Gold into Gold★★.</p>
+    <button class="mbtn go" id="hClose">Got it</button>
+  </div>
 </div>
 
 </body>
