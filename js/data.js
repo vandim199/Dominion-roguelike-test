@@ -22,6 +22,8 @@ const TUNE = {
   coinScale:  w => Math.pow(1.3, w-1),      // coin demands grow exponentially
   countScale: w => 1 + 0.22*(w-1),          // action / buy / discard demands grow linearly
   maxTier:    w => Math.floor((w-1)/2),     // market tier: base on waves 1-2, + on 3-4, ++ on 5-6 ...
+  hearts:5,                                 // splice mode: detonations cost hearts; lose at 0
+  spliceSlots: c => 2+Math.floor(c.lv/2),   // keywords a card can hold (scars ignore the limit)
 };
 
 /* ==========================================================
@@ -115,7 +117,7 @@ def('forge',{n:'Forge',c:5,step:4,art:'⚒',t:'action',
     const c=ch[0]; if(!c)return;
     const [k,v]=up(c);
     pull(G.hand,c); trashCard(c,true);
-    const g=mk(k,v); if(k===c.key&&c.grow) g.grow=c.grow;
+    const g=mk(k,v); g.mods=c.mods.slice(); if(c.grow) g.grow=c.grow;
     G.hand.push(g); log(`${cname(s)} turns ${cname(c)} into ${cname(g)}.`,'hl'); }});
 def('coinpress',{n:'Coin Press',c:5,step:4,art:'🏭',t:'action',
   tx:l=>`Choose a Treasure in your hand. Gain ${l?`${1+l} copies`:'a copy'} of it into your discard pile.`,
@@ -182,8 +184,35 @@ def('nightwatch',{n:'Night Watch',c:3,art:'🏮',t:'action',r:true,
   fx:async(s,l)=>{ let g=0; while(G.hand.length<6+l&&g++<30){ if(!draw(1))break; } }});
 
 const KINGDOM=Object.keys(DB).filter(k=>DB[k].t==='action'||DB[k].kingdom);
+// Splice mode keeps the market small: depth comes from splicing keywords onto these.
+const CORE=['teahouse','maproom','inventor','encore','bonfire','springclean','forge','coinpress','archer','guarddog'];
 
-function clone(c){ const g=mk(c.key,c.lv); if(c.grow) g.grow=c.grow; return g; }
+/* ==========================================================
+   SPLICES — keywords grafted onto a card in your deck.
+   Clearing a threat in splice mode offers a choice of them;
+   a threat that detonates brands a scar onto a card instead.
+   once: a card can carry it only one time. only: card type.
+   Splices trigger every time the card resolves (Encore, Echo, Twin).
+   ========================================================== */
+const SPLICES={
+  quick: {n:'Quick',   art:'⚡',r:'common',  tx:'+1 Action'},
+  draw:  {n:'Drawing', art:'🃏',r:'common',  tx:'+1 Card'},
+  trade: {n:'Trading', art:'🛒',r:'common',  tx:'+1 Buy'},
+  coin:  {n:'Gilded',  art:'🪙',r:'common',  tx:'+1 Coin'},
+  strike:{n:'Barbed',  art:'🏹',r:'uncommon',tx:'Strike the most urgent threat for 15%'},
+  grow:  {n:'Sprouting',art:'🌱',r:'uncommon',tx:c=>`+${(c&&c.grow)||0} Coin, 1 more each time it is played`},
+  guard: {n:'Guarded', art:'🛡',r:'uncommon',once:true,tx:'⛨ When a threat attacks, discard this from your hand to block it'},
+  free:  {n:'Nimble',  art:'🍃',r:'rare',once:true,only:'action',tx:'Costs no Action to play'},
+  twin:  {n:'Twin',    art:'👯',r:'rare',once:true,tx:'Resolves twice when played'},
+  retain:{n:'Sticky',  art:'📌',r:'rare',once:true,tx:'Stays in your hand at end of turn'},
+  rust:  {n:'Rusty',   art:'🦠',scar:true,tx:'−1 Coin when played'},
+  heavy: {n:'Heavy',   art:'🪨',scar:true,once:true,tx:'Costs an extra Action to play'},
+  brittle:{n:'Brittle',art:'💔',scar:true,once:true,tx:'Trashed after you play it'},
+};
+const SCARS=Object.keys(SPLICES).filter(k=>SPLICES[k].scar);
+const spliceText = (k,c) => { const t=SPLICES[k].tx; return typeof t==='function'?t(c):t; };
+
+function clone(c){ const g=mk(c.key,c.lv); g.mods=c.mods.slice(); if(c.grow) g.grow=c.grow; return g; }
 function upTreasure(k,l){ if(k==='copper')return ['silver',l]; if(k==='silver')return ['gold',l]; return [k,l+1]; }
 
 /* ==========================================================
@@ -224,48 +253,50 @@ const RARITY={common:60,uncommon:30,rare:10};
 
 /* ==========================================================
    THREATS — each one demands a resource and attacks on a timer.
+   In splice mode the timer is a fuse: when it runs out the threat
+   detonates once (its attack, a scar, a lost heart) and leaves.
    ========================================================== */
 const THREATS={
-  taxman:{n:'Tax Collector',art:'🧾',kind:'prog_coin',need:18,bar:'cash',label:'Progressive — Coin',
+  taxman:{fuse:5,n:'Tax Collector',art:'🧾',kind:'prog_coin',need:18,bar:'cash',label:'Progressive — Coin',
     desc:()=>'The crown wants its due. Pour in coin across as many turns as you like.',
     atk:{k:'grow',pct:20,every:3,name:'Late fees'}},
-  ogre:{n:'Ogre at the Gate',art:'👹',kind:'once_coin',need:10,bar:'cash',label:'One shot — Coin',late:true,
+  ogre:{fuse:3,scar:'brittle',n:'Ogre at the Gate',art:'👹',kind:'once_coin',need:10,bar:'cash',label:'One shot — Coin',late:true,
     desc:t=>`It will leave for a fee — the whole ${t.need} coin, in a single turn.`,
     atk:{k:'discard',n:2,every:2,name:'Stomp'}},
-  idol:{n:'Hungry Idol',art:'🗿',kind:'sacrifice',need:3,bar:'blood',label:'Sacrifice — Cards',
+  idol:{fuse:3,scar:'brittle',n:'Hungry Idol',art:'🗿',kind:'sacrifice',need:3,bar:'blood',label:'Sacrifice — Cards',
     desc:t=>`Feed it ${t.need} cards from your hand. Rubble is refused. The cards are trashed for good.`,
     atk:{k:'trash',n:1,every:3,name:'Hunger'}},
-  redtape:{n:'Red Tape',art:'📜',kind:'prog_action',need:5,bar:'act',label:'Progressive — Actions',
+  redtape:{fuse:5,scar:'heavy',n:'Red Tape',art:'📜',kind:'prog_action',need:5,bar:'act',label:'Progressive — Actions',
     desc:()=>'Forms in triplicate, forever. Spend Actions into it across as many turns as you need.',
     atk:{k:'bulk',n:2,every:3,name:'Paperwork'}},
-  pirates:{n:'Pirate Blockade',art:'🏴‍☠️',kind:'prog_buy',need:4,bar:'buy',label:'Progressive — Buys',
+  pirates:{fuse:4,scar:'heavy',n:'Pirate Blockade',art:'🏴‍☠️',kind:'prog_buy',need:4,bar:'buy',label:'Progressive — Buys',
     desc:()=>'Nothing sails in while they sit in the harbour. Spend Buys into it across turns.',
     atk:{k:'nobuy',n:1,every:2,name:'Blockade'}},
-  witch:{n:'Bog Witch',art:'🧙',kind:'prog_discard',need:7,bar:'blood',label:'Progressive — Discards',
+  witch:{fuse:3,scar:'rust',n:'Bog Witch',art:'🧙',kind:'prog_discard',need:7,bar:'blood',label:'Progressive — Discards',
     desc:()=>'She takes whatever you hand over. Discard cards from your hand into her cauldron across turns.',
     atk:{k:'curse',n:1,every:3,name:'Hex'}},
-  devil:{n:"Devil's Bargain",art:'😈',kind:'panic',curses:2,bar:'blood',label:'Panic button',
+  devil:{fuse:3,n:"Devil's Bargain",art:'😈',kind:'panic',curses:2,bar:'blood',label:'Panic button',
     desc:t=>`Shake on it and it is gone at once — but ${plural(t.curses,'Jinx','Jinxes')} go straight into your discard pile.`,
     atk:{k:'price',n:1,every:2,name:'Fine print'}},
-  dragon:{n:'Greedy Dragon',art:'🐉',kind:'once_hybrid',needCoin:14,needAct:2,bar:'cash',label:'One shot — Coin + Actions',late:true,
+  dragon:{fuse:3,scar:'rust',n:'Greedy Dragon',art:'🐉',kind:'once_hybrid',needCoin:14,needAct:2,bar:'cash',label:'One shot — Coin + Actions',late:true,
     desc:t=>`Buying it off takes ${t.needCoin} coin and ${t.needAct} Actions, all within a single turn.`,
     atk:{k:'trash',n:1,filter:'treasure',every:3,name:'Plunder'}},
-  rift:{n:'Magic Rift',art:'🌌',kind:'upgrade',bar:'act',label:'Sacrifice — Treasure + Action',
+  rift:{fuse:4,n:'Magic Rift',art:'🌌',kind:'upgrade',bar:'act',label:'Sacrifice — Treasure + Action',
     desc:t=>`Trash ${plural(t.needT,'Treasure')} and ${plural(t.needA,'Action')} from your hand into the rift, over any turns.`,
     atk:{k:'warp',n:1,every:3,name:'Rift'}},
-  bandit:{n:'Bandit King',art:'🗡',kind:'prog_coin',need:8,bar:'cash',label:'Progressive — Coin',
+  bandit:{fuse:4,scar:'rust',n:'Bandit King',art:'🗡',kind:'prog_coin',need:8,bar:'cash',label:'Progressive — Coin',
     desc:()=>'Wants his cut — and jinxes you every single turn he stays.',
     atk:{k:'curse',n:1,every:1,name:'Shakedown'}},
-  goblins:{n:'Goblin Pickpockets',art:'👺',kind:'prog_coin',need:10,bar:'cash',label:'Progressive — Coin',
+  goblins:{fuse:4,scar:'rust',n:'Goblin Pickpockets',art:'👺',kind:'prog_coin',need:10,bar:'cash',label:'Progressive — Coin',
     desc:()=>'Small, quick and everywhere. Pay them off before your purse is empty.',
     atk:{k:'pickpocket',n:2,every:2,name:'Pickpocket'}},
-  blizzard:{n:'Blizzard',art:'❄',kind:'prog_action',need:4,bar:'act',label:'Progressive — Actions',
+  blizzard:{fuse:4,scar:'heavy',n:'Blizzard',art:'❄',kind:'prog_action',need:4,bar:'act',label:'Progressive — Actions',
     desc:()=>'Shovel it out with Actions, across as many turns as you need.',
     atk:{k:'freeze',n:1,every:2,name:'Frostbite'}},
-  rats:{n:'Rat King',art:'🐀',kind:'scavenge',need:4,bar:'blood',label:'Scavenge — Cards',
+  rats:{fuse:3,n:'Rat King',art:'🐀',kind:'scavenge',need:4,bar:'blood',label:'Scavenge — Cards',
     desc:t=>`Trash cards from your hand into its nest until it has ${t.need}. Junk counts double.`,
     atk:{k:'warp',n:1,every:2,name:'Nesting'}},
-  ghost:{n:'Restless Ghost',art:'👻',kind:'banish',need:3,bar:'act',label:'Banish — Actions played',late:true,
+  ghost:{fuse:3,scar:'brittle',n:'Restless Ghost',art:'👻',kind:'banish',need:3,bar:'act',label:'Banish — Actions played',late:true,
     desc:t=>`Play ${plural(t.need-t.prog,'Action')} in a single turn, then banish it.`,
     atk:{k:'discard',n:1,filter:'action',every:2,name:'Spook'}},
 };

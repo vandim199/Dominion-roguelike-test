@@ -181,6 +181,23 @@ function chooseJoker(keys,title,sub,{skip='Skip'}={}){
   });
 }
 
+function chooseSplice(keys,title,sub){
+  return new Promise(res=>{
+    openVeil(title,sub,'jokers');
+    const p=$('pool');
+    keys.forEach(k=>{
+      const el=spliceCardEl(k); el.tabIndex=0; el.setAttribute('role','button');
+      el.onclick=()=>{closeVeil();res(k);};
+      el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();closeVeil();res(k);}};
+      p.appendChild(el);
+    });
+    const b=document.createElement('button'); b.className='mbtn'; b.textContent='Skip';
+    b.onclick=()=>{closeVeil();res(null);};
+    $('mBtns').appendChild(b);
+    setTimeout(()=>{ const f=p.querySelector('.jcard'); if(f) f.focus(); },0);
+  });
+}
+
 function viewPile(title,pile){
   const list=pile.slice().sort((a,b)=>cname(a).localeCompare(cname(b)));
   openVeil(title,plural(pile.length,'card')+' — tap a card to read it.');
@@ -245,9 +262,17 @@ function cardEl(c,{badge}={}){
   el.className=`card t-${d.t}${d.r?' r':''}${c.lv?` lv${Math.min(3,c.lv)}`:''}${c.frozen?' frozen':''}`;
   const kind=d.r?'Reaction':({treasure:'Treasure',action:'Action',victory:'Junk',junk:'Junk',curse:'Junk'}[d.t]||d.t);
   const stars=c.lv?(c.lv<=3?'★'.repeat(c.lv):`★${c.lv}`):'';
+  // splices: icon chips (scars in red), empty slots in splice mode, and full text lines for the big view
+  let chips='', lines='';
+  if(c.mods.length||(splice()&&!isJunk(c))){
+    chips=c.mods.map(k=>`<i class="${SPLICES[k].scar?'scar':''}">${SPLICES[k].art}</i>`).join('');
+    if(splice()&&!isJunk(c)) chips+='<i class="open"></i>'.repeat(Math.max(0,TUNE.spliceSlots(c)-slotsUsed(c)));
+    lines=c.mods.map(k=>`<span class="mline${SPLICES[k].scar?' scar':''}">${SPLICES[k].art} ${spliceText(k,c)}</span>`).join('');
+    if(c.mods.length) el.classList.add('spliced');
+  }
   el.innerHTML=`<div class="banner">${cname(c)}</div>
-    <div class="art"><span>${d.art||'✦'}</span></div>
-    <div class="tx">${ctext(c)}</div>
+    <div class="art"><span>${d.art||'✦'}</span>${chips?`<div class="mods">${chips}</div>`:''}</div>
+    <div class="tx"><span>${ctext(c)}</span>${lines}</div>
     <div class="foot"><span>${kind}</span><span class="stars">${stars}</span></div>`;
   const cost=document.createElement('div'); cost.className='cost'; cost.textContent=costOf(c);
   el.appendChild(cost);
@@ -260,6 +285,13 @@ function jokerCardEl(k,status){
   const j=JOKERS[k], el=document.createElement('div');
   el.className=`jcard ${j.r}`;
   el.innerHTML=`<div class="jr">${j.r}</div><div class="jart">${j.art}</div><div class="jn">${j.n}</div><div class="jtx">${j.tx}</div>${status?`<div class="jst">Now: ${status}</div>`:''}`;
+  return el;
+}
+
+function spliceCardEl(k){
+  const S=SPLICES[k], el=document.createElement('div');
+  el.className=`jcard splice ${S.r}`;
+  el.innerHTML=`<div class="jr">${S.r} splice</div><div class="jart">${S.art}</div><div class="jn">${S.n}</div><div class="jtx">${spliceText(k)}${S.once?'':'<br><small>Stacks.</small>'}${S.only?`<br><small>Actions only.</small>`:''}</div>`;
   return el;
 }
 
@@ -302,15 +334,27 @@ function threatButton(t){
   return 'Act';
 }
 const attackWhen = t => t.cd<=1 ? 'at end of this turn' : `in ${t.cd} turns`;
+// The attack line under a threat; in splice mode it is the fuse.
+function atkLine(t){
+  if(!splice()) return `⚔ <b>${t.atk.name}</b> ${attackWhen(t)}: ${atkText(t)}.`;
+  const what=t.atk.k==='grow'?'':t.atk.k==='price'?`you take ${junkName('jinx',t.curses)}, `:`${atkText(t)}, `;
+  return `💥 <b>Detonates</b> ${attackWhen(t)}: ${what}scars a card, −${t.elite?2:1} ❤.`;
+}
+function rewardLine(t){
+  if(!splice()) return '';
+  const swift=t.age<=1;
+  return `<div class="treward">✨ Clear it: splice a keyword${swift?` · <b>swift bonus</b> ${t.age===0?'this turn or next':'this turn'}`:''}</div>`;
+}
 
 function threatInfoEl(t){
   const p=threatProgress(t), el=document.createElement('div');
   el.className='tinfo'+(t.elite?' elite':'');
   el.innerHTML=`<div class="thead"><div class="tart">${t.art}</div><div><div class="tname">${t.n}</div><div class="tkind">${t.label}</div></div></div>
     <p>${t.desc(t)}</p>
-    <div class="tatk${t.cd<=1?' imminent':''}">⚔ <b>${t.atk.name}</b> ${attackWhen(t)}: ${atkText(t)}.</div>
+    <div class="tatk${t.cd<=1?' imminent':''}">${atkLine(t)}</div>
+    ${rewardLine(t)}
     <p class="tnum"><span>${p.left}</span><span>${p.note}</span></p>
-    ${t.age>=TUNE.enrageAfter?'<p class="warn">Enraged: it attacks every turn until cleared.</p>':''}`;
+    ${!splice()&&t.age>=TUNE.enrageAfter?'<p class="warn">Enraged: it attacks every turn until cleared.</p>':''}`;
   return el;
 }
 
@@ -326,6 +370,8 @@ function render(){
   // top bar
   chip('cWave',`Wave ${G.wave}`,`W${G.wave}`,'wave');
   chip('cTurn',`Turn ${G.turnInWave}`,`T${G.turnInWave}`);
+  chip('cHearts',`❤ ${G.hearts} / ${TUNE.hearts}`,`❤ ${G.hearts}`,G.hearts<=2?'now':'hearts');
+  $('cHearts').hidden=!splice();
   const remaining=G.queue.length+G.slots.filter(s=>s).length;
   chip('cQueue',`Threats ${remaining} / ${G.waveTotal}`,`☠ ${remaining}/${G.waveTotal}`);
   chip('cTier',`Market tier: ${tierName(TUNE.maxTier(G.wave))}`,`Tier ${tierName(TUNE.maxTier(G.wave))}`);
@@ -377,13 +423,14 @@ function render(){
       <button class="thead" title="Read this threat"><span class="tart">${t.art}</span>
         <span class="tnames"><span class="tname">${t.n}</span><span class="tkind">${t.label}</span></span><span class="ti">ⓘ</span></button>
       <div class="tdesc">${t.desc(t)}</div>
-      <div class="tatk${t.cd<=1?' imminent':''}">⚔ <b>${t.atk.name}</b> ${attackWhen(t)}: ${atkText(t)}.</div>
+      <div class="tatk${t.cd<=1?' imminent':''}">${atkLine(t)}</div>
+      ${rewardLine(t)}
       <div class="tnum"><span>${p.left}</span><span class="dim">${p.note}</span></div>
       <div class="tbar"><div class="tfill ${t.bar}" style="width:${Math.round(clamp(p.pct,0,1)*100)}%"></div></div>`;
     box.querySelector('.thead').onclick=()=>openInspect(threatInfoEl(t),'',[[threatButton(t),()=>clickThreat(t),'go',!(threatReady(t)&&live)]]);
     const pips=[];
     if(t.elite) pips.push('<span class="pip elite">ELITE</span>');
-    if(t.age>=TUNE.enrageAfter) pips.push('<span class="pip">ENRAGED</span>');
+    if(!splice()&&t.age>=TUNE.enrageAfter) pips.push('<span class="pip">ENRAGED</span>');
     if(pips.length){ const d=document.createElement('div'); d.className='pips'; d.innerHTML=pips.join(''); box.appendChild(d); }
     const b=document.createElement('button');
     b.className='tbtn2'+(t.kind==='panic'?' blood':ready?' go':'');
@@ -460,8 +507,10 @@ $('pDeck').onclick=()=>viewPile('Draw pile (sorted)',G.deck);
 $('pDisc').onclick=()=>viewPile('Discard pile',G.discard);
 $('tabThreats').onclick=()=>setTab('threats');
 $('tabMarket').onclick=()=>setTab('market');
-$('overBtn').onclick=newRun;
-$('tPlay').onclick=()=>{ $('title').classList.remove('on'); if(G.over) newRun(); };
+$('overBtn').onclick=()=>newRun(G.mode);
+const startMode=mode=>{ $('title').classList.remove('on'); newRun(mode); };
+$('tPlay').onclick=()=>startMode('splice');
+$('tClassic').onclick=()=>startMode('classic');
 $('tHow').onclick=()=>$('howto').classList.add('on');
 $('hClose').onclick=()=>$('howto').classList.remove('on');
 $('mHow').onclick=()=>{ closeMenu(); $('howto').classList.add('on'); };

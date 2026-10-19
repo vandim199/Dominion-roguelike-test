@@ -5,7 +5,7 @@
    ========================================================== */
 
 let G=null, busy=false, tid=0, uid=0;
-function mk(key,lv=0){ return {uid:++uid,key,lv:DB[key].noLv?0:lv,t:DB[key].t}; }
+function mk(key,lv=0){ return {uid:++uid,key,lv:DB[key].noLv?0:lv,t:DB[key].t,mods:[]}; }
 function pull(a,c){const i=a.indexOf(c);if(i>=0)a.splice(i,1);return i>=0;}
 const hasJ  = k => !!G && G.jokers.some(j=>j.key===k);
 const cname = c => DB[c.key].n+plus(c.lv);
@@ -19,6 +19,12 @@ const allCards = () => [...G.deck,...G.hand,...G.discard,...G.inPlay];
 const deckSize = () => allCards().length;
 const handSize = () => TUNE.handSize+(hasJ('greedy')?1:0);
 const waveCleared = () => !G.queue.length && G.slots.every(s=>!s);
+const splice = () => !!G && G.mode==='splice';
+const hasMod = (c,k) => c.mods.includes(k);
+const modCount = (c,k) => c.mods.filter(m=>m===k).length;
+const slotsUsed = c => c.mods.filter(m=>!SPLICES[m].scar).length;
+// Actions a card costs to play: Nimble makes an Action free, Heavy adds one (even to a Treasure).
+const actCost = c => (c.t==='action'&&!hasMod(c,'free')?1:0)+(hasMod(c,'heavy')?1:0);
 
 function loadBest(){ try{ return +localStorage.getItem('dcrisis.best')||0; }catch(e){ return 0; } }
 function saveBest(n){ try{ if(n>loadBest()) localStorage.setItem('dcrisis.best',String(n)); }catch(e){} }
@@ -33,8 +39,8 @@ function jokerStatus(j){
   return '';
 }
 
-function newRun(){
-  G={ deck:[],hand:[],discard:[],inPlay:[],trash:[],
+function newRun(mode){
+  G={ mode:mode||(G&&G.mode)||'splice', hearts:TUNE.hearts, pending:[], deck:[],hand:[],discard:[],inPlay:[],trash:[],
       coin:0,actions:0,buys:0,actionsPlayed:0,treasuresPlayed:0,discount:0,echoUsed:false,wallUsed:false,
       market:[], slots:new Array(TUNE.slots).fill(null), queue:[],
       wave:0, turn:0, turnInWave:0, waveTotal:0, runCleared:0,
@@ -43,6 +49,7 @@ function newRun(){
   for(let i=0;i<3;i++)G.deck.push(mk('shack'));
   resetUI();
   log('The bells of Coinkeep ring out: trouble is coming, wave after wave. Your deck is yours for the whole run — build it with care.','hl');
+  if(splice()) log('Splice mode: clear threats before their fuse runs out to graft keywords onto your cards.','hl');
   startWave(1);
 }
 
@@ -60,10 +67,11 @@ function newThreat(key,w,elite){
     case 'banish':      t.need=Math.round((d.need+steps)*em); break;
   }
   if(t.atk.n) t.atk.n+=Math.floor((w-1)/5);
-  if(elite){ t.n='Elite '+d.n; t.atk.every=Math.max(1,d.atk.every-1); }
-  t.cd=effEvery(t);
+  if(elite){ t.n='Elite '+d.n; t.atk.every=Math.max(1,d.atk.every-1); t.fuse=(d.fuse||4)+1; }
+  t.cd=splice()?fuseOf(t):effEvery(t);
   return t;
 }
+function fuseOf(t){ return Math.max(1,(t.fuse||4)-(hasJ('glass')?1:0)+(hasJ('hourglass')?1:0)); }
 function effEvery(t){
   if(t.age>=TUNE.enrageAfter) return 1;
   return Math.max(1, t.atk.every-(hasJ('glass')?1:0)+(hasJ('hourglass')?1:0));
@@ -75,7 +83,7 @@ function randomTreasure(){
   const w=G.wave;
   return mk(wpick([['copper',Math.max(6,40-w*6)],['silver',40],['gold',12+w*4]]),rollTier());
 }
-function marketCard(){ return mk(pick(KINGDOM),rollTier()); }
+function marketCard(){ return mk(pick(splice()?CORE:KINGDOM),rollTier()); }
 function ensureCoin(){ if(!G.market.some(c=>c&&c.t==='treasure')) G.market[G.market.length-1]=randomTreasure(); }
 function newMarket(){
   G.market=[]; for(let i=0;i<TUNE.marketSize-1;i++) G.market.push(marketCard());
@@ -122,6 +130,7 @@ function tval(c){
   let v = c.key==='treasury'
     ? (1+c.lv)*(G.inPlay.filter(x=>x.t==='treasure'&&x!==c).length+1)
     : DB[c.key].v*(1+c.lv)+(c.grow||0);
+  v=Math.max(0,v+modCount(c,'coin')-modCount(c,'rust'));
   if(hasJ('midas')) v+=1;
   if(hasJ('gilded')&&c.key==='copper') v+=2;
   const vin=G.jokers.find(j=>j.key==='vintage'); if(vin) v+=vin.age;
@@ -203,6 +212,7 @@ async function campService(){
     ['purge','🔥 Clear out — trash up to 2 cards'],
     ['temper','⚒ Blacksmith — upgrade a card one tier'],
     ['copy','📜 Copyist — copy a card'],
+    ...(splice()?[['mend','🩹 Mender — remove the scars from a card'],['heal',`❤ Rest — recover 2 hearts (${G.hearts}/${TUNE.hearts})`]]:[]),
     ['rest','Move on']]);
   const sorted=()=>G.deck.slice().sort((a,b)=>cname(a).localeCompare(cname(b)));
   if(o==='purge'){
@@ -215,6 +225,11 @@ async function campService(){
   } else if(o==='copy'){
     const s=await chooseCards(sorted().filter(c=>!DB[c.key].noLv),{min:0,max:1,title:'Copyist',sub:'Add a copy of one card to your deck.'});
     if(s[0]){ G.deck.push(clone(s[0])); log(`You copy ${cname(s[0])}.`,'good'); }
+  } else if(o==='mend'){
+    const s=await chooseCards(sorted().filter(c=>c.mods.some(m=>SPLICES[m].scar)),{min:0,max:1,title:'Mender',sub:'Remove every scar from one card.'});
+    if(s[0]){ s[0].mods=s[0].mods.filter(m=>!SPLICES[m].scar); log(`${cname(s[0])} is mended.`,'good'); }
+  } else if(o==='heal'){
+    G.hearts=Math.min(TUNE.hearts,G.hearts+2); log(`You rest. The town has ${plural(G.hearts,'heart')}.`,'good');
   }
 }
 
@@ -231,7 +246,7 @@ function spawnThreat(){
     return false;
   }
   const t=G.queue.shift();
-  t.fresh=true; t.age=0; t.cd=effEvery(t);
+  t.fresh=true; t.age=0; t.cd=splice()?fuseOf(t):effEvery(t);
   G.slots[idx]=t;
   log(`${t.art} ${t.n} takes slot ${idx+1}.`,'bad');
   return true;
@@ -244,6 +259,76 @@ function completeThreat(t){
   log(`${t.n} cleared.`,'good'); fx('clear',t);
   gainJunk('rubble',1);
   if(hasJ('bounty')){ draw(1); A(1); C(2); log('Bounty Hunter pays out: +1 Card, +1 Action, +2 Coin.','good'); }
+  if(splice()) G.pending.push({from:t.n, swift:t.age<=1, elite:t.elite});
+}
+
+/* ==========================================================
+   SPLICING
+   ========================================================== */
+function canSplice(c,k){
+  const S=SPLICES[k];
+  if(isJunk(c)) return false;
+  if(S.only&&c.t!==S.only) return false;
+  if(S.once&&hasMod(c,k)) return false;
+  return S.scar || slotsUsed(c)<TUNE.spliceSlots(c);
+}
+function rollSplices(n,elite){
+  const cand=Object.keys(SPLICES).filter(k=>!SPLICES[k].scar), out=[];
+  while(out.length<n&&cand.length){ const k=wpick(cand.map(k=>[k,RARITY[SPLICES[k].r]])); out.push(k); pull(cand,k); }
+  if(elite&&!out.some(k=>SPLICES[k].r==='rare')) out[out.length-1]=pick(cand.filter(k=>SPLICES[k].r==='rare'));
+  return out;
+}
+async function claimSplice(p){
+  const k=await chooseSplice(rollSplices(p.swift?4:3,p.elite),`${p.from} cleared — choose a splice`,
+    (p.swift?'Swift clear: an extra option. ':'')+(p.elite?'Elite: a rare one is guaranteed. ':'')+'Pick a keyword, then a card to graft it onto.');
+  if(!k) return;
+  const S=SPLICES[k];
+  const elig=allCards().filter(c=>canSplice(c,k)).sort((a,b)=>cname(a).localeCompare(cname(b)));
+  if(!elig.length){ log(`No card can take ${S.n}.`); return; }
+  const s=await chooseCards(elig,{min:0,max:1,title:`Splice ${S.art} ${S.n}`,sub:`${spliceText(k)}. Cards hold ${TUNE.spliceSlots({lv:0})} splices (more when upgraded).`,
+    badge:c=>`${slotsUsed(c)}/${TUNE.spliceSlots(c)}`});
+  if(s[0]){ s[0].mods.push(k); log(`${S.art} ${cname(s[0])} is now ${S.n}.`,'good'); }
+}
+function scarCard(t){
+  const k=t.scar||wpick([['rust',50],['heavy',30],['brittle',20]]);
+  const cand=allCards().filter(c=>canSplice(c,k));
+  if(!cand.length) return;
+  const c=pick(cand); c.mods.push(k);
+  log(`${t.n} scars your ${cname(c)}: ${SPLICES[k].art} ${SPLICES[k].n} (${spliceText(k)}).`,'bad');
+}
+// Resolve rewards earned mid-action, then end the wave if the board is clear. True if the wave ended.
+async function settle(){
+  while(G.pending.length&&!G.over){ await claimSplice(G.pending.shift()); render(); }
+  if(!G.over&&G.phase==='turn'&&waveCleared()){ await endWave(); return true; }
+  return false;
+}
+// A splice mode fuse runs out: the threat attacks once, scars a card, costs hearts, and leaves.
+async function detonate(t){
+  log(`💥 ${t.art} ${t.n} detonates!`,'bad');
+  t.detonating=true;
+  const safe=await resolveAttack(t);
+  const i=G.slots.indexOf(t); if(i>=0) G.slots[i]=null;
+  if(safe) return;
+  scarCard(t);
+  const dmg=t.elite?2:1; G.hearts-=dmg; fx('hurt');
+  log(`The town loses ${plural(dmg,'heart')} (${Math.max(0,G.hearts)} left).`,'bad');
+  if(G.hearts<=0) lose('The town has lost heart',`${t.n} was the last straw.`);
+}
+const urgent = () => G.slots.filter(Boolean).sort((a,b)=>a.cd-b.cd)[0];
+// Splice effects that fire each time a card resolves. Coin and Rusty on Treasures live in tval().
+function spliceFx(c){
+  for(const k of c.mods) switch(k){
+    case 'quick':  A(1); break;
+    case 'draw':   draw(1); break;
+    case 'trade':  B(1); break;
+    case 'coin':   if(c.t!=='treasure') C(1); break;
+    case 'rust':   if(c.t!=='treasure'){ if(G.phase==='attack') G.next.coin--; else G.coin=Math.max(0,G.coin-1); } break;
+    case 'grow':   if(c.t!=='treasure') C(c.grow||0); c.grow=(c.grow||0)+1; break;
+    case 'strike': { const t=urgent(); if(t){ log(`${cname(c)}'s barbs strike ${t.n}.`); strike(t,.15); } break; }
+  }
+}
+function afterPlay(c){
+  if(hasMod(c,'brittle')&&pull(G.inPlay,c)){ trashCard(c,true); log(`${cname(c)} crumbles to dust.`,'bad'); }
 }
 
 function isDone(t){
@@ -367,7 +452,7 @@ async function clickThreat(t){
         } break; }
     }
     if(isDone(t)) completeThreat(t);
-    if(waveCleared()) await endWave();
+    await settle();
   } finally { busy=false; render(); }
 }
 
@@ -391,6 +476,8 @@ function atkText(t){
 
 function applyAttack(t){
   const a=t.atk, n=a.n;
+  if(t.detonating&&a.k==='grow'){ fx('hurt'); return; }
+  if(t.detonating&&a.k==='price'){ gainJunk('jinx',t.curses); fx('hurt'); return; }
   switch(a.k){
     case 'grow':
       if(t.kind==='once_hybrid') t.needCoin=Math.ceil(t.needCoin*(1+a.pct/100));
@@ -418,31 +505,38 @@ function applyAttack(t){
 }
 
 function blocked(t){
+  if(t.detonating) log(`${t.n} fizzles out and leaves.`,'good');
   if(hasJ('thorns')&&G.slots.includes(t)){ log('Thorns bite back.','good'); strike(t,.2); }
 }
 
+// Returns true when the attack was blocked or the threat destroyed.
 async function resolveAttack(t){
   const a=t.atk, txt=atkText(t);
   log(`${t.art} ${t.n} — ${a.name}: ${txt}.`,'bad');
-  if(hasJ('wall')&&!G.wallUsed){ G.wallUsed=true; log('Iron Wall absorbs the blow.','good'); blocked(t); return; }
+  if(hasJ('wall')&&!G.wallUsed){ G.wallUsed=true; log('Iron Wall absorbs the blow.','good'); blocked(t); return true; }
   const best=f=>G.hand.filter(f).sort((x,y)=>y.lv-x.lv)[0];
   const moat =best(c=>c.key==='guarddog');
   const rip  =best(c=>c.key==='riposte');
   const snare=best(c=>c.key==='snare'&&(!t.elite||c.lv>=1));
+  const grd  =best(c=>hasMod(c,'guard'));
   const opts=[];
+  if(grd)   opts.push(['guard',`🛡 Discard ${cname(grd)} — block`]);
   if(moat)  opts.push(['moat', `🐕 Reveal ${cname(moat)} — block`]);
   if(rip)   opts.push(['rip',  `🤺 Discard ${cname(rip)} — block & strike ${ripPct(rip.lv)}%`]);
   if(snare) opts.push(['snare',`🪤 Trash ${cname(snare)} — destroy it`]);
   if(opts.length){
     opts.push(['take','Take the hit']);
-    const ch=await chooseOption(`${t.art} ${t.n} attacks!`,`${a.name}: ${txt}.`,opts);
-    if(ch==='moat'){ log(`${cname(moat)} barks the attack away.`,'good'); blocked(t); return; }
+    const ch=await chooseOption(`${t.art} ${t.n} ${t.detonating?'detonates':'attacks'}!`,
+      `${a.name}: ${txt}.${t.detonating?' It will also scar a card and cost the town a heart.':''}`,opts);
+    if(ch==='guard'){ pull(G.hand,grd); G.discard.push(grd); log(`${cname(grd)} takes the blow.`,'good'); blocked(t); return true; }
+    if(ch==='moat'){ log(`${cname(moat)} barks the attack away.`,'good'); blocked(t); return true; }
     if(ch==='rip'){ pull(G.hand,rip); G.discard.push(rip);
-      log(`${cname(rip)} parries and strikes back!`,'good'); blocked(t); strike(t,ripPct(rip.lv)/100); return; }
+      log(`${cname(rip)} parries and strikes back!`,'good'); blocked(t); strike(t,ripPct(rip.lv)/100); return true; }
     if(ch==='snare'){ pull(G.hand,snare); trashCard(snare,true);
-      log(`${cname(snare)} springs shut on ${t.n}!`,'good'); completeThreat(t); return; }
+      log(`${cname(snare)} springs shut on ${t.n}!`,'good'); completeThreat(t); return true; }
   }
   applyAttack(t);
+  return false;
 }
 
 /* ==========================================================
@@ -450,24 +544,27 @@ async function resolveAttack(t){
    ========================================================== */
 function canPlay(c){
   if(G.over||G.phase!=='turn'||c.frozen) return false;
-  if(c.t==='treasure') return true;
   if(c.key==='rubble') return G.actions>0||hasJ('tidy');
-  if(c.t==='action')   return G.actions>0;
+  if(c.t==='treasure'||c.t==='action') return G.actions>=actCost(c);
   return false;                      // Shack, Jinx
 }
 
 function playTreasure(c){
-  pull(G.hand,c); G.inPlay.push(c);
+  pull(G.hand,c); G.inPlay.push(c); G.actions-=actCost(c);
   let v=tval(c);
   if(hasJ('mirror')&&G.treasuresPlayed===0){ v*=2; log('Mirror doubles it.','hl'); }
+  if(hasMod(c,'twin')) v*=2;
   G.treasuresPlayed++;
   if(c.key==='nestegg') c.grow=(c.grow||0)+(hasJ('goose')?2:1);
   C(v); log(`${cname(c)} adds ${v} to your purse.`);
+  for(let i=hasMod(c,'twin')?2:1;i>0;i--) spliceFx(c);
+  afterPlay(c);
 }
 
 async function runAction(c){
   G.actionsPlayed++;
   if(hasJ('momentum')&&G.actionsPlayed>1){ C(G.actionsPlayed-1); log(`Momentum: +${G.actionsPlayed-1} Coin.`,'hl'); }
+  spliceFx(c);
   await DB[c.key].fx(c,c.lv);
 }
 
@@ -482,19 +579,22 @@ async function playCard(c){
       log('You haul the Rubble away. It is gone from your deck for good.','good');
       if(hasJ('tidy')) draw(1);
     } else {
-      G.actions--; pull(G.hand,c); G.inPlay.push(c);
+      G.actions-=actCost(c); pull(G.hand,c); G.inPlay.push(c);
       log(`You play ${cname(c)}.`,'hl');
-      const times=(hasJ('echo')&&!G.echoUsed)?2:1; G.echoUsed=true;
-      for(let i=0;i<times;i++){ if(i) log('Echo — it resolves again.','hl'); await runAction(c); render(); }
+      const times=((hasJ('echo')&&!G.echoUsed)?2:1)*(hasMod(c,'twin')?2:1); G.echoUsed=true;
+      for(let i=0;i<times;i++){ if(i) log('It resolves again.','hl'); await runAction(c); render(); }
+      afterPlay(c);
     }
+    await settle();
   } finally { busy=false; render(); }
 }
 
-function playAllTreasures(){
+async function playAllTreasures(){
   if(busy||G.over||G.phase!=='turn') return;
-  const tr=G.hand.filter(c=>c.t==='treasure'&&!c.frozen).sort((a,b)=>(a.key==='treasury')-(b.key==='treasury'));
+  const tr=G.hand.filter(c=>c.t==='treasure'&&!c.frozen&&!actCost(c)).sort((a,b)=>(a.key==='treasury')-(b.key==='treasury'));
   if(!tr.length) return;
-  tr.forEach(playTreasure); render();
+  busy=true;
+  try{ tr.forEach(playTreasure); await settle(); } finally { busy=false; render(); }
 }
 
 function buyCard(i){
@@ -538,7 +638,9 @@ async function endTurn(){
     const carry=hasJ('piggy')?Math.floor(G.coin/2):0;
     if(carry) log(`Piggy Bank keeps ${carry} coin for next turn.`);
     for(const c of G.inPlay.splice(0)) G.discard.push(c);
-    for(const c of G.hand.splice(0)){ c.frozen=false; G.discard.push(c); }
+    const kept=G.hand.filter(c=>hasMod(c,'retain'));
+    for(const c of G.hand.splice(0)){ c.frozen=false; if(!kept.includes(c)) G.discard.push(c); }
+    G.hand.push(...kept);
     G.coin=0; G.actions=0; G.buys=0;
     G.next={actions:0,buys:0,coin:carry};
 
@@ -550,7 +652,11 @@ async function endTurn(){
     for(const t of G.slots.slice()){
       if(!t||!G.slots.includes(t)) continue;
       t.age++; t.cd--;
-      if(t.cd<=0){
+      if(t.cd<=0&&splice()){
+        render(); await detonate(t); render();
+        if(G.over) return;
+        await sleep(160);
+      } else if(t.cd<=0){
         t.cd=effEvery(t); render();
         await resolveAttack(t); render();
         if(G.over) return;
@@ -558,7 +664,7 @@ async function endTurn(){
       }
     }
     G.phase='turn';
-    if(waveCleared()){ await endWave(); return; }
+    if(await settle()) return;
 
     cycleMarket(); render(); await sleep(200);
 
