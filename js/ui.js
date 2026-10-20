@@ -461,20 +461,24 @@ function render(){
   $('btnDeck').textContent=`Deck (${deckSize()})`;
   $('endturn').disabled=!live;
 
-  // hand — overlap cards just enough to fit the width
-  const h=$('hand'); h.innerHTML='';
+  // hand — overlap cards just enough to fit the width; past a third covered, it becomes a slider
+  const h=$('hand'), hw=$('handwrap'), keep=hw.scrollLeft; h.innerHTML='';
   G.hand.forEach(c=>{
     const el=cardEl(c), ok=canPlay(c)&&live;
     el.classList.toggle('playable',ok); el.classList.toggle('dead',!ok);
     bindCard(el,c,ok?()=>playCard(c):null,'Play');
     h.appendChild(el);
   });
+  let slide=false;
   if(h.children.length){
     const cw=h.children[0].offsetWidth, n=h.children.length;
-    const avail=$('handwrap').clientWidth-12;
-    const m=Math.min(-cw*.12,(avail/n-cw)/2);
+    const avail=hw.clientWidth-12;
+    slide=(cw-avail/n)/cw>.35;
+    const m=slide?-cw*.04:Math.min(-cw*.12,(avail/n-cw)/2);
     for(const el of h.children) el.style.margin=`0 ${m}px`;
   }
+  hw.classList.toggle('slide',slide);
+  hw.scrollLeft=slide?keep:0;
 }
 
 /* ==========================================================

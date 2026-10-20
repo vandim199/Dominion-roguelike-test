@@ -203,6 +203,14 @@ body.L-narrow #endturn{flex:1 1 auto}
 #handwrap{--w:var(--hd-w);padding:.8rem .5rem calc(.9rem + var(--sab));display:flex;justify-content:center;align-items:flex-end;
   min-height:calc(var(--w)*1.418 + 1.7rem + var(--sab));background:rgba(8,12,40,.5)}
 #hand{display:flex;justify-content:center;flex-wrap:nowrap}
+/* too many cards to fit: swipe the hand sideways (edges fade to show there's more) */
+#handwrap.slide{justify-content:flex-start;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;
+  overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 1.2rem,#000 calc(100% - 1.2rem),transparent);
+          mask-image:linear-gradient(90deg,transparent,#000 1.2rem,#000 calc(100% - 1.2rem),transparent)}
+#handwrap.slide::-webkit-scrollbar{display:none}
+#handwrap.slide #hand{margin:0 auto;padding:0 1rem}
+#handwrap.slide #hand .card{scroll-snap-align:center;flex-shrink:0}
 #hand .card{transition:transform .14s cubic-bezier(.3,1.5,.6,1);animation:deal .3s ease-out backwards}
 #hand .card:nth-child(2){animation-delay:.03s} #hand .card:nth-child(3){animation-delay:.06s}
 #hand .card:nth-child(4){animation-delay:.09s} #hand .card:nth-child(5){animation-delay:.12s}
