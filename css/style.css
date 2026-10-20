@@ -233,7 +233,12 @@ body.L-narrow #endturn{flex:1 1 auto}
 .card .foot{font-family:var(--head);font-weight:600;font-size:.85em;display:flex;justify-content:space-between;color:#8A86A6;padding:0 .2em}
 .card .tx{flex-direction:column;gap:.15em}
 .card .art{position:relative}
-.card .mods{position:absolute;right:-.15em;bottom:-.25em;display:flex;gap:.12em}
+.card .mods{position:absolute;right:-.15em;bottom:-.25em;display:flex;flex-wrap:wrap-reverse;justify-content:flex-end;gap:.12em;max-width:calc(var(--w) - 1.2em)}
+.card .mods i{position:relative}
+.card .mods i b{position:absolute;right:-.35em;bottom:-.3em;min-width:1.05em;height:1.05em;padding:0 .15em;border-radius:.6em;font-size:.62em;line-height:1.05em;text-align:center;
+  font-family:var(--head);font-weight:700;background:var(--violet);color:#fff}
+.card .mods i.open b{position:static;background:none;color:rgba(43,37,70,.55);font-size:.7em}
+.card.big .tx{overflow-y:auto}
 .card .mods i{font-style:normal;display:flex;align-items:center;justify-content:center;width:1.45em;height:1.45em;font-size:.95em;border-radius:50%;
   background:#fff;box-shadow:0 0 0 .12em var(--violet),0 .1em .2em rgba(0,0,0,.3)}
 .card .mods i.scar{box-shadow:0 0 0 .12em var(--red),0 .1em .2em rgba(0,0,0,.3);background:#FFE3E6}
@@ -259,6 +264,8 @@ body.L-narrow #endturn{flex:1 1 auto}
 .card.frozen{filter:none}
 .card.frozen::after{content:"❄";position:absolute;inset:0;border-radius:.6em;display:flex;align-items:center;justify-content:center;font-size:3em;color:#fff;
   background:linear-gradient(160deg,rgba(170,220,255,.75),rgba(110,170,255,.6));text-shadow:0 .05em .2em rgba(0,60,140,.6)}
+.card.iced::after{content:"🧊"}
+.card.big.frozen::after{align-items:flex-start;justify-content:flex-end;padding:.25em .3em;font-size:2em;background:rgba(150,205,255,.28);pointer-events:none}
 .card.big{--w:min(14rem,62vw,38vh);box-shadow:0 .4em 0 rgba(0,0,0,.28),0 1rem 2.5rem rgba(0,0,0,.6)}
 
 /* mini cards: small market & hand cards drop their rules text — tap to read */

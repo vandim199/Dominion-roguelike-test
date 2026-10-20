@@ -12,8 +12,9 @@ const cname = c => DB[c.key].n+plus(c.lv);
 const ctext = c => { const d=DB[c.key];
   if(typeof d.tx==='function') return d.tx(c.lv,c);
   if(d.tx) return d.tx;
-  return `+${d.v*(1+c.lv)} Coin`; };
-const baseCost = c => DB[c.key].c + DB[c.key].step*c.lv;
+  return `+${d.v*tierMult(c.lv)} Coin`; };
+// Prices climb on the same curve as power: base + base×(tier bonus) + a small step per tier.
+const baseCost = c => { const d=DB[c.key]; return d.c + (d.c||2)*(tierMult(c.lv)-1) + d.step*c.lv; };
 const costOf   = c => Math.max(0, baseCost(c)-(G?G.discount:0));
 const allCards = () => [...G.deck,...G.hand,...G.discard,...G.inPlay];
 const deckSize = () => allCards().length;
@@ -25,6 +26,11 @@ const modCount = (c,k) => c.mods.filter(m=>m===k).length;
 const slotsUsed = c => c.mods.filter(m=>!SPLICES[m].scar).length;
 // Actions a card costs to play: Nimble makes an Action free, Heavy adds one (even to a Treasure).
 const actCost = c => (c.t==='action'&&!hasMod(c,'free')?1:0)+(hasMod(c,'heavy')?1:0);
+// Frozen for the turn (Frostbite), or sealed in an Ice Coffin for as long as its threat stands.
+const iced = c => !!c.ice && G.slots.some(t=>t&&t.id===c.ice);
+const isFrozen = c => !!c.frozen || iced(c);
+// How much a card is worth to you: what a threat would most like to take away.
+const cardWorth = c => isJunk(c) ? -1 : (c.t==='treasure'?tval(c):baseCost(c)) + 4*slotsUsed(c);
 
 function loadBest(){ try{ return +localStorage.getItem('dcrisis.best')||0; }catch(e){ return 0; } }
 function saveBest(n){ try{ if(n>loadBest()) localStorage.setItem('dcrisis.best',String(n)); }catch(e){} }
@@ -55,19 +61,23 @@ function newRun(mode){
 
 function newThreat(key,w,elite){
   const d=THREATS[key], cs=TUNE.coinScale(w), ks=TUNE.countScale(w), em=elite?1.8:1, steps=Math.floor((w-1)/3);
+  const as=TUNE.actScale(w), bs=TUNE.buyScale(w);
   const t={key,...d,atk:{...d.atk},prog:0,id:++tid,elite:!!elite,age:0};
   switch(d.kind){
     case 'prog_coin': case 'once_coin': t.need=Math.round(d.need*cs*em); break;
-    case 'prog_action': case 'prog_buy': case 'prog_discard': t.need=Math.round(d.need*ks*em); break;
+    case 'prog_action': t.need=Math.round(d.need*as*em); break;
+    case 'prog_buy':    t.need=Math.round(d.need*bs*em); break;
+    case 'prog_discard': case 'leech': t.need=Math.round(d.need*ks*em); break;
     case 'sacrifice':   t.need=Math.round((d.need+steps)*em); break;
     case 'panic':       t.curses=Math.round((d.curses+steps)*em); break;
-    case 'once_hybrid': t.needCoin=Math.round(d.needCoin*cs*em); t.needAct=Math.round((d.needAct+steps)*em); break;
+    case 'once_hybrid': t.needCoin=Math.round(d.needCoin*cs*em); t.needAct=Math.round(d.needAct*as*em); break;
     case 'upgrade':     t.needT=t.needA=Math.round((1+Math.floor((w-1)/4))*em); t.gotT=t.gotA=0; break;
     case 'scavenge':    t.need=Math.round((d.need+2*steps)*em); break;
     case 'banish':      t.need=Math.round((d.need+steps)*em); break;
   }
   if(t.atk.n) t.atk.n+=Math.floor((w-1)/5);
-  if(elite){ t.n='Elite '+d.n; t.atk.every=Math.max(1,d.atk.every-1); t.fuse=(d.fuse||4)+1; }
+  if(elite){ t.n='Elite '+d.n; t.atk.every=Math.max(1,d.atk.every-1); t.fuse=(d.fuse||4)+1;
+    if(w>=TUNE.coffinFrom) t.coffin=(t.coffin||0)+1; }
   t.cd=splice()?fuseOf(t):effEvery(t);
   return t;
 }
@@ -78,7 +88,7 @@ function effEvery(t){
 }
 
 /* ---------- market ---------- */
-function rollTier(){ const m=TUNE.maxTier(G.wave); return Math.max(0,wpick([[m,45],[m-1,35],[m-2,15],[m+1,5]])); }
+function rollTier(){ const m=TUNE.maxTier(G.wave); return Math.max(0,wpick([[m,44],[m-1,30],[m-2,13],[m+1,9],[m+2,4]])); }
 function randomTreasure(){
   const w=G.wave;
   return mk(wpick([['copper',Math.max(6,40-w*6)],['silver',40],['gold',12+w*4]]),rollTier());
@@ -102,11 +112,22 @@ function popDeck(){
     G.deck=shuffle(G.discard.slice()); G.discard=[]; log('You shuffle your discard pile back into your deck.'); }
   return G.deck.shift()||null;
 }
-function draw(n){ let g=0; for(let i=0;i<n;i++){const c=popDeck(); if(!c)break; G.hand.push(c); g++;} return g; }
+function draw(n){
+  let g=0, eaten=0, worm=null;
+  for(let i=0;i<n;i++){
+    worm=G.acting>0&&G.slots.find(t=>t&&t.kind==='leech');
+    if(worm){ worm.prog++; eaten++; fx('hit',worm); if(isDone(worm)){ log(`${worm.n} eats ${plural(eaten,'draw')} and is full.`,'hl'); eaten=0; completeThreat(worm); } continue; }
+    const c=popDeck(); if(!c)break; G.hand.push(c); g++;
+  }
+  if(eaten&&worm) log(`${worm.n} eats ${plural(eaten,'draw')} (${worm.prog}/${worm.need}).`,'bad');
+  return g;
+}
+// Card effects (Actions, splices) draw through here, so the Bookworm can tell them from your hand.
+async function acting(fn){ G.acting=(G.acting||0)+1; try{ return await fn(); } finally{ G.acting--; } }
 function gatherDeck(){
   G.deck=shuffle([...G.deck,...G.hand,...G.discard,...G.inPlay]);
   G.hand=[]; G.discard=[]; G.inPlay=[];
-  G.deck.forEach(c=>{ c.frozen=false; });
+  G.deck.forEach(c=>{ c.frozen=false; c.ice=0; });
 }
 function trashCard(c,quiet){
   G.trash.push(c);
@@ -128,9 +149,9 @@ function gainJunk(key,n,where='discard'){
 
 function tval(c){
   let v = c.key==='treasury'
-    ? (1+c.lv)*(G.inPlay.filter(x=>x.t==='treasure'&&x!==c).length+1)
-    : DB[c.key].v*(1+c.lv)+(c.grow||0);
-  v=Math.max(0,v+modCount(c,'coin')-modCount(c,'rust'));
+    ? tierMult(c.lv)*(G.inPlay.filter(x=>x.t==='treasure'&&x!==c).length+1)
+    : DB[c.key].v*tierMult(c.lv)+(c.grow||0);
+  v=Math.max(0,v+(modCount(c,'coin')-modCount(c,'rust'))*tierMult(c.lv));
   if(hasJ('midas')) v+=1;
   if(hasJ('gilded')&&c.key==='copper') v+=2;
   const vin=G.jokers.find(j=>j.key==='vintage'); if(vin) v+=vin.age;
@@ -249,12 +270,28 @@ function spawnThreat(){
   t.fresh=true; t.age=0; t.cd=splice()?fuseOf(t):effEvery(t);
   G.slots[idx]=t;
   log(`${t.art} ${t.n} takes slot ${idx+1}.`,'bad');
+  if(t.coffin) entomb(t,t.coffin);
   return true;
+}
+
+// Ice Coffin: seal your most valuable cards, wherever they are, until this threat leaves.
+function entomb(t,n){
+  for(let i=0;i<n;i++){
+    const c=allCards().filter(c=>!isJunk(c)&&!iced(c)).sort((a,b)=>cardWorth(b)-cardWorth(a))[0];
+    if(!c) return;
+    c.ice=t.id;
+    log(`🧊 ${t.n} seals your ${cname(c)} in an Ice Coffin until it leaves.`,'bad');
+  }
+}
+function thaw(t){
+  const sealed=allCards().filter(c=>c.ice===t.id);
+  sealed.forEach(c=>{ c.ice=0; });
+  if(sealed.length) log(`The ice cracks: ${sealed.map(cname).join(', ')} ${sealed.length===1?'is':'are'} free.`,'good');
 }
 
 function completeThreat(t){
   const i=G.slots.indexOf(t); if(i<0) return;
-  G.slots[i]=null;
+  G.slots[i]=null; thaw(t);
   G.runCleared++;
   log(`${t.n} cleared.`,'good'); fx('clear',t);
   gainJunk('rubble',1);
@@ -293,7 +330,7 @@ function scarCard(t){
   const k=t.scar||wpick([['rust',50],['heavy',30],['brittle',20]]);
   const cand=allCards().filter(c=>canSplice(c,k));
   if(!cand.length) return;
-  const c=pick(cand); c.mods.push(k);
+  const c=t.scarBest ? cand.sort((a,b)=>cardWorth(b)-cardWorth(a))[0] : pick(cand); c.mods.push(k);
   log(`${t.n} scars your ${cname(c)}: ${SPLICES[k].art} ${SPLICES[k].n} (${spliceText(k)}).`,'bad');
 }
 // Resolve rewards earned mid-action, then end the wave if the board is clear. True if the wave ended.
@@ -307,7 +344,7 @@ async function detonate(t){
   log(`💥 ${t.art} ${t.n} detonates!`,'bad');
   t.detonating=true;
   const safe=await resolveAttack(t);
-  const i=G.slots.indexOf(t); if(i>=0) G.slots[i]=null;
+  const i=G.slots.indexOf(t); if(i>=0){ G.slots[i]=null; thaw(t); }
   if(safe) return;
   scarCard(t);
   const dmg=t.elite?2:1; G.hearts-=dmg; fx('hurt');
@@ -381,6 +418,7 @@ function threatReady(t){
     case 'sacrifice':     return G.hand.some(c=>c.key!=='rubble');
     case 'scavenge':      return G.hand.length>0;
     case 'banish':        return G.actionsPlayed>=t.need-t.prog;
+    case 'leech':         return false;
     case 'panic':         return true;
     case 'once_hybrid':   return G.coin>=coinFor(t.needCoin) && G.actions>=unitsFor(t.needAct);
     case 'upgrade':       return G.hand.some(c=>(t.gotT<t.needT&&c.t==='treasure')||(t.gotA<t.needA&&c.t==='action'));
@@ -469,7 +507,8 @@ function atkText(t){
     case 'price':   return `the bargain demands ${plural(n,'more Jinx','more Jinxes')}`;
     case 'warp':    return `${n} Rubble shuffled into your draw pile`;
     case 'pickpocket': return `−${n} Coin next turn`;
-    case 'freeze':  return `freeze ${plural(n,'card')} in your hand for a turn`;
+    case 'freeze':  return `freeze your ${n===1?'best card':n+' best cards'} in hand for a turn`;
+    case 'entomb':  return `seal ${n===1?'your finest card':`your ${n} finest cards`} in ice while it stands`;
   }
   return '';
 }
@@ -478,6 +517,7 @@ function applyAttack(t){
   const a=t.atk, n=a.n;
   if(t.detonating&&a.k==='grow'){ fx('hurt'); return; }
   if(t.detonating&&a.k==='price'){ gainJunk('jinx',t.curses); fx('hurt'); return; }
+  if(t.detonating&&a.k==='entomb'){ fx('hurt'); return; }      // it's leaving: the coffin would thaw at once
   switch(a.k){
     case 'grow':
       if(t.kind==='once_hybrid') t.needCoin=Math.ceil(t.needCoin*(1+a.pct/100));
@@ -498,8 +538,9 @@ function applyAttack(t){
     case 'pickpocket': G.next.coin-=n; log(`Light fingers: ${n} Coin fewer next turn.`,'bad'); break;
     case 'freeze':
       if(hasJ('mittens')){ log('Warm Mittens keep your cards thawed.','good'); break; }
-      for(let i=0;i<n;i++){ const pool=G.hand.filter(c=>!c.frozen); if(!pool.length)break;
-        const c=pick(pool); c.frozen=true; log(`${cname(c)} freezes solid.`,'bad'); } break;
+      for(let i=0;i<n;i++){ const c=G.hand.filter(c=>!isFrozen(c)&&!isJunk(c)).sort((a,b)=>cardWorth(b)-cardWorth(a))[0]; if(!c)break;
+        c.frozen=true; log(`${cname(c)} freezes solid.`,'bad'); } break;
+    case 'entomb': entomb(t,n); break;
   }
   fx('hurt');
 }
@@ -543,7 +584,7 @@ async function resolveAttack(t){
    CARD PLAY / BUY
    ========================================================== */
 function canPlay(c){
-  if(G.over||G.phase!=='turn'||c.frozen) return false;
+  if(G.over||G.phase!=='turn'||isFrozen(c)) return false;
   if(c.key==='rubble') return G.actions>0||hasJ('tidy');
   if(c.t==='treasure'||c.t==='action') return G.actions>=actCost(c);
   return false;                      // Shack, Jinx
@@ -557,15 +598,15 @@ function playTreasure(c){
   G.treasuresPlayed++;
   if(c.key==='nestegg') c.grow=(c.grow||0)+(hasJ('goose')?2:1);
   C(v); log(`${cname(c)} adds ${v} to your purse.`);
-  for(let i=hasMod(c,'twin')?2:1;i>0;i--) spliceFx(c);
+  G.acting=(G.acting||0)+1;
+  try{ for(let i=hasMod(c,'twin')?2:1;i>0;i--) spliceFx(c); } finally{ G.acting--; }
   afterPlay(c);
 }
 
 async function runAction(c){
   G.actionsPlayed++;
   if(hasJ('momentum')&&G.actionsPlayed>1){ C(G.actionsPlayed-1); log(`Momentum: +${G.actionsPlayed-1} Coin.`,'hl'); }
-  spliceFx(c);
-  await DB[c.key].fx(c,c.lv);
+  await acting(async()=>{ spliceFx(c); await DB[c.key].fx(c,c.lv); });
 }
 
 async function playCard(c){
@@ -591,7 +632,7 @@ async function playCard(c){
 
 async function playAllTreasures(){
   if(busy||G.over||G.phase!=='turn') return;
-  const tr=G.hand.filter(c=>c.t==='treasure'&&!c.frozen&&!actCost(c)).sort((a,b)=>(a.key==='treasury')-(b.key==='treasury'));
+  const tr=G.hand.filter(c=>c.t==='treasure'&&!isFrozen(c)&&!actCost(c)).sort((a,b)=>(a.key==='treasury')-(b.key==='treasury'));
   if(!tr.length) return;
   busy=true;
   try{ tr.forEach(playTreasure); await settle(); } finally { busy=false; render(); }

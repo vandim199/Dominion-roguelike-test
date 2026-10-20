@@ -228,6 +228,7 @@ function inspectCard(c,act,label){
   const el=cardEl(c); el.classList.add('big');
   const info=[];
   if(c.t==='treasure'&&G) info.push(`Produces ${tval(c)} Coin right now.`);
+  if(G&&iced(c)){ const t=G.slots.find(t=>t&&t.id===c.ice); info.push(`🧊 Sealed in ice until ${t.n} leaves.`); }
   if(label&&label.startsWith('Buy')) info.push('Bought cards go to the bottom of your draw pile.');
   openInspect(el,info.join(' '),label?[[label,act,'go',!act]]:[]);
 }
@@ -259,15 +260,19 @@ function bindCard(el,c,act,label){
    ========================================================== */
 function cardEl(c,{badge}={}){
   const d=DB[c.key], el=document.createElement('div');
-  el.className=`card t-${d.t}${d.r?' r':''}${c.lv?` lv${Math.min(3,c.lv)}`:''}${c.frozen?' frozen':''}`;
+  el.className=`card t-${d.t}${d.r?' r':''}${c.lv?` lv${Math.min(3,c.lv)}`:''}${G&&iced(c)?' frozen iced':c.frozen?' frozen':''}`;
   const kind=d.r?'Reaction':({treasure:'Treasure',action:'Action',victory:'Junk',junk:'Junk',curse:'Junk'}[d.t]||d.t);
   const stars=c.lv?(c.lv<=3?'★'.repeat(c.lv):`★${c.lv}`):'';
-  // splices: icon chips (scars in red), empty slots in splice mode, and full text lines for the big view
+  // splices: one chip per keyword with a count (scars in red), empty slots in splice mode,
+  // and one text line per keyword for the big view — so a card with 30 splices still fits
   let chips='', lines='';
   if(c.mods.length||(splice()&&!isJunk(c))){
-    chips=c.mods.map(k=>`<i class="${SPLICES[k].scar?'scar':''}">${SPLICES[k].art}</i>`).join('');
-    if(splice()&&!isJunk(c)) chips+='<i class="open"></i>'.repeat(Math.max(0,TUNE.spliceSlots(c)-slotsUsed(c)));
-    lines=c.mods.map(k=>`<span class="mline${SPLICES[k].scar?' scar':''}">${SPLICES[k].art} ${spliceText(k,c)}</span>`).join('');
+    const groups=[];
+    for(const k of c.mods){ const g=groups.find(x=>x.k===k); if(g) g.n++; else groups.push({k,n:1}); }
+    chips=groups.map(({k,n})=>`<i class="${SPLICES[k].scar?'scar':''}">${SPLICES[k].art}${n>1?`<b>${n}</b>`:''}</i>`).join('');
+    const open=splice()&&!isJunk(c)?Math.max(0,TUNE.spliceSlots(c)-slotsUsed(c)):0;
+    chips+=open>3?`<i class="open"><b>${open}</b></i>`:'<i class="open"></i>'.repeat(open);
+    lines=groups.map(({k,n})=>`<span class="mline${SPLICES[k].scar?' scar':''}">${SPLICES[k].art} ${spliceText(k,c)}${n>1?` <b>×${n}</b>`:''}</span>`).join('');
     if(c.mods.length) el.classList.add('spliced');
   }
   el.innerHTML=`<div class="banner">${cname(c)}</div>
@@ -311,6 +316,7 @@ function threatProgress(t){
     case 'scavenge':     return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} fed`, note:'junk counts ×2'};
     case 'banish':       { const n=t.need-t.prog;
                            return {pct:Math.min(1,G.actionsPlayed/Math.max(1,n)), left:`${n} Actions in one turn`, note:`played ${G.actionsPlayed}`}; }
+    case 'leech':        return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} draws eaten`, note:'play cards that draw'};
     case 'upgrade':      return {pct:(t.gotT+t.gotA)/(t.needT+t.needA),
                                  left:`Treasure ${t.gotT}/${t.needT} · Action ${t.gotA}/${t.needA}`, note:'trash from hand'};
   }
@@ -330,6 +336,7 @@ function threatButton(t){
     case 'upgrade':      return 'Trash into the rift';
     case 'scavenge':     return 'Feed the nest';
     case 'banish':       return 'Banish it';
+    case 'leech':        return 'Eats your draws';
   }
   return 'Act';
 }
@@ -337,8 +344,8 @@ const attackWhen = t => t.cd<=1 ? 'at end of this turn' : `in ${t.cd} turns`;
 // The attack line under a threat; in splice mode it is the fuse.
 function atkLine(t){
   if(!splice()) return `⚔ <b>${t.atk.name}</b> ${attackWhen(t)}: ${atkText(t)}.`;
-  const what=t.atk.k==='grow'?'':t.atk.k==='price'?`you take ${junkName('jinx',t.curses)}, `:`${atkText(t)}, `;
-  return `💥 <b>Detonates</b> ${attackWhen(t)}: ${what}scars a card, −${t.elite?2:1} ❤.`;
+  const what=t.atk.k==='grow'||t.atk.k==='entomb'?'':t.atk.k==='price'?`you take ${junkName('jinx',t.curses)}, `:`${atkText(t)}, `;
+  return `💥 <b>Detonates</b> ${attackWhen(t)}: ${what}scars ${t.scarBest?'your finest card':'a card'}, −${t.elite?2:1} ❤.`;
 }
 function rewardLine(t){
   if(!splice()) return '';
