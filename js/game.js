@@ -1,6 +1,6 @@
 "use strict";
 /* ==========================================================
-   Dominion: Crisis — rules: state, waves, threats, turn flow.
+   Coinkeep — rules: state, waves, threats, turn flow.
    Rendering and modals live in ui.js.
    ========================================================== */
 
@@ -10,7 +10,7 @@ function pull(a,c){const i=a.indexOf(c);if(i>=0)a.splice(i,1);return i>=0;}
 const hasJ  = k => !!G && G.jokers.some(j=>j.key===k);
 const cname = c => DB[c.key].n+plus(c.lv);
 const ctext = c => { const d=DB[c.key];
-  if(typeof d.tx==='function') return d.tx(c.lv);
+  if(typeof d.tx==='function') return d.tx(c.lv,c);
   if(d.tx) return d.tx;
   return `+${d.v*(1+c.lv)} Coin`; };
 const baseCost = c => DB[c.key].c + DB[c.key].step*c.lv;
@@ -38,11 +38,11 @@ function newRun(){
       coin:0,actions:0,buys:0,actionsPlayed:0,treasuresPlayed:0,discount:0,echoUsed:false,wallUsed:false,
       market:[], slots:new Array(TUNE.slots).fill(null), queue:[],
       wave:0, turn:0, turnInWave:0, waveTotal:0, runCleared:0,
-      jokers:[], next:{actions:0,buys:0,coin:0}, phase:'turn', over:false };
+      jokers:[], next:{actions:0,buys:0,coin:0}, later:{coin:0}, phase:'turn', over:false };
   for(let i=0;i<7;i++)G.deck.push(mk('copper'));
-  for(let i=0;i<3;i++)G.deck.push(mk('estate'));
+  for(let i=0;i<3;i++)G.deck.push(mk('shack'));
   resetUI();
-  log('Your dominion braces for an endless crisis. Your deck is yours for the whole run — build it with care.','hl');
+  log('The bells of Coinkeep ring out: trouble is coming, wave after wave. Your deck is yours for the whole run — build it with care.','hl');
   startWave(1);
 }
 
@@ -56,6 +56,8 @@ function newThreat(key,w,elite){
     case 'panic':       t.curses=Math.round((d.curses+steps)*em); break;
     case 'once_hybrid': t.needCoin=Math.round(d.needCoin*cs*em); t.needAct=Math.round((d.needAct+steps)*em); break;
     case 'upgrade':     t.needT=t.needA=Math.round((1+Math.floor((w-1)/4))*em); t.gotT=t.gotA=0; break;
+    case 'scavenge':    t.need=Math.round((d.need+2*steps)*em); break;
+    case 'banish':      t.need=Math.round((d.need+steps)*em); break;
   }
   if(t.atk.n) t.atk.n+=Math.floor((w-1)/5);
   if(elite){ t.n='Elite '+d.n; t.atk.every=Math.max(1,d.atk.every-1); }
@@ -64,7 +66,7 @@ function newThreat(key,w,elite){
 }
 function effEvery(t){
   if(t.age>=TUNE.enrageAfter) return 1;
-  return Math.max(1, t.atk.every-(hasJ('glass')?1:0));
+  return Math.max(1, t.atk.every-(hasJ('glass')?1:0)+(hasJ('hourglass')?1:0));
 }
 
 /* ---------- market ---------- */
@@ -96,28 +98,30 @@ function draw(n){ let g=0; for(let i=0;i<n;i++){const c=popDeck(); if(!c)break; 
 function gatherDeck(){
   G.deck=shuffle([...G.deck,...G.hand,...G.discard,...G.inPlay]);
   G.hand=[]; G.discard=[]; G.inPlay=[];
+  G.deck.forEach(c=>{ c.frozen=false; });
 }
 function trashCard(c,quiet){
   G.trash.push(c);
   const scrap=hasJ('scrapper'); if(scrap) C(2);
   if(!quiet||scrap) log(`${cname(c)} is trashed${scrap?' (+2 Scrapper)':''}.`);
 }
-// Curses and Bulk arriving from threats — a Watchtower in hand turns them away.
+// Jinxes and Rubble arriving from threats — a Night Watch in hand turns them away.
+const junkName = (key,n) => key==='jinx' ? plural(n,'Jinx','Jinxes') : plural(n,DB[key].n);
 function gainJunk(key,n,where='discard'){
   if(n<=0) return;
-  if(G.hand.some(c=>c.key==='watchtower')){
+  if(G.hand.some(c=>c.key==='nightwatch')){
     for(let i=0;i<n;i++) trashCard(mk(key),true);
-    log(`Watchtower turns away ${plural(n,DB[key].n)}.`,'good'); return;
+    log(`Night Watch turns away ${junkName(key,n)}.`,'good'); return;
   }
   for(let i=0;i<n;i++){ const c=mk(key);
     if(where==='deck') G.deck.splice(rnd(G.deck.length+1),0,c); else G.discard.push(c); }
-  log(`${plural(n,DB[key].n)} land${n===1?'s':''} in your ${where==='deck'?'draw pile':'discard pile'}.`,'bad');
+  log(`${junkName(key,n)} land${n===1?'s':''} in your ${where==='deck'?'draw pile':'discard pile'}.`,'bad');
 }
 
 function tval(c){
-  let v = c.key==='bank'
+  let v = c.key==='treasury'
     ? (1+c.lv)*(G.inPlay.filter(x=>x.t==='treasure'&&x!==c).length+1)
-    : DB[c.key].v*(1+c.lv);
+    : DB[c.key].v*(1+c.lv)+(c.grow||0);
   if(hasJ('midas')) v+=1;
   if(hasJ('gilded')&&c.key==='copper') v+=2;
   const vin=G.jokers.find(j=>j.key==='vintage'); if(vin) v+=vin.age;
@@ -139,7 +143,7 @@ function startWave(w){
   G.waveTotal=n;
   const prevTier=w>1?TUNE.maxTier(w-1):0;
   newMarket();
-  log(`Wave ${w}`,'wave');
+  log(`Wave ${w}`,'wave'); fx('wave',w);
   log(`${plural(n,'threat')} approach${elite?', led by an Elite':''}.`,'hl');
   if(TUNE.maxTier(w)>prevTier) log(`The market now stocks ${tierName(TUNE.maxTier(w))} tier cards.`,'good');
   spawnThreat();
@@ -173,18 +177,18 @@ function rollJokers(n){
 async function jokerDraft(n){
   const offers=rollJokers(n); if(!offers.length) return;
   const full=G.jokers.length>=TUNE.jokerSlots;
-  const k=await chooseJoker(offers,`Wave ${G.wave} cleared — choose a joker`,
-    full?`Your ${TUNE.jokerSlots} joker slots are full. Taking one means selling another.`
-        :`Joker slots ${G.jokers.length}/${TUNE.jokerSlots}.${G.wave%TUNE.eliteEvery===0?' The Elite fell: an extra joker is on offer.':''}`);
+  const k=await chooseJoker(offers,`Wave ${G.wave} cleared — choose a charm`,
+    full?`Your ${TUNE.jokerSlots} charm slots are full. Taking one means giving another away.`
+        :`Charm slots ${G.jokers.length}/${TUNE.jokerSlots}.${G.wave%TUNE.eliteEvery===0?' The Elite fell: an extra charm is on offer.':''}`);
   if(!k) return;
   if(full){
-    const out=await chooseJoker(G.jokers.map(j=>j.key),`Sell a joker for ${JOKERS[k].n}?`,'Pick the joker to let go.',{skip:'Keep my jokers'});
+    const out=await chooseJoker(G.jokers.map(j=>j.key),`Give up a charm for ${JOKERS[k].n}?`,'Pick the charm to let go.',{skip:'Keep my charms'});
     if(!out){ log(`You pass on ${JOKERS[k].n}.`); return; }
     G.jokers=G.jokers.filter(j=>j.key!==out);
-    log(`${JOKERS[out].n} leaves your court.`);
+    log(`${JOKERS[out].n} is given away.`);
   }
   G.jokers.push({key:k,age:0});
-  log(`${JOKERS[k].art} ${JOKERS[k].n} joins your court.`,'good');
+  log(`${JOKERS[k].art} ${JOKERS[k].n} joins your charms.`,'good');
   render();
 }
 
@@ -195,22 +199,22 @@ function deckSummary(){
 }
 
 async function campService(){
-  const o=await chooseOption('The camp',`${deckSummary()}. Choose one service before wave ${G.wave+1}.`,[
-    ['purge','🔥 Purge — trash up to 2 cards'],
-    ['temper','⚒ Temper — upgrade a card one tier'],
-    ['copy','📜 Duplicate — copy a card'],
+  const o=await chooseOption('🍺 The Inn',`${deckSummary()}. Choose one service before wave ${G.wave+1}.`,[
+    ['purge','🔥 Clear out — trash up to 2 cards'],
+    ['temper','⚒ Blacksmith — upgrade a card one tier'],
+    ['copy','📜 Copyist — copy a card'],
     ['rest','Move on']]);
   const sorted=()=>G.deck.slice().sort((a,b)=>cname(a).localeCompare(cname(b)));
   if(o==='purge'){
-    const s=await chooseCards(sorted(),{min:0,max:2,title:'Purge',sub:'Trash up to 2 cards from your deck for good.'});
+    const s=await chooseCards(sorted(),{min:0,max:2,title:'Clear out',sub:'Trash up to 2 cards from your deck for good.'});
     s.forEach(c=>{pull(G.deck,c);trashCard(c);});
   } else if(o==='temper'){
-    const s=await chooseCards(sorted().filter(c=>!DB[c.key].noLv),{min:0,max:1,title:'Temper',
+    const s=await chooseCards(sorted().filter(c=>!DB[c.key].noLv),{min:0,max:1,title:'Blacksmith',
       sub:'Upgrade one card a tier.',badge:c=>DB[c.key].n+plus(c.lv+1)});
     if(s[0]){ const was=cname(s[0]); s[0].lv++; log(`${was} is tempered into ${cname(s[0])}.`,'good'); }
   } else if(o==='copy'){
-    const s=await chooseCards(sorted().filter(c=>!DB[c.key].noLv),{min:0,max:1,title:'Duplicate',sub:'Add a copy of one card to your deck.'});
-    if(s[0]){ G.deck.push(mk(s[0].key,s[0].lv)); log(`You copy ${cname(s[0])}.`,'good'); }
+    const s=await chooseCards(sorted().filter(c=>!DB[c.key].noLv),{min:0,max:1,title:'Copyist',sub:'Add a copy of one card to your deck.'});
+    if(s[0]){ G.deck.push(clone(s[0])); log(`You copy ${cname(s[0])}.`,'good'); }
   }
 }
 
@@ -237,8 +241,8 @@ function completeThreat(t){
   const i=G.slots.indexOf(t); if(i<0) return;
   G.slots[i]=null;
   G.runCleared++;
-  log(`${t.n} cleared.`,'good');
-  gainJunk('bulk',1);
+  log(`${t.n} cleared.`,'good'); fx('clear',t);
+  gainJunk('rubble',1);
   if(hasJ('bounty')){ draw(1); A(1); C(2); log('Bounty Hunter pays out: +1 Card, +1 Action, +2 Coin.','good'); }
 }
 
@@ -252,19 +256,29 @@ function isDone(t){
   return t.prog>=t.need;
 }
 
-// Reactions and jokers "strike" a threat: knock a fraction off what it demands.
+// Cards, reactions and charms "strike" a threat: knock a fraction off what it demands.
 function strike(t,frac){
   if(!G.slots.includes(t)) return;
+  if(hasJ('eagle')) frac+=.15;
+  fx('hit',t);
   const hit=x=>Math.max(1,Math.ceil(x*frac));
   switch(t.kind){
     case 'once_coin':   { const d=hit(t.need); t.need=Math.max(0,t.need-d); log(`${t.n}'s fee drops by ${d}.`,'good'); break; }
     case 'once_hybrid': { const d=hit(t.needCoin); t.needCoin=Math.max(0,t.needCoin-d);
                           if(t.needCoin<=0) t.needAct=0; log(`${t.n}'s price drops by ${d} coin.`,'good'); break; }
-    case 'panic':       { const d=hit(t.curses); t.curses=Math.max(0,t.curses-d); log(`${t.n} loses ${plural(d,'Curse')} from its terms.`,'good'); break; }
+    case 'panic':       { const d=hit(t.curses); t.curses=Math.max(0,t.curses-d); log(`${t.n} drops ${junkName('jinx',d)} from its terms.`,'good'); break; }
     case 'upgrade':     { if(t.gotT<t.needT) t.gotT++; else t.gotA++; log(`${t.n} collapses a little.`,'good'); break; }
-    default:            { const d=hit(t.need); t.prog=Math.min(t.need,t.prog+d); log(`${t.n} takes ${d} progress.`,'good'); }
+    default:            { const d=hit(t.need-t.prog); t.prog=Math.min(t.need,t.prog+d); log(`${t.n} takes ${d} progress.`,'good'); }
   }
   if(isDone(t)) completeThreat(t);
+}
+
+// Ask the player to aim at a threat; with only one on the board, it is chosen for them.
+async function chooseThreat(title,sub){
+  const live=G.slots.filter(Boolean);
+  if(live.length<=1) return live[0]||null;
+  const k=await chooseOption(title,sub,live.map(t=>[t.id,`${t.art} ${t.n} — ${threatProgress(t).left}`]));
+  return live.find(t=>t.id===k)||null;
 }
 
 const coinMult = () => hasJ('interest')?2:1;
@@ -279,7 +293,9 @@ function threatReady(t){
     case 'prog_action':   return G.actions>0;
     case 'prog_buy':      return G.buys>0;
     case 'prog_discard':  return G.hand.length>0;
-    case 'sacrifice':     return G.hand.some(c=>c.key!=='bulk');
+    case 'sacrifice':     return G.hand.some(c=>c.key!=='rubble');
+    case 'scavenge':      return G.hand.length>0;
+    case 'banish':        return G.actionsPlayed>=t.need-t.prog;
     case 'panic':         return true;
     case 'once_hybrid':   return G.coin>=coinFor(t.needCoin) && G.actions>=unitsFor(t.needAct);
     case 'upgrade':       return G.hand.some(c=>(t.gotT<t.needT&&c.t==='treasure')||(t.gotA<t.needA&&c.t==='action'));
@@ -314,17 +330,26 @@ async function clickThreat(t){
         t.prog+=s.length;
         if(s.length) log(`You feed ${plural(s.length,'card')} to ${t.n} (${t.prog}/${t.need}).`,'hl'); break; }
       case 'sacrifice':{
-        const s=await chooseCards(G.hand.filter(c=>c.key!=='bulk'),{min:0,max:rem,title:t.n,
-          sub:`Trash cards into the shrine. ${rem} still wanted. Bulk is refused.`});
+        const s=await chooseCards(G.hand.filter(c=>c.key!=='rubble'),{min:0,max:rem,title:t.n,
+          sub:`Trash cards into the idol. ${rem} still wanted. Rubble is refused.`});
         s.forEach(c=>{pull(G.hand,c);trashCard(c);});
         t.prog+=s.length;
         if(s.length) log(`You sacrifice ${plural(s.length,'card')} to ${t.n} (${t.prog}/${t.need}).`,'hl'); break; }
+      case 'scavenge':{
+        const s=await chooseCards(G.hand,{min:0,max:99,title:t.n,
+          sub:`Trash cards into the nest. ${rem} still wanted — junk counts double.`,badge:c=>isJunk(c)?'×2':''});
+        const got=s.reduce((n,c)=>n+(isJunk(c)?2:1),0);
+        s.forEach(c=>{pull(G.hand,c);trashCard(c,true);});
+        t.prog=Math.min(t.need,t.prog+got);
+        if(s.length) log(`The rats drag ${plural(s.length,'card')} into the nest (${t.prog}/${t.need}).`,'hl'); break; }
+      case 'banish':{
+        t.prog=t.need; log(`With a flurry of activity, you banish the ${t.n}.`,'hl'); break; }
       case 'panic':{
-        const ok=await chooseOption(t.n,`Sign the pact? It clears at once and ${plural(t.curses,'Curse')} go into your discard pile.`,
-          [['y','Sign it'],['n','Step back']]);
+        const ok=await chooseOption(t.n,`Shake on it? It clears at once and ${junkName('jinx',t.curses)} go into your discard pile.`,
+          [['y','Shake on it'],['n','Step back']]);
         if(ok!=='y') break;
-        log(`You sign the ${t.n}.`,'bad');
-        gainJunk('curse',t.curses); t.curses=0; break; }
+        log(`You shake hands with the ${t.n}.`,'bad');
+        gainJunk('jinx',t.curses); t.curses=0; break; }
       case 'once_hybrid':{
         const c=coinFor(t.needCoin), a=unitsFor(t.needAct);
         G.coin-=c; G.actions-=a; t.needCoin=0; t.needAct=0;
@@ -348,16 +373,18 @@ async function clickThreat(t){
 
 /* ---------- attacks ---------- */
 function atkText(t){
-  const a=t.atk, n=a.n;
+  const a=t.atk, n=a.n, what=`random ${{treasure:'Treasure',action:'Action'}[a.filter]||'card'}`;
   switch(a.k){
     case 'grow':    return `its demand grows ${a.pct}%`;
-    case 'discard': return `discard ${plural(n,'random card')} from your hand`;
-    case 'trash':   return `trash ${plural(n,a.filter?'random Treasure':'random card')} from your hand`;
-    case 'bulk':    return `${n} Bulk into your discard pile`;
-    case 'curse':   return `${plural(n,'Curse')} into your discard pile`;
+    case 'discard': return `discard ${plural(n,what)} from your hand`;
+    case 'trash':   return `trash ${plural(n,what)} from your hand`;
+    case 'bulk':    return `${n} Rubble into your discard pile`;
+    case 'curse':   return `${junkName('jinx',n)} into your discard pile`;
     case 'nobuy':   return `−${plural(n,'Buy')} next turn`;
-    case 'price':   return `the pact demands ${plural(n,'more Curse','more Curses')}`;
-    case 'warp':    return `${n} Bulk shuffled into your draw pile`;
+    case 'price':   return `the bargain demands ${plural(n,'more Jinx','more Jinxes')}`;
+    case 'warp':    return `${n} Rubble shuffled into your draw pile`;
+    case 'pickpocket': return `−${n} Coin next turn`;
+    case 'freeze':  return `freeze ${plural(n,'card')} in your hand for a turn`;
   }
   return '';
 }
@@ -370,17 +397,24 @@ function applyAttack(t){
       else t.need=Math.ceil(t.need*(1+a.pct/100));
       log(`${t.n} now wants ${t.kind==='once_hybrid'?t.needCoin:t.need}.`,'bad'); break;
     case 'discard':
-      for(let i=0;i<n&&G.hand.length;i++){ const c=pick(G.hand); pull(G.hand,c); G.discard.push(c);
+      for(let i=0;i<n;i++){ const pool=G.hand.filter(c=>!a.filter||c.t===a.filter); if(!pool.length)break;
+        const c=pick(pool); pull(G.hand,c); G.discard.push(c);
         log(`${cname(c)} is knocked from your hand.`,'bad'); } break;
     case 'trash':
       for(let i=0;i<n;i++){ const pool=G.hand.filter(c=>!a.filter||c.t===a.filter); if(!pool.length)break;
         const c=pick(pool); pull(G.hand,c); trashCard(c,true); log(`${t.n} destroys your ${cname(c)}.`,'bad'); } break;
-    case 'bulk':  gainJunk('bulk',n); break;
-    case 'curse': gainJunk('curse',n); break;
+    case 'bulk':  gainJunk('rubble',n); break;
+    case 'curse': gainJunk('jinx',n); break;
     case 'nobuy': G.next.buys-=n; log(`You will have ${plural(n,'Buy')} fewer next turn.`,'bad'); break;
-    case 'price': t.curses+=n; log(`${t.n} now costs ${plural(t.curses,'Curse')}.`,'bad'); break;
-    case 'warp':  gainJunk('bulk',n,'deck'); break;
+    case 'price': t.curses+=n; log(`${t.n} now costs ${junkName('jinx',t.curses)}.`,'bad'); break;
+    case 'warp':  gainJunk('rubble',n,'deck'); break;
+    case 'pickpocket': G.next.coin-=n; log(`Light fingers: ${n} Coin fewer next turn.`,'bad'); break;
+    case 'freeze':
+      if(hasJ('mittens')){ log('Warm Mittens keep your cards thawed.','good'); break; }
+      for(let i=0;i<n;i++){ const pool=G.hand.filter(c=>!c.frozen); if(!pool.length)break;
+        const c=pick(pool); c.frozen=true; log(`${cname(c)} freezes solid.`,'bad'); } break;
   }
+  fx('hurt');
 }
 
 function blocked(t){
@@ -392,17 +426,17 @@ async function resolveAttack(t){
   log(`${t.art} ${t.n} — ${a.name}: ${txt}.`,'bad');
   if(hasJ('wall')&&!G.wallUsed){ G.wallUsed=true; log('Iron Wall absorbs the blow.','good'); blocked(t); return; }
   const best=f=>G.hand.filter(f).sort((x,y)=>y.lv-x.lv)[0];
-  const moat =best(c=>c.key==='moat');
+  const moat =best(c=>c.key==='guarddog');
   const rip  =best(c=>c.key==='riposte');
   const snare=best(c=>c.key==='snare'&&(!t.elite||c.lv>=1));
   const opts=[];
-  if(moat)  opts.push(['moat', `🌊 Reveal ${cname(moat)} — block`]);
+  if(moat)  opts.push(['moat', `🐕 Reveal ${cname(moat)} — block`]);
   if(rip)   opts.push(['rip',  `🤺 Discard ${cname(rip)} — block & strike ${ripPct(rip.lv)}%`]);
   if(snare) opts.push(['snare',`🪤 Trash ${cname(snare)} — destroy it`]);
   if(opts.length){
     opts.push(['take','Take the hit']);
     const ch=await chooseOption(`${t.art} ${t.n} attacks!`,`${a.name}: ${txt}.`,opts);
-    if(ch==='moat'){ log(`You reveal ${cname(moat)}. The attack washes away.`,'good'); blocked(t); return; }
+    if(ch==='moat'){ log(`${cname(moat)} barks the attack away.`,'good'); blocked(t); return; }
     if(ch==='rip'){ pull(G.hand,rip); G.discard.push(rip);
       log(`${cname(rip)} parries and strikes back!`,'good'); blocked(t); strike(t,ripPct(rip.lv)/100); return; }
     if(ch==='snare'){ pull(G.hand,snare); trashCard(snare,true);
@@ -415,11 +449,11 @@ async function resolveAttack(t){
    CARD PLAY / BUY
    ========================================================== */
 function canPlay(c){
-  if(G.over||G.phase!=='turn') return false;
+  if(G.over||G.phase!=='turn'||c.frozen) return false;
   if(c.t==='treasure') return true;
-  if(c.key==='bulk')   return G.actions>0||hasJ('tidy');
+  if(c.key==='rubble') return G.actions>0||hasJ('tidy');
   if(c.t==='action')   return G.actions>0;
-  return false;                      // Estate, Curse
+  return false;                      // Shack, Jinx
 }
 
 function playTreasure(c){
@@ -427,6 +461,7 @@ function playTreasure(c){
   let v=tval(c);
   if(hasJ('mirror')&&G.treasuresPlayed===0){ v*=2; log('Mirror doubles it.','hl'); }
   G.treasuresPlayed++;
+  if(c.key==='nestegg') c.grow=(c.grow||0)+(hasJ('goose')?2:1);
   C(v); log(`${cname(c)} adds ${v} to your purse.`);
 }
 
@@ -441,10 +476,10 @@ async function playCard(c){
   busy=true;
   try{
     if(c.t==='treasure') playTreasure(c);
-    else if(c.key==='bulk'){
+    else if(c.key==='rubble'){
       if(!hasJ('tidy')) G.actions--;
       pull(G.hand,c); trashCard(c,true);
-      log('You haul the Bulk away. It is gone from your deck for good.','good');
+      log('You haul the Rubble away. It is gone from your deck for good.','good');
       if(hasJ('tidy')) draw(1);
     } else {
       G.actions--; pull(G.hand,c); G.inPlay.push(c);
@@ -457,7 +492,7 @@ async function playCard(c){
 
 function playAllTreasures(){
   if(busy||G.over||G.phase!=='turn') return;
-  const tr=G.hand.filter(c=>c.t==='treasure').sort((a,b)=>(a.key==='bank')-(b.key==='bank'));
+  const tr=G.hand.filter(c=>c.t==='treasure'&&!c.frozen).sort((a,b)=>(a.key==='treasury')-(b.key==='treasury'));
   if(!tr.length) return;
   tr.forEach(playTreasure); render();
 }
@@ -484,7 +519,9 @@ function startTurn(){
   const n=G.next;
   G.actions=Math.max(0,1+n.actions+(hasJ('wind')?1:0));
   G.buys=Math.max(0,1+n.buys+(hasJ('seal')?1:0));
-  G.coin=Math.max(0,n.coin);
+  G.coin=Math.max(0,n.coin+G.later.coin);
+  if(G.later.coin) log(`The orchard pays out ${G.later.coin} coin.`,'good');
+  G.later={coin:0};
   if(hasJ('hoarder')) G.coin+=Math.floor(deckSize()/4);
   if(hasJ('trophy'))  G.coin+=Math.floor(G.runCleared/2);
   G.discount=hasJ('seal')?1:0;
@@ -501,7 +538,7 @@ async function endTurn(){
     const carry=hasJ('piggy')?Math.floor(G.coin/2):0;
     if(carry) log(`Piggy Bank keeps ${carry} coin for next turn.`);
     for(const c of G.inPlay.splice(0)) G.discard.push(c);
-    for(const c of G.hand.splice(0))   G.discard.push(c);
+    for(const c of G.hand.splice(0)){ c.frozen=false; G.discard.push(c); }
     G.coin=0; G.actions=0; G.buys=0;
     G.next={actions:0,buys:0,coin:carry};
 
@@ -533,6 +570,6 @@ async function endTurn(){
 
 function lose(title,text){
   G.over=true;
-  const cleared=G.wave-1; saveBest(cleared);
+  const cleared=G.wave-1; saveBest(cleared); fx('lose');
   showGameOver(`${title}. ${text} You survived ${plural(cleared,'wave')} and cleared ${plural(G.runCleared,'threat')} with a deck of ${deckSize()} cards. Best run: ${plural(loadBest(),'wave')} cleared.`);
 }

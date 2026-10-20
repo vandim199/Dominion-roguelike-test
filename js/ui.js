@@ -1,7 +1,7 @@
 "use strict";
 /* ==========================================================
-   Dominion: Crisis — UI: layout & scaling, rendering, modals,
-   card inspector, settings, toasts and input wiring.
+   Coinkeep — UI: layout & scaling, rendering, modals, card
+   inspector, effects, title screen, settings and input wiring.
 
    Every size in style.css is in rem, so the UI scale is one
    number: the root font-size. The layout (wide / narrow / short)
@@ -9,7 +9,8 @@
    so scaling up on a small screen switches to a compact layout.
    ========================================================== */
 
-const UI = { layout:'wide', side:true, auto:1, scale:1, user:1, tapInspect:null, tab:'threats', touch:false };
+const UI = { layout:'wide', side:true, auto:1, scale:1, user:1, tapInspect:null, tab:'threats', touch:false,
+             lastCoin:0, hits:new Set() };
 const mqCoarse = matchMedia('(pointer: coarse)');
 
 function loadPrefs(){
@@ -76,9 +77,34 @@ function toast(msg,cls){
   setTimeout(()=>d.remove(),3200);
 }
 
+/* ---------- effects: floating numbers, shakes, banners ---------- */
+const buzz = ms => { try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} };
+function floatText(anchor,text,cls){
+  const r=anchor.getBoundingClientRect(), d=document.createElement('div');
+  d.className='float '+(cls||''); d.textContent=text;
+  d.style.left=(r.left+r.width/2)+'px'; d.style.top=r.top+'px';
+  document.body.appendChild(d); setTimeout(()=>d.remove(),1000);
+}
+function pulseClass(el,cls,ms){ el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); setTimeout(()=>el.classList.remove(cls),ms); }
+function banner(text,sub){
+  const b=$('banner'); b.innerHTML=`<div>${text}</div>${sub?`<small>${sub}</small>`:''}`;
+  pulseClass(b,'on',1500);
+}
+function fx(kind,arg){
+  switch(kind){
+    case 'shake': pulseClass(document.body,'shake',420); buzz(40); break;
+    case 'hurt':  pulseClass(document.body,'hurt',500); buzz(80); break;
+    case 'hit':   UI.hits.add(arg.id); break;
+    case 'clear': floatText($('threats'),`${arg.art} cleared!`,'good'); buzz(25); break;
+    case 'wave':  banner(`Wave ${arg}`,arg%TUNE.eliteEvery===0?'An Elite leads the charge':''); break;
+    case 'lose':  buzz([90,60,180]); break;
+  }
+}
+
 function resetUI(){
   $('log').innerHTML=''; $('toasts').innerHTML='';
   $('over').classList.remove('on'); closeInspect(); closeMenu();
+  UI.lastCoin=0;
 }
 function showGameOver(text){
   $('overText').textContent=text;
@@ -216,15 +242,17 @@ function bindCard(el,c,act,label){
    ========================================================== */
 function cardEl(c,{badge}={}){
   const d=DB[c.key], el=document.createElement('div');
-  el.className=`card t-${d.t}${d.r?' r':''}${c.lv?` lv${Math.min(3,c.lv)}`:''}`;
-  const kind=d.r?'Reaction':({treasure:'Treasure',action:'Action',victory:'Victory',junk:'Junk',curse:'Curse'}[d.t]||d.t);
+  el.className=`card t-${d.t}${d.r?' r':''}${c.lv?` lv${Math.min(3,c.lv)}`:''}${c.frozen?' frozen':''}`;
+  const kind=d.r?'Reaction':({treasure:'Treasure',action:'Action',victory:'Junk',junk:'Junk',curse:'Junk'}[d.t]||d.t);
+  const stars=c.lv?(c.lv<=3?'★'.repeat(c.lv):`★${c.lv}`):'';
   el.innerHTML=`<div class="banner">${cname(c)}</div>
-    <div class="art">${d.art||'✦'}</div>
+    <div class="art"><span>${d.art||'✦'}</span></div>
     <div class="tx">${ctext(c)}</div>
-    <div class="foot"><span>${kind}</span><span>${c.lv?'T'+c.lv:''}</span></div>`;
+    <div class="foot"><span>${kind}</span><span class="stars">${stars}</span></div>`;
   const cost=document.createElement('div'); cost.className='cost'; cost.textContent=costOf(c);
   el.appendChild(cost);
-  if(badge){ const b=document.createElement('div'); b.className='badge'; b.textContent=badge(c); el.appendChild(b); }
+  const bt=badge&&badge(c);
+  if(bt){ const b=document.createElement('div'); b.className='badge'; b.textContent=bt; el.appendChild(b); }
   return el;
 }
 
@@ -248,6 +276,9 @@ function threatProgress(t){
     case 'once_hybrid':  { const nc=Math.max(1,coinFor(t.needCoin)), na=Math.max(1,unitsFor(t.needAct));
                            return {pct:Math.min(1,(Math.min(G.coin,nc)/nc*0.75)+(Math.min(G.actions,na)/na*0.25)),
                                    left:`${t.needCoin} coin + ${t.needAct} Actions`, note:`you hold ${G.coin} / ${G.actions}`}; }
+    case 'scavenge':     return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} fed`, note:'junk counts ×2'};
+    case 'banish':       { const n=t.need-t.prog;
+                           return {pct:Math.min(1,G.actionsPlayed/Math.max(1,n)), left:`${n} Actions in one turn`, note:`played ${G.actionsPlayed}`}; }
     case 'upgrade':      return {pct:(t.gotT+t.gotA)/(t.needT+t.needA),
                                  left:`Treasure ${t.gotT}/${t.needT} · Action ${t.gotA}/${t.needA}`, note:'trash from hand'};
   }
@@ -262,9 +293,11 @@ function threatButton(t){
     case 'prog_buy':     return `Spend ${plural(Math.min(G.buys,unitsFor(rem)),'Buy')}`;
     case 'prog_discard': return 'Feed cards';
     case 'sacrifice':    return 'Sacrifice cards';
-    case 'panic':        return 'Sign the pact';
+    case 'panic':        return 'Shake on it';
     case 'once_hybrid':  return `Pay ${coinFor(t.needCoin)} coin + ${plural(unitsFor(t.needAct),'Action')}`;
     case 'upgrade':      return 'Trash into the rift';
+    case 'scavenge':     return 'Feed the nest';
+    case 'banish':       return 'Banish it';
   }
   return 'Act';
 }
@@ -302,10 +335,10 @@ function render(){
                      `⏳ ${untilSpawn===0?'now':untilSpawn}`, untilSpawn===0?'now':untilSpawn===1?'soon':'');
 
   // jokers
-  const J=$('jokers'); J.innerHTML='<span class="jlabel">JOKERS</span>';
+  const J=$('jokers'); J.innerHTML='<span class="jlabel">CHARMS</span>';
   for(let i=0;i<TUNE.jokerSlots;i++){
     const j=G.jokers[i], el=document.createElement('button');
-    if(!j){ el.className='joker empty'; el.disabled=true; el.setAttribute('aria-label','Empty joker slot'); J.appendChild(el); continue; }
+    if(!j){ el.className='joker empty'; el.disabled=true; el.setAttribute('aria-label','Empty charm slot'); J.appendChild(el); continue; }
     const d=JOKERS[j.key], st=jokerStatus(j);
     el.className='joker '+d.r;
     el.setAttribute('aria-label',`${d.n}: ${d.tx}`);
@@ -339,7 +372,7 @@ function render(){
     const box=document.createElement('div');
     if(!t){ box.className='tslot empty'; box.textContent=`Slot ${i+1} — clear`; T.appendChild(box); return; }
     const p=threatProgress(t), ready=threatReady(t)&&live;
-    box.className='tslot'+(ready?' ready':'')+(t.fresh?' new':'')+(t.elite?' elite':'');
+    box.className='tslot'+(ready?' ready':'')+(t.fresh?' new':'')+(t.elite?' elite':'')+(UI.hits.has(t.id)?' hit':'');
     box.innerHTML=`
       <button class="thead" title="Read this threat"><span class="tart">${t.art}</span>
         <span class="tnames"><span class="tname">${t.n}</span><span class="tkind">${t.label}</span></span><span class="ti">ⓘ</span></button>
@@ -360,10 +393,14 @@ function render(){
     T.appendChild(box);
   });
 
+  UI.hits.clear();
+
   // resources
   const r=(id,v,label,icon)=>{const e=$(id); e.innerHTML=`${icon}<span class="lbl"> ${label}</span> <b>${v}</b>`; e.classList.toggle('spent',v<=0);};
   r('rAct',G.actions,'Actions','⚡'); r('rBuy',G.buys,'Buys','🛒');
   $('rCoin').innerHTML=`🪙<span class="lbl"> Coin</span> <b>${G.coin}</b>`;
+  if(G.coin>UI.lastCoin){ floatText($('rCoin'),`+${G.coin-UI.lastCoin}`,'coin'); pulseClass($('rCoin'),'bump',300); }
+  UI.lastCoin=G.coin;
   $('pDeck').innerHTML=`<span class="long">Draw </span><span class="short">📚 </span>${G.deck.length}`;
   $('pDisc').innerHTML=`<span class="long">Discard </span><span class="short">🗑 </span>${G.discard.length}`;
   $('pTreas').disabled=!live||!G.hand.some(c=>c.t==='treasure');
@@ -424,6 +461,10 @@ $('pDisc').onclick=()=>viewPile('Discard pile',G.discard);
 $('tabThreats').onclick=()=>setTab('threats');
 $('tabMarket').onclick=()=>setTab('market');
 $('overBtn').onclick=newRun;
+$('tPlay').onclick=()=>{ $('title').classList.remove('on'); if(G.over) newRun(); };
+$('tHow').onclick=()=>$('howto').classList.add('on');
+$('hClose').onclick=()=>$('howto').classList.remove('on');
+$('mHow').onclick=()=>{ closeMenu(); $('howto').classList.add('on'); };
 
 $('menu').onclick=e=>{ if(e.target.id==='menu') closeMenu(); };
 $('mClose').onclick=closeMenu;
@@ -439,7 +480,8 @@ $('mNew').onclick=confirmNewRun;
 $('inspect').onclick=e=>{ if(e.target.id==='inspect') closeInspect(); };
 
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){ closeInspect(); closeMenu(); toggleLedger(false); return; }
+  if(e.key==='Escape'){ closeInspect(); closeMenu(); toggleLedger(false); $('howto').classList.remove('on'); return; }
+  if($('title').classList.contains('on')||$('howto').classList.contains('on')) return;
   if($('veil').classList.contains('on')||$('inspect').classList.contains('on')||$('menu').classList.contains('on')||busy) return;
   if(e.target.tagName==='INPUT') return;
   if(e.key==='e') endTurn();
@@ -458,3 +500,4 @@ if(mqCoarse.addEventListener) mqCoarse.addEventListener('change',relayout);
 loadPrefs();
 applyLayout();
 newRun();
+{ const b=loadBest(); $('tBest').textContent=b?`Best run: ${plural(b,'wave')} cleared`:'No runs yet — good luck, steward!'; }
