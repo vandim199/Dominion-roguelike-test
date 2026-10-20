@@ -28,6 +28,7 @@
     <div class="chips">
       <span class="chip wave" id="cWave"></span>
       <span class="chip" id="cTurn"></span>
+      <span class="chip" id="cHearts" hidden></span>
       <span class="chip" id="cQueue"></span>
       <span class="chip" id="cNext"></span>
       <span class="chip" id="cTier"></span>
@@ -134,6 +135,7 @@
   </div>
   <p class="best" id="tBest"></p>
   <button class="mbtn go big" id="tPlay">Play</button>
+  <button class="mbtn alt" id="tClassic">Classic mode</button>
   <button class="mbtn" id="tHow">How to play</button>
 </div>
 
@@ -142,12 +144,13 @@
     <h3 id="hTitle">How to play</h3>
     <ol class="steps">
       <li><b>🃏 Play your hand.</b> Action cards give Cards, Actions, Buys and Coin. Treasures give Coin.</li>
-      <li><b>👹 Deal with threats.</b> Each one wants something — Coin, Actions, Buys or cards. Tap its button to pay. Unpaid threats attack on a timer.</li>
-      <li><b>🛒 Shop the market.</b> Buy better cards. They go to the bottom of your deck. The two leftmost stalls leave each turn.</li>
+      <li><b>👹 Beat the fuse.</b> Each threat wants something — Coin, Actions, Buys or cards — and has a fuse. Tap its button to pay. If the fuse runs out it detonates: it attacks, scars one of your cards and costs the town a ❤.</li>
+      <li><b>🧬 Splice your cards.</b> Every threat you clear lets you graft a keyword onto a card in your deck — Encore with +1 Action, a Gold that's Sticky, a Twin Forge. Clear a threat within two turns for a swift bonus.</li>
+      <li><b>🛒 Shop the market.</b> A small set of core cards — splicing is where the depth is. They go to the bottom of your deck. The two leftmost stalls leave each turn.</li>
       <li><b>🏰 Hold all three slots.</b> If a threat arrives with every slot full, the town falls.</li>
-      <li><b>✨ Between waves</b> pick a charm that bends the rules, and visit the Inn to upgrade, copy or trash a card.</li>
+      <li><b>✨ Between waves</b> pick a charm that bends the rules, and visit the Inn to upgrade, copy, mend or trash a card, or rest.</li>
     </ol>
-    <p class="hint">Cards with ★ are upgraded. Upgrades stack — a Forge★ can turn Gold into Gold★★.</p>
+    <p class="hint">Classic mode is the original game: a big card pool, and threats that attack every few turns until you pay them off. Cards with ★ are upgraded. Upgrades stack — a Forge★ can turn Gold into Gold★★.</p>
     <button class="mbtn go" id="hClose">Got it</button>
   </div>
 </div>
