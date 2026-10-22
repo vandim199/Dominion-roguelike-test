@@ -314,6 +314,8 @@ body:not(.has-side) #side.open{display:flex;position:fixed;top:0;right:0;bottom:
   box-shadow:-1rem 0 2rem rgba(0,0,0,.6);padding:var(--sat) var(--sar) var(--sab) 0}
 .side-h{font-family:var(--head);font-weight:600;font-size:.75rem;letter-spacing:.14em;color:var(--dim);padding:.55rem .75rem .3rem;display:flex;justify-content:space-between;align-items:center}
 #sideClose{font-size:1rem;padding:.2rem .5rem}
+.side-btns{display:flex;gap:.3rem;align-items:center}
+#logSave{font-size:.7rem;padding:.2rem .6rem;letter-spacing:0}
 body.has-side #sideClose{display:none}
 #log{flex:1;overflow-y:auto;padding:0 .75rem .75rem;font-size:.85rem;line-height:1.42;overscroll-behavior:contain}
 #log div{padding:.14rem 0;border-bottom:1px solid rgba(255,255,255,.05)}

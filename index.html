@@ -73,7 +73,7 @@
   </main>
 
   <aside id="side">
-    <div class="side-h"><span>TOWN LOG</span><button id="sideClose" aria-label="Close log">✕</button></div>
+    <div class="side-h"><span>TOWN LOG</span><span class="side-btns"><button class="tbtn" id="logSave" title="Download the whole log as a text file">⬇ Save</button><button id="sideClose" aria-label="Close log">✕</button></span></div>
     <div id="log"></div>
   </aside>
 </div>
@@ -102,6 +102,7 @@
       <button class="tbtn" id="mDeck">Deck</button>
       <button class="tbtn" id="mTrash">Trash</button>
       <button class="tbtn" id="mLedger">Log</button>
+      <button class="tbtn" id="mSave">Save log</button>
       <button class="tbtn" id="mHow">How to play</button>
       <button class="tbtn" id="mNew">New run</button>
     </div>
@@ -123,6 +124,7 @@
   <h1 id="overTitle">The town falls</h1>
   <p id="overText"></p>
   <button class="mbtn go big" id="overBtn">Try again</button>
+  <button class="mbtn" id="overSave">Save log</button>
 </div>
 
 <div id="banner" aria-hidden="true"></div>

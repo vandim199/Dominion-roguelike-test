@@ -62,7 +62,10 @@ function syncSettings(){
 }
 
 /* ---------- log & toasts ---------- */
+// The on-screen log keeps the last 200 lines; LEDGER keeps the whole run for Save log.
+const LEDGER=[];
 function log(msg,cls){
+  LEDGER.push([msg,cls||'']);
   const d=document.createElement('div'); if(cls)d.className=cls; d.textContent=msg;
   const l=$('log'); l.appendChild(d);
   while(l.children.length>200) l.removeChild(l.firstChild);
@@ -101,7 +104,18 @@ function fx(kind,arg){
   }
 }
 
+function saveLog(){
+  if(!G) return;
+  const d=new Date(), p=n=>String(n).padStart(2,'0');
+  const stamp=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  const url=URL.createObjectURL(new Blob([logText(LEDGER,stamp)],{type:'text/plain'}));
+  const a=document.createElement('a'); a.href=url; a.download=`coinkeep-log-${stamp.replace(/[ :]/g,'-')}.txt`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
 function resetUI(){
+  LEDGER.length=0;
   $('log').innerHTML=''; $('toasts').innerHTML='';
   $('over').classList.remove('on'); closeInspect(); closeMenu();
   UI.lastCoin=0;
@@ -513,6 +527,8 @@ $('btnTrash').onclick=()=>viewPile('Trash',G.trash);
 $('btnNew').onclick=confirmNewRun;
 $('btnLedger').onclick=()=>toggleLedger();
 $('sideClose').onclick=()=>toggleLedger(false);
+$('logSave').onclick=saveLog;
+$('overSave').onclick=saveLog;
 $('btnMenu').onclick=openMenu;
 $('pDeck').onclick=()=>viewPile('Draw pile (sorted)',G.deck);
 $('pDisc').onclick=()=>viewPile('Discard pile',G.discard);
@@ -536,6 +552,7 @@ $('sTap').onchange=e=>{ UI.tapInspect=e.target.checked; savePrefs(); };
 $('mDeck').onclick=()=>{ closeMenu(); viewPile('Your whole deck',allCards()); };
 $('mTrash').onclick=()=>{ closeMenu(); viewPile('Trash',G.trash); };
 $('mLedger').onclick=()=>{ closeMenu(); if(!UI.side) toggleLedger(true); };
+$('mSave').onclick=()=>{ closeMenu(); saveLog(); };
 $('mNew').onclick=confirmNewRun;
 $('inspect').onclick=e=>{ if(e.target.id==='inspect') closeInspect(); };
 

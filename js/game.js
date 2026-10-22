@@ -2,6 +2,9 @@
 /* ==========================================================
    Coinkeep — rules: state, waves, threats, turn flow.
    Rendering and modals live in ui.js.
+   Every chooseCards call carries a why (the card key, Inn
+   service or threat kind) so the simulator's bots know what
+   they are choosing for; the UI ignores it.
    ========================================================== */
 
 let G=null, busy=false, tid=0, uid=0;
@@ -237,17 +240,17 @@ async function campService(){
     ['rest','Move on']]);
   const sorted=()=>G.deck.slice().sort((a,b)=>cname(a).localeCompare(cname(b)));
   if(o==='purge'){
-    const s=await chooseCards(sorted(),{min:0,max:2,title:'Clear out',sub:'Trash up to 2 cards from your deck for good.'});
+    const s=await chooseCards(sorted(),{min:0,max:2,why:'purge',title:'Clear out',sub:'Trash up to 2 cards from your deck for good.'});
     s.forEach(c=>{pull(G.deck,c);trashCard(c);});
   } else if(o==='temper'){
-    const s=await chooseCards(sorted().filter(c=>!DB[c.key].noLv),{min:0,max:1,title:'Blacksmith',
+    const s=await chooseCards(sorted().filter(c=>!DB[c.key].noLv),{min:0,max:1,why:'temper',title:'Blacksmith',
       sub:'Upgrade one card a tier.',badge:c=>DB[c.key].n+plus(c.lv+1)});
     if(s[0]){ const was=cname(s[0]); s[0].lv++; log(`${was} is tempered into ${cname(s[0])}.`,'good'); }
   } else if(o==='copy'){
-    const s=await chooseCards(sorted().filter(c=>!DB[c.key].noLv),{min:0,max:1,title:'Copyist',sub:'Add a copy of one card to your deck.'});
+    const s=await chooseCards(sorted().filter(c=>!DB[c.key].noLv),{min:0,max:1,why:'copy',title:'Copyist',sub:'Add a copy of one card to your deck.'});
     if(s[0]){ G.deck.push(clone(s[0])); log(`You copy ${cname(s[0])}.`,'good'); }
   } else if(o==='mend'){
-    const s=await chooseCards(sorted().filter(c=>c.mods.some(m=>SPLICES[m].scar)),{min:0,max:1,title:'Mender',sub:'Remove every scar from one card.'});
+    const s=await chooseCards(sorted().filter(c=>c.mods.some(m=>SPLICES[m].scar)),{min:0,max:1,why:'mend',title:'Mender',sub:'Remove every scar from one card.'});
     if(s[0]){ s[0].mods=s[0].mods.filter(m=>!SPLICES[m].scar); log(`${cname(s[0])} is mended.`,'good'); }
   } else if(o==='heal'){
     G.hearts=Math.min(TUNE.hearts,G.hearts+2); log(`You rest. The town has ${plural(G.hearts,'heart')}.`,'good');
@@ -322,7 +325,7 @@ async function claimSplice(p){
   const S=SPLICES[k];
   const elig=allCards().filter(c=>canSplice(c,k)).sort((a,b)=>cname(a).localeCompare(cname(b)));
   if(!elig.length){ log(`No card can take ${S.n}.`); return; }
-  const s=await chooseCards(elig,{min:0,max:1,title:`Splice ${S.art} ${S.n}`,sub:`${spliceText(k)}. Cards hold ${TUNE.spliceSlots({lv:0})} splices (more when upgraded).`,
+  const s=await chooseCards(elig,{min:0,max:1,why:'splice',title:`Splice ${S.art} ${S.n}`,sub:`${spliceText(k)}. Cards hold ${TUNE.spliceSlots({lv:0})} splices (more when upgraded).`,
     badge:c=>`${slotsUsed(c)}/${TUNE.spliceSlots(c)}`});
   if(s[0]){ s[0].mods.push(k); log(`${S.art} ${cname(s[0])} is now ${S.n}.`,'good'); }
 }
@@ -448,18 +451,18 @@ async function clickThreat(t){
         G.buys-=amt; t.prog=Math.min(t.need,t.prog+amt*unitMult());
         log(`You trade away ${plural(amt,'Buy')} to ${t.n} (${t.prog}/${t.need}).`,'hl'); break; }
       case 'prog_discard':{
-        const s=await chooseCards(G.hand,{min:0,max:rem,title:t.n,sub:`Discard cards into it. ${rem} still wanted.`});
+        const s=await chooseCards(G.hand,{min:0,max:rem,why:t.kind,title:t.n,sub:`Discard cards into it. ${rem} still wanted.`});
         s.forEach(c=>{pull(G.hand,c);G.discard.push(c);});
         t.prog+=s.length;
         if(s.length) log(`You feed ${plural(s.length,'card')} to ${t.n} (${t.prog}/${t.need}).`,'hl'); break; }
       case 'sacrifice':{
-        const s=await chooseCards(G.hand.filter(c=>c.key!=='rubble'),{min:0,max:rem,title:t.n,
+        const s=await chooseCards(G.hand.filter(c=>c.key!=='rubble'),{min:0,max:rem,why:t.kind,title:t.n,
           sub:`Trash cards into the idol. ${rem} still wanted. Rubble is refused.`});
         s.forEach(c=>{pull(G.hand,c);trashCard(c);});
         t.prog+=s.length;
         if(s.length) log(`You sacrifice ${plural(s.length,'card')} to ${t.n} (${t.prog}/${t.need}).`,'hl'); break; }
       case 'scavenge':{
-        const s=await chooseCards(G.hand,{min:0,max:99,title:t.n,
+        const s=await chooseCards(G.hand,{min:0,max:99,why:t.kind,title:t.n,
           sub:`Trash cards into the nest. ${rem} still wanted — junk counts double.`,badge:c=>isJunk(c)?'×2':''});
         const got=s.reduce((n,c)=>n+(isJunk(c)?2:1),0);
         s.forEach(c=>{pull(G.hand,c);trashCard(c,true);});
@@ -479,7 +482,7 @@ async function clickThreat(t){
         log(`You hand ${t.n} ${c} coin and ${plural(a,'Action')} at once.`,'hl'); break; }
       case 'upgrade':{
         const elig=G.hand.filter(c=>(t.gotT<t.needT&&c.t==='treasure')||(t.gotA<t.needA&&c.t==='action'));
-        const s=await chooseCards(elig,{min:0,max:(t.needT-t.gotT)+(t.needA-t.gotA),title:t.n,
+        const s=await chooseCards(elig,{min:0,max:(t.needT-t.gotT)+(t.needA-t.gotA),why:t.kind,title:t.n,
           sub:`Still needed: ${plural(t.needT-t.gotT,'Treasure')} and ${plural(t.needA-t.gotA,'Action')}.`});
         for(const c of s){
           if(c.t==='treasure'&&t.gotT<t.needT) t.gotT++;
@@ -719,4 +722,20 @@ function lose(title,text){
   G.over=true;
   const cleared=G.wave-1; saveBest(cleared); fx('lose');
   showGameOver(`${title}. ${text} You survived ${plural(cleared,'wave')} and cleared ${plural(G.runCleared,'threat')} with a deck of ${deckSize()} cards. Best run: ${plural(loadBest(),'wave')} cleared.`);
+}
+
+/* ==========================================================
+   THE WHOLE LOG as plain text — Save log in the game, and the
+   simulator's --log. entries are [message, class] pairs.
+   ========================================================== */
+function logText(entries,when){
+  const deck={}; allCards().forEach(c=>{ const n=cname(c)+(c.mods.length?` [${c.mods.map(m=>SPLICES[m].n).join(', ')}]`:''); deck[n]=(deck[n]||0)+1; });
+  const head=[
+    `Coinkeep — ${G.mode==='splice'?'Splice':'Classic'} mode${when?' — '+when:''}`,
+    `${G.over?'Run over':'In progress'}: wave ${G.wave}, turn ${G.turnInWave} (${G.turn} in all), ${plural(G.runCleared,'threat')} cleared`+(splice()?`, ${plural(Math.max(0,G.hearts),'heart')} left`:''),
+    `Charms: ${G.jokers.map(j=>JOKERS[j.key].n).join(', ')||'none'}`,
+    `Deck (${deckSize()}): ${Object.entries(deck).sort().map(([n,k])=>k>1?`${k}× ${n}`:n).join(', ')}`,
+  ];
+  const body=entries.map(([m,cls])=> cls==='wave'?`\n=== ${m} ===`: cls==='turn'?`\n${m}`: `  ${m}`);
+  return head.join('\n')+'\n'+body.join('\n')+'\n';
 }

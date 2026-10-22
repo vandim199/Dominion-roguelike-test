@@ -77,23 +77,23 @@ def('parade',{n:'Parade',c:5,art:'🎉',t:'action',
 def('springclean',{n:'Spring Clean',c:2,step:2,art:'🧺',t:'action',
   tx:l=>`+1 Action. Discard any number of cards, then draw that many${l?` +${l}`:''}.`,
   fx:async(s,l)=>{ A(1);
-    const ch=await chooseCards(G.hand,{min:0,max:99,title:cname(s),sub:`Discard any number, then draw that many${l?` plus ${l}`:''}.`});
+    const ch=await chooseCards(G.hand,{min:0,max:99,why:s.key,title:cname(s),sub:`Discard any number, then draw that many${l?` plus ${l}`:''}.`});
     ch.forEach(c=>{pull(G.hand,c);G.discard.push(c);}); draw(ch.length+l); }});
 def('bonfire',{n:'Bonfire',c:2,step:2,art:'🔥',t:'action',
   tx:l=>`Trash up to ${4+2*l} cards from your hand.`,
-  fx:async(s,l)=>{ const ch=await chooseCards(G.hand,{min:0,max:4+2*l,title:cname(s),sub:`Burn up to ${4+2*l} cards.`});
+  fx:async(s,l)=>{ const ch=await chooseCards(G.hand,{min:0,max:4+2*l,why:s.key,title:cname(s),sub:`Burn up to ${4+2*l} cards.`});
     ch.forEach(c=>{pull(G.hand,c);trashCard(c);}); }});
 def('strategist',{n:'Strategist',c:2,art:'♟',t:'action',
   tx:l=>`+${3+l} Cards. Put a card from your hand on top of your deck.`,
   fx:async(s,l)=>{ draw(3+l);
-    const ch=await chooseCards(G.hand,{min:1,max:1,title:cname(s),sub:'Put one card back on top of your deck.'});
+    const ch=await chooseCards(G.hand,{min:1,max:1,why:s.key,title:cname(s),sub:'Put one card back on top of your deck.'});
     if(ch[0]){pull(G.hand,ch[0]);G.deck.unshift(ch[0]);} }});
 def('encore',{n:'Encore',c:4,step:4,art:'🎭',t:'action',
   tx:l=>`Play an Action from your hand ${['twice','three times','four times'][l]||(2+l)+' times'}.`,
   fx:async(s,l)=>{ const cand=G.hand.filter(c=>c.t==='action'&&!isFrozen(c));
     if(!cand.length){log('No Action to encore.');return;}
     const n=2+l+(hasJ('ovation')?1:0);
-    const ch=await chooseCards(cand,{min:1,max:1,title:cname(s),sub:`Play this Action ${n} times.`});
+    const ch=await chooseCards(cand,{min:1,max:1,why:s.key,title:cname(s),sub:`Play this Action ${n} times.`});
     const c=ch[0]; if(!c)return; pull(G.hand,c); G.inPlay.push(c);
     for(let i=0;i<n;i++){ await runAction(c); render(); } }});
 def('dowser',{n:'Dowser',c:4,art:'🪄',t:'action',
@@ -109,7 +109,7 @@ def('crucible',{n:'Crucible',c:4,step:4,art:'⚗',t:'action',
   fx:async(s,l)=>{ const tr=G.hand.filter(c=>c.t==='treasure'&&!isFrozen(c));
     if(!tr.length){log('Nothing to melt.');return;}
     const ex=hasJ('stone')?6:3;
-    const ch=await chooseCards(tr,{min:0,max:1+l,title:cname(s),
+    const ch=await chooseCards(tr,{min:0,max:1+l,why:s.key,title:cname(s),
       sub:`Melt up to ${1+l}. Each pays ${ex}× its value.`,badge:c=>'→ '+tval(c)*ex});
     for(const c of ch){ const v=tval(c), g=v*ex;
       pull(G.hand,c); trashCard(c,true); C(g);
@@ -120,7 +120,7 @@ def('forge',{n:'Forge',c:5,step:4,art:'⚒',t:'action',
     const up=c=>{ let [k,v]=[c.key,c.lv]; for(let i=0;i<=l;i++){ const n=upTreasure(k,v); if(n[1]>Math.max(cap,c.lv)) break; [k,v]=n; } return [k,v]; };
     const tr=G.hand.filter(c=>c.t==='treasure'&&!isFrozen(c)&&up(c).join()!==[c.key,c.lv].join());
     if(!tr.length){log(`No Treasure to forge. The anvil can't go past tier ${tierName(cap)} this wave.`);return;}
-    const ch=await chooseCards(tr,{min:1,max:1,title:cname(s),sub:`Upgrade it ${plural(1+l,'step')}.`,
+    const ch=await chooseCards(tr,{min:1,max:1,why:s.key,title:cname(s),sub:`Upgrade it ${plural(1+l,'step')}.`,
       badge:c=>{ const [k,v]=up(c); return DB[k].n+plus(v); }});
     const c=ch[0]; if(!c)return;
     const [k,v]=up(c);
@@ -131,7 +131,7 @@ def('coinpress',{n:'Coin Press',c:5,step:4,art:'🏭',t:'action',
   tx:l=>`Choose a Treasure in your hand. Gain ${l?`${1+l} plain copies`:'a plain copy'} of it (no splices) into your discard pile.`,
   fx:async(s,l)=>{ const tr=G.hand.filter(c=>c.t==='treasure'&&!isFrozen(c));
     if(!tr.length){log('No Treasure to press.');return;}
-    const ch=await chooseCards(tr,{min:1,max:1,title:cname(s),sub:`Gain ${l?`${1+l} copies`:'a copy'} of it.`});
+    const ch=await chooseCards(tr,{min:1,max:1,why:s.key,title:cname(s),sub:`Gain ${l?`${1+l} copies`:'a copy'} of it.`});
     const c=ch[0]; if(!c)return;
     for(let i=0;i<1+l;i++) G.discard.push(mk(c.key,c.lv));
     log(`${cname(s)} strikes ${plural(1+l,'new '+cname(c),'new '+cname(c)+'s')}.`,'hl'); }});
@@ -147,13 +147,13 @@ def('orchard',{n:'Orchard',c:4,art:'🍎',t:'action',
 def('pawnshop',{n:'Pawnshop',c:3,art:'💍',t:'action',
   tx:l=>`Trash a card from your hand. +Coin equal to its cost${l?` +${1+l}`:' +1'}.`,
   fx:async(s,l)=>{ if(!G.hand.length) return;
-    const ch=await chooseCards(G.hand,{min:0,max:1,title:cname(s),sub:'Pawn one card for good.',badge:c=>'→ '+(baseCost(c)+1+l)});
+    const ch=await chooseCards(G.hand,{min:0,max:1,why:s.key,title:cname(s),sub:'Pawn one card for good.',badge:c=>'→ '+(baseCost(c)+1+l)});
     const c=ch[0]; if(!c) return; const g=baseCost(c)+1+l;
     pull(G.hand,c); trashCard(c,true); C(g); log(`${cname(s)} pays ${g} for ${cname(c)}.`,'hl'); }});
 def('ragpicker',{n:'Ragpicker',c:2,step:2,art:'🦝',t:'action',
   tx:l=>`+1 Action. Trash any number of junk cards (Shack, Jinx, Rubble) from your hand. +${2+l} Coin each.`,
   fx:async(s,l)=>{ A(1); const j=G.hand.filter(isJunk); if(!j.length){log('No junk to pick.');return;}
-    const ch=await chooseCards(j,{min:0,max:99,title:cname(s),sub:`Each one trashed pays ${2+l} Coin.`});
+    const ch=await chooseCards(j,{min:0,max:99,why:s.key,title:cname(s),sub:`Each one trashed pays ${2+l} Coin.`});
     ch.forEach(c=>{pull(G.hand,c);trashCard(c,true);}); C(ch.length*(2+l));
     if(ch.length) log(`${cname(s)} hauls off ${plural(ch.length,'piece')} of junk for ${ch.length*(2+l)} coin.`,'hl'); }});
 
