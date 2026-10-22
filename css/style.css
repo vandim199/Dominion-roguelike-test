@@ -227,6 +227,7 @@ body.L-narrow #endturn{flex:1 1 auto}
   box-shadow:0 .35em 0 rgba(0,0,0,.28),0 .6em 1.1em rgba(0,0,0,.35);text-align:center;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .card.t-action  {--frame:#5B8DEF;--pill:#3D6FD6;--glow:#DDE8FF}
 .card.t-treasure{--frame:#F2B124;--pill:#D99100;--glow:#FFF0C2}
+.card.t-ward    {--frame:#2BB5A0;--pill:#1F8F7E;--glow:#D6F5EF}
 .card.r         {--frame:#21B89E;--pill:#14957F;--glow:#D3F7EF}
 .card.t-victory,.card.t-junk{--frame:#9AA0B4;--pill:#7D8399;--glow:#ECEDF2}
 .card.t-curse   {--frame:#8E5CD9;--pill:#7240BF;--glow:#EADFFF}

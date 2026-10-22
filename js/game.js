@@ -18,15 +18,15 @@ const cname = c => { const d=DB[c.key];
   return c.lv ? `${d.n} ${roman(c.lv+1)}` : d.n; };
 const cart = c => { const d=DB[c.key]; return d.arts ? d.arts[Math.min(c.lv,d.arts.length-1)] : d.art; };
 const ctext = c => { const d=DB[c.key];
-  if(d.merge) return effText(d.eff(c.lv))+(d.react?' '+d.react:'');
+  if(d.merge){ const t=effText(d.eff(c.lv)); return d.react ? t+(t.endsWith('.')?' ':'. ')+d.react : t; }
   if(merge()&&d.mtx) return d.mtx;
   if(typeof d.tx==='function') return d.tx(c.lv,c);
   if(d.tx) return d.tx;
   return `+${d.v*tierMult(c.lv)} Coin`; };
 // Prices climb on the same curve as power: base + base×(tier bonus) + a small step per tier.
-// A merge card costs what its two halves did, plus 1 a level for the merging you skipped.
+// A merge card's price climbs with its level: base × level, plus 1 a level for the merging you skipped.
 const baseCost = c => { const d=DB[c.key];
-  if(d.merge) return d.c*U(c.lv)+c.lv;
+  if(d.merge) return d.c*(1+c.lv)+c.lv;
   return d.c + (d.c||2)*(tierMult(c.lv)-1) + d.step*c.lv; };
 const costOf   = c => Math.max(0, baseCost(c)-(G?G.discount:0));
 const allCards = () => [...G.deck,...G.hand,...G.discard,...G.inPlay];
@@ -68,7 +68,7 @@ function newRun(mode){
       coin:0,actions:0,buys:0,actionsPlayed:0,treasuresPlayed:0,discount:0,echoUsed:false,wallUsed:false,
       market:[], slots:new Array(TUNE.slots).fill(null), queue:[],
       wave:0, turn:0, turnInWave:0, waveTotal:0, runCleared:0, unlock:{}, merges:0,
-      jokers:[], next:{actions:0,buys:0,coin:0}, later:{coin:0}, phase:'turn', over:false };
+      jokers:[], next:{actions:0,buys:0,coin:0}, later:{coin:0,cards:0}, phase:'turn', over:false };
   if(merge()){
     for(let i=0;i<7;i++)G.deck.push(mk('coin'));
     for(let i=0;i<2;i++)G.deck.push(mk('shack'));
@@ -102,6 +102,7 @@ function newThreat(key,w,elite){
     case 'scavenge':    t.need=Math.round((d.need+2*steps)*em); break;
     case 'banish':      t.need=Math.round((d.need+steps)*em); break;
   }
+  t.full={need:t.need,needCoin:t.needCoin,curses:t.curses,needT:t.needT,needA:t.needA};   // what it first wanted, for Wards
   if(t.atk.n) t.atk.n+=Math.floor((w-1)/5);
   if(elite){ t.n='Elite '+d.n; t.atk.every=Math.max(1,d.atk.every-1); t.fuse=(d.fuse||4)+1;
     if(w>=TUNE.coffinFrom) t.coffin=(t.coffin||0)+1; }
@@ -116,7 +117,9 @@ function effEvery(t){
 
 /* ---------- market ---------- */
 function rollTier(){ const m=TUNE.maxTier(G.wave); return Math.max(0,wpick([[m,44],[m-1,30],[m-2,13],[m+1,9],[m+2,4]])); }
-// Merge mode: the market stocks each card up to TUNE.marketLag levels below the best you have merged it to.
+// Merge mode: the cards on sale this wave — the costlier to play, the later they arrive.
+const stocked = () => MERGE_POOL.filter(k=>!DB[k].noMarket&&G.wave>=TUNE.energyFrom[Math.min(3,DB[k].cost)]);
+// Each is stocked up to TUNE.marketLag levels below the best you have merged it to.
 function rollLevel(k){ const m=Math.max(0,(G.unlock[k]||0)-TUNE.marketLag); return Math.max(0,wpick([[m,50],[m-1,30],[m-2,20]])); }
 function randomTreasure(){
   if(merge()) return mk('coin',rollLevel('coin'));
@@ -124,7 +127,7 @@ function randomTreasure(){
   return mk(wpick([['copper',Math.max(6,40-w*6)],['silver',40],['gold',12+w*4]]),rollTier());
 }
 function marketCard(){
-  if(merge()){ const k=pick(MERGE_POOL.filter(k=>k!=='coin')); return mk(k,rollLevel(k)); }
+  if(merge()){ const k=pick(stocked().filter(k=>k!=='coin')); return mk(k,rollLevel(k)); }
   return mk(pick(splice()?CORE:KINGDOM),rollTier());
 }
 function ensureCoin(){ if(!G.market.some(c=>c&&c.t==='treasure')) G.market[G.market.length-1]=randomTreasure(); }
@@ -230,7 +233,7 @@ async function endWave(){
 }
 
 function rollJokers(n){
-  const cand=Object.keys(JOKERS).filter(k=>!hasJ(k)&&JOKERS[k].off!==G.mode), out=[];
+  const cand=Object.keys(JOKERS).filter(k=>!hasJ(k)&&JOKERS[k].off!==G.mode&&(!JOKERS[k].only||JOKERS[k].only===G.mode)), out=[];
   while(out.length<n&&cand.length){
     const k=wpick(cand.map(k=>[k,RARITY[JOKERS[k].r]]));
     out.push(k); pull(cand,k);
@@ -274,7 +277,7 @@ async function campService(){
   const sorted=()=>G.deck.slice().sort((a,b)=>cname(a).localeCompare(cname(b)));
   if(o==='smith'){
     const s=await chooseCards(pairsIn(G.deck),{min:0,max:1,why:'smith',title:'Smithy',sub:'Merge one pair of identical cards.',badge:nextName});
-    if(s[0]) mergePair(s[0],G.deck.find(x=>x!==s[0]&&twins(x,s[0])),G.deck,G.deck);
+    if(s[0]) mergePair(s[0],G.deck.find(x=>x!==s[0]&&twins(x,s[0])),G.deck);
     return;
   }
   if(o==='copy'&&merge()){
@@ -305,9 +308,9 @@ async function campService(){
    ========================================================== */
 const twins = (a,b) => a.key===b.key && a.lv===b.lv;
 const nextName = c => cname({key:c.key,lv:c.lv+1});
-// One card per mergeable pair (four Coppers offer two), frozen cards and junk left out.
+// One card per mergeable pair (four Coppers offer two), frozen cards, junk and Anvils left out.
 function pairsIn(cards){
-  const free=cards.filter(c=>DB[c.key].merge&&!isFrozen(c)), out=[], used=new Set();
+  const free=cards.filter(c=>DB[c.key].merge&&!DB[c.key].noMerge&&!isFrozen(c)), out=[], used=new Set();
   for(const c of free){
     if(used.has(c)) continue;
     const t=free.find(x=>x!==c&&!used.has(x)&&twins(x,c));
@@ -316,9 +319,9 @@ function pairsIn(cards){
   return out;
 }
 // The new card keeps no splices; the market starts stocking its level.
-function mergePair(a,b,from,to){
+function mergePair(a,b,to){
   if(!a||!b) return null;
-  pull(from,a); pull(from,b);
+  for(const c of [a,b]) [G.discard,G.deck,G.hand].some(p=>pull(p,c));
   const m=mk(a.key,a.lv+1); to.push(m);
   G.merges++;
   const was=G.unlock[a.key]||0;
@@ -327,17 +330,21 @@ function mergePair(a,b,from,to){
   log(`🔨 ${cname(a)} + ${cname(b)} → ${cname(m)}.`,'good');
   return m;
 }
-async function mergeHand(n,title){
-  const pool=pairsIn(G.hand);
-  if(!pool.length){ log('Nothing to merge: no two identical cards in your hand.'); return; }
+// The Anvil merges from anywhere: copies in the discard pile go first, then the draw pile, then the hand.
+async function mergeAnywhere(n,title){
+  const piles=[G.discard,G.deck,G.hand], pool=pairsIn(piles.flat());
+  if(!pool.length){ log('Nothing to merge: you have no two identical cards outside play.'); return; }
   const ch=await chooseCards(pool,{min:0,max:n,why:'merge',title,badge:c=>'→ '+nextName(c),
-    sub:`Pick ${n===1?'a pair':`up to ${n} pairs`} to merge. The new card goes to your discard pile.`});
-  for(const a of ch) mergePair(a,G.hand.find(x=>x!==a&&twins(x,a)),G.hand,G.discard);
+    sub:`Pick ${n===1?'a pair':`up to ${n} pairs`} to merge. Copies in your discard pile are used first, then your draw pile, then your hand. The new card goes to your discard pile.`});
+  for(const a of ch){
+    const [x,y]=piles.flat().filter(c=>twins(c,a)&&!isFrozen(c));
+    mergePair(x,y,G.discard);
+  }
 }
 
 // Merge mode: a cleared threat leaves spoils — pick one of a few free cards.
 async function claimSpoils(p){
-  const keys=shuffle(MERGE_POOL.slice()).slice(0,TUNE.spoils+(p.elite?1:0));
+  const keys=shuffle(stocked()).slice(0,TUNE.spoils+(p.elite?1:0));
   const offers=keys.map(k=>mk(k));
   const s=await chooseCards(offers,{min:0,max:1,why:'spoils',title:`${p.from} cleared — take a card`,sub:'It goes to your discard pile.'});
   if(s[0]){ G.discard.push(s[0]); log(`You take ${cname(s[0])}.`,'good'); }
@@ -482,6 +489,30 @@ function strike(t,frac){
     default:            { const d=hit(t.need-t.prog); t.prog=Math.min(t.need,t.prog+d); log(`${t.n} takes ${d} progress.`,'good'); }
   }
   if(isDone(t)) completeThreat(t);
+}
+
+// Merge mode: every Ward in the discard pile wears each threat down by a share of all it wants.
+// Fractions build up on the threat, so a small demand still goes down eventually.
+function wardTick(){
+  const wards=G.discard.filter(c=>DB[c.key].stays&&DB[c.key].eff(c.lv).ward), live=G.slots.filter(Boolean);
+  if(!wards.length||!live.length) return;
+  const frac=wards.reduce((s,c)=>s+DB[c.key].eff(c.lv).ward,0);
+  log(`🧿 ${wards.length>1?`${wards.length} Wards wear`:'Your Ward wears'} the threats down by ${pctTxt(frac)}.`,'good');
+  for(const t of live){
+    const f=t.full, total=t.kind==='once_coin'?f.need:t.kind==='once_hybrid'?f.needCoin:t.kind==='panic'?f.curses
+      :t.kind==='upgrade'?f.needT+f.needA:t.need;
+    t.worn=(t.worn||0)+frac*total; const d=Math.floor(t.worn); t.worn-=d;
+    if(!d) continue;
+    switch(t.kind){
+      case 'once_coin':   t.need=Math.max(0,t.need-d); break;
+      case 'once_hybrid': t.needCoin=Math.max(0,t.needCoin-d); if(!t.needCoin) t.needAct=0; break;
+      case 'panic':       t.curses=Math.max(0,t.curses-d); break;
+      case 'upgrade':     for(let i=0;i<d;i++){ if(t.gotT<t.needT) t.gotT++; else if(t.gotA<t.needA) t.gotA++; } break;
+      default:            t.prog=Math.min(t.need,t.prog+d);
+    }
+    fx('hit',t);
+    if(isDone(t)) completeThreat(t);
+  }
 }
 
 // Ask the player to aim at a threat; with only one on the board, it is chosen for them.
@@ -753,8 +784,8 @@ function startTurn(){
   G.actions=Math.max(0,TUNE.energy+n.actions+(hasJ('wind')?1:0));
   G.buys=Math.max(0,1+n.buys+(hasJ('seal')?1:0));
   G.coin=Math.max(0,n.coin+G.later.coin);
-  if(G.later.coin) log(`The orchard pays out ${G.later.coin} coin.`,'good');
-  G.later={coin:0};
+  if(G.later.coin) log(`${merge()?'Your savings pay':'The orchard pays'} out ${G.later.coin} coin.`,'good');
+  G.later={coin:0,cards:0};
   if(hasJ('hoarder')) G.coin+=Math.floor(deckSize()/4);
   if(hasJ('trophy'))  G.coin+=Math.floor(G.runCleared/2);
   G.discount=hasJ('seal')?1:0;
@@ -771,13 +802,14 @@ async function endTurn(){
     const carry=hasJ('piggy')?Math.floor(G.coin/2):0;
     if(carry) log(`Piggy Bank keeps ${carry} coin for next turn.`);
     for(const c of G.inPlay.splice(0)) G.discard.push(c);
-    const kept=G.hand.filter(c=>hasMod(c,'retain'));
+    const kept=G.hand.filter(c=>hasMod(c,'retain')||DB[c.key].stays), wards=kept.filter(c=>DB[c.key].stays).length;
     for(const c of G.hand.splice(0)){ c.frozen=false; if(!kept.includes(c)) G.discard.push(c); }
     G.hand.push(...kept);
     G.coin=0; G.actions=0; G.buys=0;
     G.next={actions:0,buys:0,coin:carry};
 
-    draw(handSize());
+    wardTick();
+    draw(Math.max(0,handSize()+G.later.cards-wards));        // Almanac adds, a Ward kept in hand takes one
     render(); await sleep(180);
 
     // threats strike at the hand you just drew — reactions in it can answer

@@ -67,7 +67,7 @@ const GIVES={
 const gives = c => { const d=DB[c.key];
   if(d.merge){ const e=d.eff(c.lv); return {act:e.energy,draw:e.cards,buy:e.buys,coin:d.t==='action'?e.coin:0}; }
   return (GIVES[c.key]||(()=>({})))(c.lv); };
-const power = c => DB[c.key].merge ? U(c.lv) : tierMult(c.lv);
+const power = c => DB[c.key].merge ? 1+c.lv : tierMult(c.lv);
 // Actions a card leaves you with: Tea House +1, Inventor 0, Map Room −1.
 const netAct = c => ((gives(c).act||0)+modCount(c,'quick'))*(hasMod(c,'twin')?2:1)-actCost(c);
 const cardCoin = c => c.t==='treasure' ? tval(c) : c.t==='action' ? 1.5 : 0;
@@ -115,9 +115,17 @@ function playValue(c){
     case 'archer':      v+=strikeValue(strikePct(30,l)/100); break;
     case 'powderkeg':   v+=strikeValue(strikePct(60,l)/100)-2; break;
     case 'lullaby':     v+=live().length?1:0; break;
-    case 'anvil':       v+=4*Math.min(DB.anvil.eff(l).merges,pairsIn(G.hand).length); break;
-    case 'kindling':    v+=3*Math.min(U(l),junk); break;
+    case 'anvil':       v+=4*Math.min(DB.anvil.eff(l).merges,pairsIn([...G.discard,...G.deck,...G.hand]).length); break;
+    case 'kindling':    v+=3*Math.min(1+l,junk); break;
     case 'bowman':      v+=strikeValue(DB.bowman.eff(l).strike/100); break;
+    case 'strongbox':   v+=G.hand.some(x=>x.t==='treasure'&&!isFrozen(x))?1+l:0; break;
+    case 'almanac':     v+=(2+l)*d*.8; break;
+    case 'seer':        v+=G.deck.slice(0,1+l).some(isJunk)?1:.1; break;
+    case 'rummage':     v+=(1+Math.min(1+l,junk))*d; break;
+    case 'patron':      v+=1.5*(1+l); break;
+    case 'reprise': { const o=G.hand.filter(x=>x.key!=='reprise'&&(x.t==='action'||x.t==='treasure')&&!isFrozen(x));
+                      v+=o.length?(1+l)*Math.max(...o.map(x=>x.t==='treasure'?tval(x):playValue(x))):0; break; }
+    case 'alchemist':   break;                                   // played after the Treasures, see heuristicTurn
   }
   v+=modCount(c,'draw')*d+modCount(c,'coin')+(hasMod(c,'grow')?(c.grow||0):0)
     +modCount(c,'strike')*strikeValue(.15)+modCount(c,'trade')*.5-modCount(c,'rust');
@@ -136,11 +144,12 @@ const POLICY={
     splices:{twin:9,coin:6,retain:6,grow:5,draw:4,strike:4,trade:3,guard:3,quick:2,free:1} },
   // Merge mode. w is per level-one unit (×1, 2, 4… a level). energy: ⚡ supply wanted per ⚡ the deck's Actions cost.
   merge_money:{ name:'Big Money (merge)',
-    w:{coin:1.2,spark:1,scout:1.3,anvil:3,bazaar:1.2}, cap:{bazaar:1}, energy:1, thin:false,
+    w:{coin:1.2,spark:1,scout:1.3,bazaar:1.2,strongbox:1,rummage:1.2,alchemist:2,ward:.8}, cap:{bazaar:1,alchemist:2,ward:1}, energy:1, thin:false,
     charms:{golden:10,glass:8,midas:7,vintage:6,mirror:6,greedy:6,minimal:6,hourglass:5,gilded:4,piggy:4,wall:4,seal:3},
     splices:{} },
   merge_engine:{ name:'Engine (merge)',
-    w:{coin:1,spark:1.3,scout:1.6,anvil:3,kindling:1.5,bazaar:1.5,bowman:1.8,watchdog:1.3}, cap:{kindling:1}, energy:1, thin:false,
+    w:{coin:1,spark:1.3,scout:1.6,kindling:1.5,bazaar:1.5,bowman:1.8,watchdog:1.3,strongbox:1.2,almanac:1.4,seer:.6,
+       reprise:2,patron:1,rummage:1.4,alchemist:1.8,ward:1.2}, cap:{kindling:1,seer:1,patron:1,ward:2}, energy:1, thin:false,
     charms:{greedy:8,wind:7,echo:7,golden:7,midas:6,momentum:6,minimal:5,hourglass:5,wall:4,seal:4,eagle:3,bounty:3},
     splices:{} },
   engine:{ name:'Engine',
@@ -216,6 +225,10 @@ function heuristic(P){
         case 'smith':     return [best(pool,c=>worth(P,c))];
         case 'spoils':    return [best(pool,c=>want(P,c)||worth(P,c)/4)];
         case 'kindling':  return junk;
+        case 'seer':      return junk;
+        case 'rummage':   return pool.filter(c=>isJunk(c)||isFrozen(c)||DB[c.key].stays);   // a Ward only works from the discard pile
+        case 'strongbox': return [best(pool,c=>-tval(c))];
+        case 'reprise':   return [best(pool,c=>c.t==='treasure'?tval(c):playValue(c))];
         // Before playing, give up the least useful cards; after, whatever is left over.
         case 'prog_discard': return SIM.stage==='hand'?[...junk,...coppers(pool),...cheapest(pool)]:pool.filter(c=>!hasMod(c,'retain'));
         case 'sacrifice': case 'scavenge': return urg?[...junk,...coppers(pool),...cheapest(pool)]:junk;
@@ -293,6 +306,7 @@ async function heuristicTurn(B){
   // 2. Treasures (Heavy ones cost an Action).
   if(same()) await playAllTreasures();
   for(const c of G.hand.filter(c=>c.t==='treasure'&&canPlay(c))) if(same()) await playCard(c);
+  for(const c of G.hand.filter(c=>c.key==='alchemist').sort((a,b)=>b.lv-a.lv)) if(same()&&G.coin>1&&canPlay(c)) await playCard(c);
   if(!same()) return;
   recordTurn();
   // 3. Pay what can't wait, 4. buy, 5. pour the rest into the threats.

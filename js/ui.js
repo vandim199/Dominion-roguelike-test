@@ -275,7 +275,7 @@ function bindCard(el,c,act,label){
 function cardEl(c,{badge}={}){
   const d=DB[c.key], el=document.createElement('div');
   el.className=`card t-${d.t}${d.r?' r':''}${c.lv?` lv${Math.min(3,c.lv)}`:''}${G&&iced(c)?' frozen iced':c.frozen?' frozen':''}`;
-  const kind=d.r?'Reaction':({treasure:'Treasure',action:'Action',victory:'Junk',junk:'Junk',curse:'Junk'}[d.t]||d.t);
+  const kind=d.r?'Reaction':({treasure:'Treasure',action:'Action',ward:'Ward',victory:'Junk',junk:'Junk',curse:'Junk'}[d.t]||d.t);
   const stars=c.lv?(c.lv<=3?'★'.repeat(c.lv):`★${c.lv}`):'';
   // splices: one chip per keyword with a count (scars in red), empty slots in splice mode,
   // and one text line per keyword for the big view — so a card with 30 splices still fits
