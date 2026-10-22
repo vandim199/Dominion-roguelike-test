@@ -7,7 +7,7 @@
 
      node sim/sim.js                       all bots, 100 runs each (~45s)
      node sim/sim.js --bot engine --runs 1000
-     node sim/sim.js --mode classic --waves 20
+     node sim/sim.js --mode classic --waves 20    (merge is the default; splice too)
      node sim/sim.js --bot money --log run.txt     also save run 1's log
      node sim/sim.js --json out.json               every run, raw
      --waves 30 --turns 2000 --deckcap 400         when a run stops early
@@ -21,7 +21,7 @@ const SCRIPTS=['js/data.js','js/game.js','sim/bots.js'].map(f=>new vm.Script(fs.
 const BOTS=['engine','money','random'];
 
 function args(){
-  const o={bot:'all',runs:100,mode:'splice',seed:1,waves:30,turns:2000,deckcap:400,json:null,log:null};
+  const o={bot:'all',runs:100,mode:'merge',seed:1,waves:30,turns:2000,deckcap:400,json:null,log:null};
   const a=process.argv.slice(2);
   for(let i=0;i<a.length;i++){
     const k=a[i].replace(/^--/,''), v=a[i+1];
@@ -31,7 +31,7 @@ function args(){
   }
   o.bots = o.bot==='all' ? BOTS : o.bot.split(',');
   for(const b of o.bots) if(!BOTS.includes(b)){ console.error(`Unknown bot "${b}". Bots: ${BOTS.join(', ')}.`); process.exit(1); }
-  if(!['splice','classic'].includes(o.mode)){ console.error('--mode is splice or classic.'); process.exit(1); }
+  if(!['merge','splice','classic'].includes(o.mode)){ console.error('--mode is merge, splice or classic.'); process.exit(1); }
   return o;
 }
 
@@ -78,17 +78,18 @@ function report(bot,{runs,names},o){
   // Per wave: what a turn looks like, and what the wave asks of it.
   const W={};
   for(const r of runs) for(const w of r.waves){
-    const a=W[w.wave] ||= {runs:0,lost:0,turns:0,coin:0,actsLeft:0,played:0,seen:0,deck:0,drewAll:0,stuck:0,tc:[],price:[],tier:w.maxTier};
-    a.runs++; a.turns+=w.turns; a.coin+=w.coin; a.actsLeft+=w.actsLeft; a.played+=w.played; a.seen+=w.seen; a.deck+=w.deck;
+    const a=W[w.wave] ||= {runs:0,lost:0,turns:0,coin:0,actsLeft:0,played:0,seen:0,deck:0,drewAll:0,stuck:0,tc:[],price:[],tier:w.maxTier,merges:0,topLv:0};
+    a.runs++; a.merges+=w.merges||0; a.topLv+=w.topLv||0; a.turns+=w.turns; a.coin+=w.coin; a.actsLeft+=w.actsLeft; a.played+=w.played; a.seen+=w.seen; a.deck+=w.deck;
     a.drewAll+=w.drewAll; a.stuck+=w.stuck;
     a.tc.push(...w.threats.filter(t=>t.coin).map(t=>t.coin)); a.price.push(...w.market.map(m=>m.cost));
     if(r.cleared===w.wave-1&&(r.result==='hearts'||r.result==='board full')) a.lost++;
   }
   out.push('\nPer wave (averages per turn). seen = cards in hand+play ÷ deck size. drew all = turns that drew the whole deck.');
-  out.push('stuck = turns ending with an Action in hand and no Actions left. threat ÷ income = turns of income a coin threat asks for.');
-  out.push(table(['wave','runs','lost','tier','turns','coin','⚡ spare','played','seen','deck','drew all','stuck','coin threat','÷ income','market med','÷ income'],
+  const M=o.mode==='merge';
+  out.push('stuck = turns ending with an Action in hand it could not pay for. threat ÷ income = turns of income a coin threat asks for.'+(M?' top lv = highest card level in the deck (1 = level one).':''));
+  out.push(table(['wave','runs','lost',M?'merges':'tier',M?'top lv':'','turns','coin','⚡ spare','played','seen','deck','drew all','stuck','coin threat','÷ income','market med','÷ income'],
     Object.entries(W).map(([wave,a])=>{ const T=a.turns||1, inc=a.coin/T, tc=mean(a.tc), mp=quant(a.price,.5);
-      return [wave,a.runs,pct(a.lost,a.runs),a.tier,f1(a.turns/a.runs),f1(inc),f1(a.actsLeft/T),f1(a.played/T),
+      return [wave,a.runs,pct(a.lost,a.runs),M?f1(a.merges/a.runs):a.tier,M?f1(1+a.topLv/a.runs):'',f1(a.turns/a.runs),f1(inc),f1(a.actsLeft/T),f1(a.played/T),
         pct(a.seen,a.deck),f1(a.deck/T),pct(a.drewAll,T),pct(a.stuck,T),Math.round(tc),inc?f1(tc/inc):'—',mp,inc?f1(mp/inc):'—']; })));
 
   // Threats: which ones get cleared, which ones get through.

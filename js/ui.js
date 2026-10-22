@@ -290,11 +290,13 @@ function cardEl(c,{badge}={}){
     if(c.mods.length) el.classList.add('spliced');
   }
   el.innerHTML=`<div class="banner">${cname(c)}</div>
-    <div class="art"><span>${d.art||'✦'}</span>${chips?`<div class="mods">${chips}</div>`:''}</div>
+    <div class="art"><span>${cart(c)||'✦'}</span>${chips?`<div class="mods">${chips}</div>`:''}</div>
     <div class="tx"><span>${ctext(c)}</span>${lines}</div>
     <div class="foot"><span>${kind}</span><span class="stars">${stars}</span></div>`;
   const cost=document.createElement('div'); cost.className='cost'; cost.textContent=costOf(c);
   el.appendChild(cost);
+  // merge mode: what it costs to play, in ⚡, under the price
+  if(d.merge&&d.t==='action'){ const e=document.createElement('div'); e.className='ecost'; e.textContent=actCost(c); el.appendChild(e); }
   const bt=badge&&badge(c);
   if(bt){ const b=document.createElement('div'); b.className='badge'; b.textContent=bt; el.appendChild(b); }
   return el;
@@ -303,7 +305,7 @@ function cardEl(c,{badge}={}){
 function jokerCardEl(k,status){
   const j=JOKERS[k], el=document.createElement('div');
   el.className=`jcard ${j.r}`;
-  el.innerHTML=`<div class="jr">${j.r}</div><div class="jart">${j.art}</div><div class="jn">${j.n}</div><div class="jtx">${j.tx}</div>${status?`<div class="jst">Now: ${status}</div>`:''}`;
+  el.innerHTML=`<div class="jr">${j.r}</div><div class="jart">${j.art}</div><div class="jn">${j.n}</div><div class="jtx">${jtx(k)}</div>${status?`<div class="jst">Now: ${status}</div>`:''}`;
   return el;
 }
 
@@ -319,14 +321,14 @@ function threatProgress(t){
   switch(t.kind){
     case 'prog_coin':    return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} coin`, note:`${t.need-t.prog} owed${cm}`};
     case 'once_coin':    return {pct:Math.min(1,G.coin/Math.max(1,coinFor(t.need))), left:`${t.need} coin at once${cm}`, note:`you hold ${G.coin}`};
-    case 'prog_action':  return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} Actions`, note:`${t.need-t.prog} owed${um}`};
+    case 'prog_action':  return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} ${actW()}`, note:`${t.need-t.prog} owed${um}`};
     case 'prog_buy':     return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} Buys`, note:`${t.need-t.prog} owed${um}`};
     case 'prog_discard': return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} cards fed`, note:`${t.need-t.prog} wanted`};
     case 'sacrifice':    return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} cards trashed`, note:`${t.need-t.prog} wanted`};
     case 'panic':        return {pct:0, left:'instant', note:`costs ${plural(t.curses,'Curse')}`};
     case 'once_hybrid':  { const nc=Math.max(1,coinFor(t.needCoin)), na=Math.max(1,unitsFor(t.needAct));
                            return {pct:Math.min(1,(Math.min(G.coin,nc)/nc*0.75)+(Math.min(G.actions,na)/na*0.25)),
-                                   left:`${t.needCoin} coin + ${t.needAct} Actions`, note:`you hold ${G.coin} / ${G.actions}`}; }
+                                   left:`${t.needCoin} coin + ${actN(t.needAct)}`, note:`you hold ${G.coin} / ${G.actions}`}; }
     case 'scavenge':     return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} fed`, note:'junk counts ×2'};
     case 'banish':       { const n=t.need-t.prog;
                            return {pct:Math.min(1,G.actionsPlayed/Math.max(1,n)), left:`${n} Actions in one turn`, note:`played ${G.actionsPlayed}`}; }
@@ -341,12 +343,12 @@ function threatButton(t){
   switch(t.kind){
     case 'prog_coin':    return `Deposit ${Math.min(G.coin,coinFor(rem))} coin`;
     case 'once_coin':    return `Pay ${coinFor(t.need)} coin`;
-    case 'prog_action':  return `Spend ${plural(Math.min(G.actions,unitsFor(rem)),'Action')}`;
+    case 'prog_action':  return `Spend ${actN(Math.min(G.actions,unitsFor(rem)))}`;
     case 'prog_buy':     return `Spend ${plural(Math.min(G.buys,unitsFor(rem)),'Buy')}`;
     case 'prog_discard': return 'Feed cards';
     case 'sacrifice':    return 'Sacrifice cards';
     case 'panic':        return 'Shake on it';
-    case 'once_hybrid':  return `Pay ${coinFor(t.needCoin)} coin + ${plural(unitsFor(t.needAct),'Action')}`;
+    case 'once_hybrid':  return `Pay ${coinFor(t.needCoin)} coin + ${actN(unitsFor(t.needAct))}`;
     case 'upgrade':      return 'Trash into the rift';
     case 'scavenge':     return 'Feed the nest';
     case 'banish':       return 'Banish it';
@@ -357,11 +359,13 @@ function threatButton(t){
 const attackWhen = t => t.cd<=1 ? 'at end of this turn' : `in ${t.cd} turns`;
 // The attack line under a threat; in splice mode it is the fuse.
 function atkLine(t){
-  if(!splice()) return `⚔ <b>${t.atk.name}</b> ${attackWhen(t)}: ${atkText(t)}.`;
+  if(!fused()) return `⚔ <b>${t.atk.name}</b> ${attackWhen(t)}: ${atkText(t)}.`;
   const what=t.atk.k==='grow'||t.atk.k==='entomb'?'':t.atk.k==='price'?`you take ${junkName('jinx',t.curses)}, `:`${atkText(t)}, `;
-  return `💥 <b>Detonates</b> ${attackWhen(t)}: ${what}scars ${t.scarBest?'your finest card':'a card'}, −${t.elite?2:1} ❤.`;
+  const scar=splice()?`scars ${t.scarBest?'your finest card':'a card'}, `:'';
+  return `💥 <b>Detonates</b> ${attackWhen(t)}: ${what}${scar}−${t.elite?2:1} ❤.`;
 }
 function rewardLine(t){
+  if(merge()) return `<div class="treward">✨ Clear it: take one of ${TUNE.spoils+(t.elite?1:0)} free cards</div>`;
   if(!splice()) return '';
   const swift=t.age<=1;
   return `<div class="treward">✨ Clear it: splice a keyword${swift?` · <b>swift bonus</b> ${t.age===0?'this turn or next':'this turn'}`:''}</div>`;
@@ -375,7 +379,7 @@ function threatInfoEl(t){
     <div class="tatk${t.cd<=1?' imminent':''}">${atkLine(t)}</div>
     ${rewardLine(t)}
     <p class="tnum"><span>${p.left}</span><span>${p.note}</span></p>
-    ${!splice()&&t.age>=TUNE.enrageAfter?'<p class="warn">Enraged: it attacks every turn until cleared.</p>':''}`;
+    ${!fused()&&t.age>=TUNE.enrageAfter?'<p class="warn">Enraged: it attacks every turn until cleared.</p>':''}`;
   return el;
 }
 
@@ -392,10 +396,11 @@ function render(){
   chip('cWave',`Wave ${G.wave}`,`W${G.wave}`,'wave');
   chip('cTurn',`Turn ${G.turnInWave}`,`T${G.turnInWave}`);
   chip('cHearts',`❤ ${G.hearts} / ${TUNE.hearts}`,`❤ ${G.hearts}`,G.hearts<=2?'now':'hearts');
-  $('cHearts').hidden=!splice();
+  $('cHearts').hidden=!fused();
   const remaining=G.queue.length+G.slots.filter(s=>s).length;
   chip('cQueue',`Threats ${remaining} / ${G.waveTotal}`,`☠ ${remaining}/${G.waveTotal}`);
-  chip('cTier',`Market tier: ${tierName(TUNE.maxTier(G.wave))}`,`Tier ${tierName(TUNE.maxTier(G.wave))}`);
+  if(merge()) chip('cTier',`🔨 ${plural(G.merges,'merge')}`,`🔨 ${G.merges}`);
+  else chip('cTier',`Market tier: ${tierName(TUNE.maxTier(G.wave))}`,`Tier ${tierName(TUNE.maxTier(G.wave))}`);
   const every=TUNE.spawnEvery(G.wave), untilSpawn=G.slots.every(s=>!s)?0:every-(G.turnInWave%every||every);
   if(!G.queue.length) chip('cNext','No more threats this wave','⏳ —');
   else chip('cNext', untilSpawn===0?'Next threat at end of this turn':`Next threat in ${plural(untilSpawn,'turn')}`,
@@ -408,9 +413,9 @@ function render(){
     if(!j){ el.className='joker empty'; el.disabled=true; el.setAttribute('aria-label','Empty charm slot'); J.appendChild(el); continue; }
     const d=JOKERS[j.key], st=jokerStatus(j);
     el.className='joker '+d.r;
-    el.setAttribute('aria-label',`${d.n}: ${d.tx}`);
+    el.setAttribute('aria-label',`${d.n}: ${jtx(j.key)}`);
     el.innerHTML=`<span class="ja">${d.art}</span><span class="jname">${d.n}</span>${st?`<span class="js">${st}</span>`:''}
-      <span class="jtip"><b>${d.n}</b> · <i>${d.r}</i><br>${d.tx}</span>`;
+      <span class="jtip"><b>${d.n}</b> · <i>${d.r}</i><br>${jtx(j.key)}</span>`;
     el.onclick=()=>openInspect(jokerCardEl(j.key,st),'');
     J.appendChild(el);
   }
@@ -451,7 +456,7 @@ function render(){
     box.querySelector('.thead').onclick=()=>openInspect(threatInfoEl(t),'',[[threatButton(t),()=>clickThreat(t),'go',!(threatReady(t)&&live)]]);
     const pips=[];
     if(t.elite) pips.push('<span class="pip elite">ELITE</span>');
-    if(!splice()&&t.age>=TUNE.enrageAfter) pips.push('<span class="pip">ENRAGED</span>');
+    if(!fused()&&t.age>=TUNE.enrageAfter) pips.push('<span class="pip">ENRAGED</span>');
     if(pips.length){ const d=document.createElement('div'); d.className='pips'; d.innerHTML=pips.join(''); box.appendChild(d); }
     const b=document.createElement('button');
     b.className='tbtn2'+(t.kind==='panic'?' blood':ready?' go':'');
@@ -465,7 +470,7 @@ function render(){
 
   // resources
   const r=(id,v,label,icon)=>{const e=$(id); e.innerHTML=`${icon}<span class="lbl"> ${label}</span> <b>${v}</b>`; e.classList.toggle('spent',v<=0);};
-  r('rAct',G.actions,'Actions','⚡'); r('rBuy',G.buys,'Buys','🛒');
+  r('rAct',G.actions,merge()?'Energy':'Actions','⚡'); r('rBuy',G.buys,'Buys','🛒');
   $('rCoin').innerHTML=`🪙<span class="lbl"> Coin</span> <b>${G.coin}</b>`;
   if(G.coin>UI.lastCoin){ floatText($('rCoin'),`+${G.coin-UI.lastCoin}`,'coin'); pulseClass($('rCoin'),'bump',300); }
   UI.lastCoin=G.coin;
@@ -536,7 +541,7 @@ $('tabThreats').onclick=()=>setTab('threats');
 $('tabMarket').onclick=()=>setTab('market');
 $('overBtn').onclick=()=>newRun(G.mode);
 const startMode=mode=>{ $('title').classList.remove('on'); newRun(mode); };
-$('tPlay').onclick=()=>startMode('splice');
+$('tPlay').onclick=()=>startMode('merge');
 $('tClassic').onclick=()=>startMode('classic');
 $('tHow').onclick=()=>$('howto').classList.add('on');
 $('hClose').onclick=()=>$('howto').classList.remove('on');

@@ -260,6 +260,12 @@ body.L-narrow #endturn{flex:1 1 auto}
 .card .cost{position:absolute;left:-.6em;top:-.6em;width:2.1em;height:2.1em;font-size:1.15em;border-radius:50%;
   background:radial-gradient(circle at 35% 30%,#FFE69A,#F2B124 60%,#C98B00);border:.12em solid #fff;color:var(--coin-ink);
   font-family:var(--head);font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 .18em 0 rgba(0,0,0,.3)}
+.card .ecost{position:absolute;left:-.6em;bottom:-.6em;width:2.1em;height:2.1em;font-size:1.15em;border-radius:50%;z-index:1;
+  background:radial-gradient(circle at 35% 30%,#B9E4FF,#3D9BE9 60%,#1F5FB0);border:.12em solid #fff;color:#fff;
+  font-family:var(--head);font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 .15em 0 rgba(0,0,0,.3);
+  text-shadow:0 .06em 0 rgba(0,0,0,.35)}
+.card .ecost::before{content:'⚡';font-size:.62em;margin-right:.02em}
+.card:has(> .ecost) .foot{padding-left:1.6em}
 .card .badge{position:absolute;right:-.5em;top:-.7em;font-family:var(--head);font-size:1.1em;font-weight:700;padding:.08em .55em;border-radius:1em;
   background:var(--card-ink);border:.12em solid var(--gold);color:var(--gold);white-space:nowrap;z-index:2}
 .card.lv1{--frame:#3FA2FF} .card.lv2{--frame:#B06CFF}

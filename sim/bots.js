@@ -63,7 +63,11 @@ const GIVES={
   snare:      l=>({act:1, draw:1+l}),
   nightwatch: l=>({draw:Math.max(0,6+l-G.hand.length)}),
 };
-const gives = c => (GIVES[c.key]||(()=>({})))(c.lv);
+// Merge cards say what they do.
+const gives = c => { const d=DB[c.key];
+  if(d.merge){ const e=d.eff(c.lv); return {act:e.energy,draw:e.cards,buy:e.buys,coin:d.t==='action'?e.coin:0}; }
+  return (GIVES[c.key]||(()=>({})))(c.lv); };
+const power = c => DB[c.key].merge ? U(c.lv) : tierMult(c.lv);
 // Actions a card leaves you with: Tea House +1, Inventor 0, Map Room −1.
 const netAct = c => ((gives(c).act||0)+modCount(c,'quick'))*(hasMod(c,'twin')?2:1)-actCost(c);
 const cardCoin = c => c.t==='treasure' ? tval(c) : c.t==='action' ? 1.5 : 0;
@@ -91,6 +95,7 @@ function owedCoin(t){
 }
 const strikeValue = frac => Math.max(0,...live().map(t=>frac*owedCoin(t)));
 const junkIn = cards => cards.filter(isJunk);
+const isCopper = c => c.key==='copper'||(c.key==='coin'&&c.lv===0);
 
 function playValue(c){
   const g=gives(c), l=c.lv, d=density(), junk=junkIn(G.hand).length;
@@ -110,6 +115,9 @@ function playValue(c){
     case 'archer':      v+=strikeValue(strikePct(30,l)/100); break;
     case 'powderkeg':   v+=strikeValue(strikePct(60,l)/100)-2; break;
     case 'lullaby':     v+=live().length?1:0; break;
+    case 'anvil':       v+=4*Math.min(DB.anvil.eff(l).merges,pairsIn(G.hand).length); break;
+    case 'kindling':    v+=3*Math.min(U(l),junk); break;
+    case 'bowman':      v+=strikeValue(DB.bowman.eff(l).strike/100); break;
   }
   v+=modCount(c,'draw')*d+modCount(c,'coin')+(hasMod(c,'grow')?(c.grow||0):0)
     +modCount(c,'strike')*strikeValue(.15)+modCount(c,'trade')*.5-modCount(c,'rust');
@@ -126,6 +134,15 @@ const POLICY={
     cap:{maproom:2,dowser:1}, terminalsPer:8, thin:false,
     charms:{golden:10,glass:8,midas:7,vintage:6,mirror:6,greedy:6,minimal:5,hourglass:5,gilded:4,piggy:4,wall:4,seal:3},
     splices:{twin:9,coin:6,retain:6,grow:5,draw:4,strike:4,trade:3,guard:3,quick:2,free:1} },
+  // Merge mode. w is per level-one unit (×1, 2, 4… a level). energy: ⚡ supply wanted per ⚡ the deck's Actions cost.
+  merge_money:{ name:'Big Money (merge)',
+    w:{coin:1.2,spark:1,scout:1.3,anvil:3,bazaar:1.2}, cap:{bazaar:1}, energy:1, thin:false,
+    charms:{golden:10,glass:8,midas:7,vintage:6,mirror:6,greedy:6,minimal:6,hourglass:5,gilded:4,piggy:4,wall:4,seal:3},
+    splices:{} },
+  merge_engine:{ name:'Engine (merge)',
+    w:{coin:1,spark:1.3,scout:1.6,anvil:3,kindling:1.5,bazaar:1.5,bowman:1.8,watchdog:1.3}, cap:{kindling:1}, energy:1, thin:false,
+    charms:{greedy:8,wind:7,echo:7,golden:7,midas:6,momentum:6,minimal:5,hourglass:5,wall:4,seal:4,eagle:3,bounty:3},
+    splices:{} },
   engine:{ name:'Engine',
     w:{silver:2,gold:3,treasury:2.5,nestegg:2.5,teahouse:3,maproom:3.5,inventor:4,parade:4,springclean:1.5,bonfire:2,
        strategist:2.5,encore:3,dowser:3,crucible:2.5,forge:2.5,coinpress:2,bargain:3,ringleader:3,orchard:3,pawnshop:1.5,
@@ -136,11 +153,25 @@ const POLICY={
 };
 
 // A card's raw worth to this bot: weight × tier power.
-const worth = (P,c) => isJunk(c) ? -1 : (P.w[c.key]||0)*tierMult(c.lv)*(hasMod(c,'twin')?2:1)+slotsUsed(c);
+const worth = (P,c) => isJunk(c) ? -1 : (P.w[c.key]||0)*power(c)*(hasMod(c,'twin')?2:1)+slotsUsed(c);
+// Merge mode: ⚡ the deck makes (Sparks, net, plus a turn's own) against ⚡ its other Actions cost.
+function energyBudget(cards){
+  let supply=TUNE.energy, demand=0;
+  for(const c of cards) if(c.t==='action'){ const n=netAct(c); if(n>0) supply+=n; else demand+=actCost(c); }
+  return {supply,demand};
+}
 function want(P,c){
   let w=worth(P,c); if(w<=0) return 0;
   const mine=allCards(), have=mine.filter(x=>x.key===c.key).length;
   if(P.cap[c.key]!=null&&have>=P.cap[c.key]) return 0;
+  if(DB[c.key].merge){
+    if(c.key==='anvil') return have<1+Math.floor(mine.length/10) ? w : 0;
+    const {supply,demand}=energyBudget(mine);
+    if(c.key==='spark'&&supply>demand*P.energy+2) w*=.4;
+    if(c.t==='action'&&netAct(c)<0&&demand+actCost(c)>supply*P.energy+1) w*=.3;
+    if(mine.filter(x=>twins(x,c)).length%2===1) w*=1.3;                // it would make a pair
+    return w;
+  }
   if(c.t==='action'){
     const acts=mine.filter(x=>x.t==='action'), V=acts.filter(x=>netAct(x)>=1).length, T=acts.filter(x=>netAct(x)<0).length;
     if(P.terminalsPer&&netAct(c)<0&&T+1>mine.length/P.terminalsPer) return 0;
@@ -162,7 +193,7 @@ function pressing(t){
 /* ---------- the heuristic bot (money / engine) ---------- */
 function heuristic(P){
   const thinOk = () => allCards().filter(c=>c.t==='treasure').reduce((s,c)=>s+tval(c),0)>=12;
-  const coppers = pool => pool.filter(c=>c.key==='copper').sort((a,b)=>a.lv-b.lv);
+  const coppers = pool => pool.filter(isCopper).sort((a,b)=>a.lv-b.lv);
   const cheapest = pool => pool.filter(c=>!isJunk(c)).sort((a,b)=>worth(P,a)-worth(P,b));
   const self={ P,
     cards(pool,o){
@@ -181,6 +212,10 @@ function heuristic(P){
         case 'temper': case 'copy': return [best(pool,c=>worth(P,c)||cardWorth(c)/10)];
         case 'mend':      return [best(pool,c=>worth(P,c))];
         case 'splice':    return [spliceTarget(pool)];
+        case 'merge':     return pool.slice().sort((a,b)=>worth(P,b)-worth(P,a));
+        case 'smith':     return [best(pool,c=>worth(P,c))];
+        case 'spoils':    return [best(pool,c=>want(P,c)||worth(P,c)/4)];
+        case 'kindling':  return junk;
         // Before playing, give up the least useful cards; after, whatever is left over.
         case 'prog_discard': return SIM.stage==='hand'?[...junk,...coppers(pool),...cheapest(pool)]:pool.filter(c=>!hasMod(c,'retain'));
         case 'sacrifice': case 'scavenge': return urg?[...junk,...coppers(pool),...cheapest(pool)]:junk;
@@ -190,7 +225,7 @@ function heuristic(P){
       return pool.slice(0,o.min||0);
     },
     option(keys){
-      if(keys.includes('take')) return ['snare','moat','guard','rip'].find(k=>keys.includes(k))||'take';   // a reaction: always block
+      if(keys.includes('take')) return ['snare','moat','dog','guard','rip'].find(k=>keys.includes(k))||'take';   // a reaction: always block
       if(keys.includes('rest')) return inn(keys);
       if(keys.includes('y')) return 'y';                                                                 // only asked once we chose to
       const ts=live().filter(t=>keys.includes(t.id));                                                     // aiming a strike
@@ -208,6 +243,7 @@ function heuristic(P){
   function inn(keys){
     const all=allCards(), junk=junkIn(all).length;
     if(keys.includes('heal')&&G.hearts<=2) return 'heal';
+    if(keys.includes('smith')) return pairsIn(all).length ? 'smith' : junk>=2 ? 'purge' : 'copy';
     if(keys.includes('mend')&&all.some(c=>worth(P,c)>3&&(hasMod(c,'heavy')||hasMod(c,'brittle')))) return 'mend';
     if(junk>=2) return 'purge';
     return 'temper';
@@ -228,7 +264,7 @@ function shouldPay(t,stage){
     case 'once_coin': case 'once_hybrid': return u||t.cd<=2;
     case 'prog_discard': return u;
     case 'sacrifice': case 'scavenge': return u||junkIn(G.hand).length>0;
-    case 'upgrade':      return u||G.hand.some(c=>c.key==='copper');
+    case 'upgrade':      return u||G.hand.some(isCopper);
     case 'banish':       return true;
     case 'panic':        return t.cd<=1||t.curses<=1;
   }
@@ -245,9 +281,11 @@ async function heuristicTurn(B){
     SIM.dens=null;
     const acts=G.hand.filter(c=>c.t==='action'&&canPlay(c));
     if(!acts.length) break;
-    const free=acts.filter(c=>netAct(c)>=0);
+    // Free: leaves the Actions (⚡) where they were or better, and does something (an Anvil with no pair waits).
+    const free=acts.filter(c=>netAct(c)>0||(netAct(c)===0&&playValue(c)>0));
+    // Otherwise the best value per Action (⚡) spent; draw first while there's ⚡ to spare after it.
     const c=free.length ? best(free,c=>netAct(c)+playValue(c))
-                        : best(acts,c=>playValue(c)*(G.actions>=2&&gives(c).draw?1.2:1));
+                        : best(acts,c=>playValue(c)/Math.max(1,actCost(c))*(G.actions>actCost(c)&&gives(c).draw?1.2:1));
     if(!free.length&&playValue(c)<=.01) break;
     SIM.dens=null;
     await playCard(c);
@@ -308,7 +346,7 @@ function randomBot(){
 function waveRec(){
   const w=G.wave;
   return SIM.run.waves[w] ||= {wave:w,turns:0,coin:0,actsLeft:0,buysLeft:0,played:0,seen:0,deck:0,drewAll:0,stuck:0,
-    threats:[],market:[],maxTier:TUNE.maxTier(w)};
+    threats:[],market:[],maxTier:TUNE.maxTier(w),merges0:G.merges,merges:0,topLv:0};
 }
 function noteWave(){
   if(SIM.run.lastWave===G.wave) return;
@@ -323,7 +361,8 @@ function recordTurn(){
   w.turns++; w.coin+=G.coin; w.actsLeft+=G.actions; w.buysLeft+=G.buys; w.played+=G.actionsPlayed;
   w.seen+=G.hand.length+G.inPlay.length; w.deck+=deckSize();
   if(!G.deck.length&&!G.discard.length) w.drewAll++;
-  if(G.actions===0&&G.hand.some(c=>c.t==='action'&&!isFrozen(c))) w.stuck++;
+  if(G.hand.some(c=>c.t==='action'&&!isFrozen(c)&&actCost(c)>G.actions)) w.stuck++;
+  w.merges=G.merges-w.merges0; w.topLv=Math.max(w.topLv,...allCards().map(c=>c.lv));
   R.income = R.turns++ ? R.income*.7+G.coin*.3 : G.coin;
 }
 function noteBuy(c){ const k=c.key; SIM.run.bought[k]=(SIM.run.bought[k]||0)+1; SIM.run.buyTiers.push(c.lv); }
@@ -340,7 +379,7 @@ applyAttack=function(t){ const r=SIM.run&&SIM.run.threats[t.key]; if(r&&!t.deton
 async function simRun(o){
   seedRandom(o.seed); SIM.dens=null;
   SIM.keepLog=!!o.keepLog;
-  SIM.bot = o.bot==='random' ? randomBot() : heuristic(POLICY[o.bot]);
+  SIM.bot = o.bot==='random' ? randomBot() : heuristic(POLICY[(o.mode==='merge'?'merge_':'')+o.bot]);
   SIM.run={ seed:o.seed, bot:o.bot, mode:o.mode, waves:{}, threats:{}, bought:{}, buyTiers:[], income:0, turns:0, lastWave:0 };
   newRun(o.mode);
   let steps=0;

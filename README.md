@@ -10,18 +10,24 @@ Works on desktop, tablets and phones in either orientation. Use **⚙ Settings**
 
 **📜 Log → ⬇ Save** (also in Settings and on the game-over screen) downloads the whole run's log as a text file, not just the last 200 lines on screen.
 
+## Modes
+
+**Play** is merge mode. Cards are played with ⚡ Energy (1 a turn; each card's play cost is in its blue pip). An Anvil merges two identical cards in your hand into one a level higher, which does what both did in one slot: Copper → Silver → Gold → Platinum (+1, +2, +4, +8 Coin), Scout +1/+2/+4 Cards for 1/2/4 ⚡. Spark, the energy card, is +1 ⚡ for 0, then +3 for 1, +6 for 2. The market stocks each card one level below the best you've merged it to (`TUNE.marketLag`). Threats have fuses: one that runs out detonates, attacks and costs a heart. Clearing one offers a free level-one card. The cards are `mdef`s in `js/data.js`; merge mode's threat curves are `TUNE.merge`.
+
+**Classic mode** is the original game: Dominion-style Actions, market tiers that climb every wave, and threats that attack every few turns until paid. Splice mode (keywords grafted onto cards) is still in the code but off the title screen.
+
 ## Simulator
 
 `sim/` plays the game headless with bots, so balance changes can be measured instead of guessed. It needs Node.js and loads `js/data.js` and `js/game.js` exactly as they are, so edit the game and rerun:
 
 ```
-node sim/sim.js                          # all bots, 100 runs each
+node sim/sim.js                          # all bots, 100 runs each, merge mode
 node sim/sim.js --bot engine --runs 500  # one bot, more runs
-node sim/sim.js --mode classic
+node sim/sim.js --mode classic           # or splice
 node sim/sim.js --bot money --log run.txt --json runs.json
 ```
 
-Bots: **engine** (villages, draw, upgrades), **money** (Big Money: Treasures and a couple of Map Rooms) and **random** (a floor any strategy should beat). Runs are seeded: the same `--seed` plays the same game. A run ends when the town falls, after `--waves` waves (30), after `--turns` turns (2000, "stalled") or when the deck passes `--deckcap` cards (400, "runaway deck").
+Bots: **engine** (Sparks, Scouts and the other Actions, kept within its ⚡ budget; villages and draw in classic), **money** (mostly Coins, merged; Big Money in classic) and **random** (a floor any strategy should beat). Both heuristic bots merge every pair an Anvil lets them. Runs are seeded: the same `--seed` plays the same game. A run ends when the town falls, after `--waves` waves (30), after `--turns` turns (2000, "stalled") or when the deck passes `--deckcap` cards (400, "runaway deck").
 
 The report shows, per bot: waves cleared; how runs end and which threat ended them; per wave, the coin, spare Actions, cards seen and how often a turn drew the whole deck, next to what the wave's coin threats and the market ask (as turns of income); each threat's clear and detonation rate; and for every card, charm and splice, how often it was taken and how those runs did.
 
