@@ -14,6 +14,7 @@ const hasJ  = k => !!G && G.jokers.some(j=>j.key===k);
 // Merge cards count levels in Roman numerals (Spark, Spark II…); Coins have names (Copper, Silver…).
 const cname = c => { const d=DB[c.key];
   if(!d.merge) return d.n+plus(c.lv);
+  if(d.fused) return partsOf(c).map(p=>cname(p)).join('-');
   if(d.names) return c.lv<d.names.length ? d.names[c.lv] : `${d.names.at(-1)} ${roman(c.lv-d.names.length+2)}`;
   return c.lv ? `${d.n} ${roman(c.lv+1)}` : d.n; };
 const cart = c => { const d=DB[c.key]; return d.arts ? d.arts[Math.min(c.lv,d.arts.length-1)] : d.art; };
@@ -265,42 +266,91 @@ function deckSummary(){
   return `${all.length} cards — ${by('treasure')} Treasures, ${by('action')} Actions, ${junk} junk`;
 }
 
+// Every service has a Back button: backing out of one returns to the Inn to pick another.
 async function campService(){
-  const heal=['heal',`❤ Rest — recover 2 hearts (${G.hearts}/${TUNE.hearts})`];
-  const o=await chooseOption('🍺 The Inn',`${deckSummary()}. Choose one service before wave ${G.wave+1}.`,[
-    ['purge','🔥 Clear out — trash up to 2 cards'],
-    ...(merge()?[['smith','🔨 Smithy — merge one pair of identical cards from anywhere in your deck'],
-                 ['copy',`📜 Copyist — copy a card up to level ${TUNE.copyMax+1}`],heal]
-              :[['temper','⚒ Blacksmith — upgrade a card one tier'],['copy','📜 Copyist — copy a card']]),
-    ...(splice()?[['mend','🩹 Mender — remove the scars from a card'],heal]:[]),
-    ['rest','Move on']]);
+  for(;;){
+    const heal=['heal',`❤ Rest — recover 2 hearts (${G.hearts}/${TUNE.hearts})`];
+    const o=await chooseOption('🍺 The Inn',`${deckSummary()}. Choose one service before wave ${G.wave+1}.`,[
+      ['purge','🔥 Clear out — trash up to 2 cards'],
+      ...(merge()?[['fuse','🧬 Merge — combine two different cards into one that does both'],
+                   ['copy',`📜 Copyist — copy a card up to level ${TUNE.copyMax+1}`],heal]
+                :[['temper','⚒ Blacksmith — upgrade a card one tier'],['copy','📜 Copyist — copy a card']]),
+      ...(splice()?[['mend','🩹 Mender — remove the scars from a card'],heal]:[]),
+      ['rest','Move on']]);
+    if(await innService(o)!==false) return;
+  }
+}
+// False when the player backed out.
+async function innService(o){
   const sorted=()=>G.deck.slice().sort((a,b)=>cname(a).localeCompare(cname(b)));
-  if(o==='smith'){
-    const s=await chooseCards(pairsIn(G.deck),{min:0,max:1,why:'smith',title:'Smithy',sub:'Merge one pair of identical cards.',badge:nextName});
-    if(s[0]) mergePair(s[0],G.deck.find(x=>x!==s[0]&&twins(x,s[0])),G.deck);
-    return;
-  }
-  if(o==='copy'&&merge()){
-    const s=await chooseCards(sorted().filter(c=>!isJunk(c)&&c.lv<=TUNE.copyMax),{min:0,max:1,why:'copy',title:'Copyist',sub:'Add a copy of one card to your deck.'});
-    if(s[0]){ G.deck.push(clone(s[0])); log(`You copy ${cname(s[0])}.`,'good'); }
-    return;
-  }
+  const pick=async(pool,o)=>{ const s=await chooseCards(pool,{min:1,max:1,back:'Back',...o}); return s&&s[0]; };
+  if(o==='fuse') return fuseService(sorted());
   if(o==='purge'){
-    const s=await chooseCards(sorted(),{min:0,max:2,why:'purge',title:'Clear out',sub:'Trash up to 2 cards from your deck for good.'});
+    const s=await chooseCards(sorted(),{min:1,max:2,back:'Back',why:'purge',title:'Clear out',sub:'Trash up to 2 cards from your deck for good.'});
+    if(!s) return false;
     s.forEach(c=>{pull(G.deck,c);trashCard(c);});
   } else if(o==='temper'){
-    const s=await chooseCards(sorted().filter(c=>!DB[c.key].noLv),{min:0,max:1,why:'temper',title:'Blacksmith',
-      sub:'Upgrade one card a tier.',badge:c=>DB[c.key].n+plus(c.lv+1)});
-    if(s[0]){ const was=cname(s[0]); s[0].lv++; log(`${was} is tempered into ${cname(s[0])}.`,'good'); }
+    const c=await pick(sorted().filter(c=>!DB[c.key].noLv),{why:'temper',title:'Blacksmith',sub:'Upgrade one card a tier.',badge:c=>DB[c.key].n+plus(c.lv+1)});
+    if(!c) return false;
+    const was=cname(c); c.lv++; log(`${was} is tempered into ${cname(c)}.`,'good');
   } else if(o==='copy'){
-    const s=await chooseCards(sorted().filter(c=>!DB[c.key].noLv),{min:0,max:1,why:'copy',title:'Copyist',sub:'Add a copy of one card to your deck.'});
-    if(s[0]){ G.deck.push(clone(s[0])); log(`You copy ${cname(s[0])}.`,'good'); }
+    const c=await pick(sorted().filter(c=>!isJunk(c)&&(!merge()||c.lv<=TUNE.copyMax)),{why:'copy',title:'Copyist',sub:'Add a copy of one card to your deck.'});
+    if(!c) return false;
+    G.deck.push(clone(c)); log(`You copy ${cname(c)}.`,'good');
   } else if(o==='mend'){
-    const s=await chooseCards(sorted().filter(c=>c.mods.some(m=>SPLICES[m].scar)),{min:0,max:1,why:'mend',title:'Mender',sub:'Remove every scar from one card.'});
-    if(s[0]){ s[0].mods=s[0].mods.filter(m=>!SPLICES[m].scar); log(`${cname(s[0])} is mended.`,'good'); }
+    const c=await pick(sorted().filter(c=>c.mods.some(m=>SPLICES[m].scar)),{why:'mend',title:'Mender',sub:'Remove every scar from one card.'});
+    if(!c) return false;
+    c.mods=c.mods.filter(m=>!SPLICES[m].scar); log(`${cname(c)} is mended.`,'good');
   } else if(o==='heal'){
     G.hearts=Math.min(TUNE.hearts,G.hearts+2); log(`You rest. The town has ${plural(G.hearts,'heart')}.`,'good');
   }
+}
+
+/* ==========================================================
+   FUSING — merge mode, at the Inn: two different cards become
+   one that does both and costs their average ⚡, rounded up.
+   Each fusion is a card of its own (its key names its parts),
+   so two copies of one can still be merged by an Anvil, which
+   raises every part a level.
+   ========================================================== */
+const fusable = c => !isJunk(c) && DB[c.key].merge && !DB[c.key].noMerge && !DB[c.key].stays;
+const partsOf = c => DB[c.key].fused ? DB[c.key].fused.map(p=>({key:p.key,lv:p.lv+c.lv})) : [{key:c.key,lv:c.lv}];
+// Effects add up; multipliers multiply, replays take the larger, strikes cap at 100%.
+function combineEff(es){
+  const o={};
+  for(const e of es) for(const [k,v] of Object.entries(e)){
+    if(o[k]==null) o[k]=v;
+    else if(k==='mult')   o[k]=Math.round(o[k]*v*100)/100;
+    else if(k==='replay') o[k]=Math.max(o[k],v);
+    else if(k==='strike') o[k]=Math.min(100,o[k]+v);
+    else o[k]+=v;
+  }
+  return o;
+}
+function fusionOf(a,b){
+  const parts=[...partsOf(a),...partsOf(b)].sort((x,y)=>(x.key+x.lv).localeCompare(y.key+y.lv));
+  const pc=Math.ceil((actCost(a)+actCost(b))/2), k='fz:'+parts.map(p=>p.key+'.'+p.lv).join('+')+':'+pc;
+  if(!DB[k]){
+    const ds=parts.map(p=>DB[p.key]);
+    def(k,{n:'Fusion',merge:true,fused:parts,noMarket:true,c:ds.reduce((s,d)=>s+d.c,0),step:0,cost:pc,pc:()=>pc,fx:mergeFx,
+      t:ds.some(d=>d.t==='action')?'action':'treasure', r:ds.some(d=>d.r), react:(ds.find(d=>d.react)||{}).react,
+      art:parts.map(p=>cart({key:p.key,lv:p.lv})).join(''),
+      eff:l=>combineEff(parts.map(p=>DB[p.key].eff(p.lv+l)))});
+  }
+  return mk(k);
+}
+async function fuseService(deck){
+  const pool=deck.filter(fusable);
+  const sub='The new card does what both did and costs their average ⚡, rounded up.';
+  const a=(await chooseCards(pool,{min:1,max:1,back:'Back',why:'fuse',title:'Merge — pick the first card',sub}) || [])[0];
+  if(!a) return false;
+  const b=(await chooseCards(pool.filter(c=>c!==a),{min:1,max:1,back:'Back',why:'fuse2',title:`Merge ${cname(a)} with…`,sub,
+    badge:c=>`⚡ ${Math.ceil((actCost(a)+actCost(c))/2)}`}) || [])[0];
+  if(!b) return false;
+  const f=fusionOf(a,b);
+  if(!await confirmCard(f,'Merge these two?',`${cname(a)} + ${cname(b)} become this card. It costs ${actN(actCost(f))} to play.`,'Merge','Back')) return false;
+  pull(G.deck,a); pull(G.deck,b); G.deck.push(f);
+  log(`🧬 ${cname(a)} and ${cname(b)} are merged into ${cname(f)}.`,'good');
 }
 
 /* ==========================================================
@@ -325,7 +375,7 @@ function mergePair(a,b,to){
   const m=mk(a.key,a.lv+1); to.push(m);
   G.merges++;
   const was=G.unlock[a.key]||0;
-  if(m.lv>was){ G.unlock[a.key]=m.lv;
+  if(m.lv>was&&!DB[m.key].noMarket){ G.unlock[a.key]=m.lv;
     if(m.lv-TUNE.marketLag>Math.max(0,was-TUNE.marketLag)) log(`The market now stocks ${cname({key:m.key,lv:m.lv-TUNE.marketLag})}.`,'good'); }
   log(`🔨 ${cname(a)} + ${cname(b)} → ${cname(m)}.`,'good');
   return m;
@@ -677,7 +727,7 @@ async function resolveAttack(t){
   if(hasJ('wall')&&!G.wallUsed){ G.wallUsed=true; log('Iron Wall absorbs the blow.','good'); blocked(t); return true; }
   const best=f=>G.hand.filter(f).sort((x,y)=>y.lv-x.lv)[0];
   const moat =best(c=>c.key==='guarddog');
-  const dog  =best(c=>c.key==='watchdog');
+  const dog  =best(c=>!!DB[c.key].react);                       // Guard Dogs, and fusions with one in them
   const rip  =best(c=>c.key==='riposte');
   const snare=best(c=>c.key==='snare'&&(!t.elite||c.lv>=1));
   const grd  =best(c=>hasMod(c,'guard'));

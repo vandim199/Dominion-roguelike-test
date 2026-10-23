@@ -19,8 +19,10 @@ function threatProgress(){ return {pct:0,left:'',note:''}; }
 // Pickers answer at once. The bot's answer is trimmed to what the picker allows.
 function chooseCards(pool,o={}){
   const min=o.min||0, max=o.max??1;
-  if(!pool.length||max<=0) return Promise.resolve([]);
-  let ch=[...new Set(SIM.bot.cards(pool,o)||[])].filter(c=>pool.includes(c)).slice(0,max);
+  if(!pool.length||max<=0) return Promise.resolve(o.back?null:[]);
+  const said=SIM.bot.cards(pool,o);
+  if(said===null&&o.back) return Promise.resolve(null);                 // the bot backed out
+  let ch=[...new Set(said||[])].filter(c=>pool.includes(c)).slice(0,max);
   for(const c of pool){ if(ch.length>=min) break; if(!ch.includes(c)) ch.push(c); }
   return Promise.resolve(ch);
 }
@@ -30,6 +32,7 @@ function chooseOption(title,sub,options){
 }
 // Called a second time, with {skip}, to ask which charm to give away when the slots are full.
 function chooseJoker(keys,title,sub,o){ return Promise.resolve(o?SIM.bot.giveAway(keys):SIM.bot.charm(keys)); }
+function confirmCard(){ return Promise.resolve(true); }
 function chooseSplice(keys){ const k=SIM.bot.spliceKey(keys); SIM.splice=k; return Promise.resolve(k); }
 
 /* ---------- seeded randomness: the same seed plays the same run ---------- */
@@ -162,7 +165,8 @@ const POLICY={
 };
 
 // A card's raw worth to this bot: weight × tier power.
-const worth = (P,c) => isJunk(c) ? -1 : (P.w[c.key]||0)*power(c)*(hasMod(c,'twin')?2:1)+slotsUsed(c);
+const worth = (P,c) => isJunk(c) ? -1 : DB[c.key].fused ? partsOf(c).reduce((s,p)=>s+(P.w[p.key]||0)*(1+p.lv),0)
+  : (P.w[c.key]||0)*power(c)*(hasMod(c,'twin')?2:1)+slotsUsed(c);
 // Merge mode: ⚡ the deck makes (Sparks, net, plus a turn's own) against ⚡ its other Actions cost.
 function energyBudget(cards){
   let supply=TUNE.energy, demand=0;
@@ -222,7 +226,9 @@ function heuristic(P){
         case 'mend':      return [best(pool,c=>worth(P,c))];
         case 'splice':    return [spliceTarget(pool)];
         case 'merge':     return pool.slice().sort((a,b)=>worth(P,b)-worth(P,a));
-        case 'smith':     return [best(pool,c=>worth(P,c))];
+        // Fuse a Spark into the best card that costs 1 ⚡: it pays for itself and frees a slot.
+        case 'fuse':      { const f=fusePair(pool); return f?[f[0]]:null; }
+        case 'fuse2':     { const f=fusePair(G.deck); return f?[f[1]]:null; }
         case 'spoils':    return [best(pool,c=>want(P,c)||worth(P,c)/4)];
         case 'kindling':  return junk;
         case 'seer':      return junk;
@@ -253,10 +259,14 @@ function heuristic(P){
     const pref={quick:'action',draw:'action',free:'action',strike:'action',coin:'treasure',grow:'treasure',retain:'treasure'}[SIM.splice];
     return best(pool,c=>(worth(P,c)||cardWorth(c)/10)*(c.t===pref?2:1));
   }
+  function fusePair(cards){
+    const sp=cards.find(c=>c.key==='spark'), one=cards.filter(c=>fusable(c)&&c!==sp&&actCost(c)===1&&!DB[c.key].fused);
+    return sp&&one.length ? [sp,best(one,c=>worth(P,c))] : null;
+  }
   function inn(keys){
     const all=allCards(), junk=junkIn(all).length;
     if(keys.includes('heal')&&G.hearts<=2) return 'heal';
-    if(keys.includes('smith')) return pairsIn(all).length ? 'smith' : junk>=2 ? 'purge' : 'copy';
+    if(keys.includes('fuse')) return junk>=2 ? 'purge' : fusePair(all) ? 'fuse' : 'copy';
     if(keys.includes('mend')&&all.some(c=>worth(P,c)>3&&(hasMod(c,'heavy')||hasMod(c,'brittle')))) return 'mend';
     if(junk>=2) return 'purge';
     return 'temper';

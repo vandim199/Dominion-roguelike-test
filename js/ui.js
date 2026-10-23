@@ -137,9 +137,10 @@ function openVeil(title,sub,kind){
   $('veil').classList.add('on'); $('veil').scrollTop=0;
 }
 
-function chooseCards(pool,{min=0,max=1,title='Choose',sub='',badge=null}={}){
+// back: label of a button that leaves the picker without choosing; it resolves to null.
+function chooseCards(pool,{min=0,max=1,title='Choose',sub='',badge=null,back=null}={}){
   return new Promise(res=>{
-    if(!pool.length||max<=0){ res([]); return; }
+    if((!pool.length||max<=0)&&!back){ res([]); return; }
     const chosen=new Set();
     openVeil(title,sub+(UI.touch?' Press and hold a card to read it.':' Right-click a card to read it up close.'));
     const p=$('pool');
@@ -161,8 +162,23 @@ function chooseCards(pool,{min=0,max=1,title='Choose',sub='',badge=null}={}){
       p.appendChild(el);
     });
     ok.onclick=()=>{closeVeil();res([...chosen]);};
+    if(back){ const b=document.createElement('button'); b.className='mbtn'; b.textContent=back; b.onclick=()=>{closeVeil();res(null);}; $('mBtns').appendChild(b); }
+    if(!pool.length){ p.innerHTML='<p class="hint">No cards to choose from.</p>'; ok.hidden=true; }
     $('mBtns').appendChild(ok); upd();
     ok.focus();
+  });
+}
+
+// Show one card large with a yes and a no; resolves true or false.
+function confirmCard(c,title,sub,yes='Confirm',no='Back'){
+  return new Promise(res=>{
+    openVeil(title,sub);
+    const el=cardEl(c); el.classList.add('big'); $('pool').appendChild(el);
+    for(const [label,v,cls] of [[no,false,''],[yes,true,'go']]){
+      const b=document.createElement('button'); b.className='mbtn '+cls; b.textContent=label;
+      b.onclick=()=>{closeVeil();res(v);}; $('mBtns').appendChild(b);
+      if(v) setTimeout(()=>b.focus(),0);
+    }
   });
 }
 
@@ -272,7 +288,8 @@ function bindCard(el,c,act,label){
 /* ==========================================================
    RENDER
    ========================================================== */
-function cardEl(c,{badge}={}){
+// hand: in merge mode a card in your hand shows only what it costs to play, top left.
+function cardEl(c,{badge,hand}={}){
   const d=DB[c.key], el=document.createElement('div');
   el.className=`card t-${d.t}${d.r?' r':''}${c.lv?` lv${Math.min(3,c.lv)}`:''}${G&&iced(c)?' frozen iced':c.frozen?' frozen':''}`;
   const kind=d.r?'Reaction':({treasure:'Treasure',action:'Action',ward:'Ward',victory:'Junk',junk:'Junk',curse:'Junk'}[d.t]||d.t);
@@ -293,10 +310,11 @@ function cardEl(c,{badge}={}){
     <div class="art"><span>${cart(c)||'✦'}</span>${chips?`<div class="mods">${chips}</div>`:''}</div>
     <div class="tx"><span>${ctext(c)}</span>${lines}</div>
     <div class="foot"><span>${kind}</span><span class="stars">${stars}</span></div>`;
-  const cost=document.createElement('div'); cost.className='cost'; cost.textContent=costOf(c);
-  el.appendChild(cost);
-  // merge mode: what it costs to play, in ⚡, under the price
-  if(d.merge&&d.t==='action'){ const e=document.createElement('div'); e.className='ecost'; e.textContent=actCost(c); el.appendChild(e); }
+  const handOnly=hand&&merge();
+  if(!handOnly){ const cost=document.createElement('div'); cost.className='cost'; cost.textContent=costOf(c); el.appendChild(cost); }
+  // merge mode: what it costs to play, in ⚡ (Wards are never played)
+  if(d.merge&&(d.t==='action'||handOnly&&d.t==='treasure')){
+    const e=document.createElement('div'); e.className='ecost'+(handOnly?' top':''); e.textContent=actCost(c); el.appendChild(e); }
   const bt=badge&&badge(c);
   if(bt){ const b=document.createElement('div'); b.className='badge'; b.textContent=bt; el.appendChild(b); }
   return el;
@@ -483,7 +501,7 @@ function render(){
   // hand — overlap cards just enough to fit the width; past a third covered, it becomes a slider
   const h=$('hand'), hw=$('handwrap'), keep=hw.scrollLeft; h.innerHTML='';
   G.hand.forEach(c=>{
-    const el=cardEl(c), ok=canPlay(c)&&live;
+    const el=cardEl(c,{hand:true}), ok=canPlay(c)&&live;
     el.classList.toggle('playable',ok); el.classList.toggle('dead',!ok);
     bindCard(el,c,ok?()=>playCard(c):null,'Play');
     h.appendChild(el);

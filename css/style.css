@@ -266,7 +266,8 @@ body.L-narrow #endturn{flex:1 1 auto}
   font-family:var(--head);font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 .15em 0 rgba(0,0,0,.3);
   text-shadow:0 .06em 0 rgba(0,0,0,.35)}
 .card .ecost::before{content:'⚡';font-size:.62em;margin-right:.02em}
-.card:has(> .ecost) .foot{padding-left:1.6em}
+.card:has(> .ecost:not(.top)) .foot{padding-left:1.6em}
+.card .ecost.top{top:-.6em;bottom:auto}
 .card .badge{position:absolute;right:-.5em;top:-.7em;font-family:var(--head);font-size:1.1em;font-weight:700;padding:.08em .55em;border-radius:1em;
   background:var(--card-ink);border:.12em solid var(--gold);color:var(--gold);white-space:nowrap;z-index:2}
 .card.lv1{--frame:#3FA2FF} .card.lv2{--frame:#B06CFF}
@@ -281,6 +282,7 @@ body.L-narrow #endturn{flex:1 1 auto}
   background:linear-gradient(160deg,rgba(170,220,255,.75),rgba(110,170,255,.6));text-shadow:0 .05em .2em rgba(0,60,140,.6)}
 .card.iced::after{content:"🧊"}
 .card.big.frozen::after{align-items:flex-start;justify-content:flex-end;padding:.25em .3em;font-size:2em;background:rgba(150,205,255,.28);pointer-events:none}
+#pool .card.big{--w:min(14rem,62vw,38vh)}
 .card.big{--w:min(14rem,62vw,38vh);box-shadow:0 .4em 0 rgba(0,0,0,.28),0 1rem 2.5rem rgba(0,0,0,.6)}
 
 /* mini cards: small market & hand cards drop their rules text — tap to read */
