@@ -62,6 +62,7 @@
     <div id="bar">
       <div class="res" id="rAct"></div>
       <div class="res" id="rBuy"></div>
+      <div class="res mult" id="rMult" hidden></div>
       <div class="res coin" id="rCoin"></div>
       <span class="spacer"></span>
       <button class="pile" id="pTreas" title="Play every Treasure in your hand (T)">▶ Treasures</button>
@@ -148,12 +149,13 @@
     <h3 id="hTitle">How to play</h3>
     <ol class="steps">
       <li><b>⚡ Spend Energy.</b> You get 1 ⚡ a turn. Each card shows what it costs to play in its blue pip; Treasures are free. Sparks give ⚡, Scouts draw cards, and the rest give Coin, Buys or strike threats.</li>
+      <li><b>✖ Mult.</b> Coin from your cards is multiplied by your Mult the moment it lands, so play Mult first and Coin after. Mult starts each turn at 1: War Drums add to it, Crescendo adds for every card you've played, Fireworks multiply it. Then each charm applies its own Mult, left to right — tap a charm to move it. Alchemist multiplies the Coin you already hold: play it last.</li>
       <li><b>🔨 Merge.</b> Play your Anvil to merge two identical cards from anywhere in your deck into one a level higher — two Coppers make a Silver, two Sparks a Spark II. It costs the same to play and does one more: Silver gives 2 Coin, Spark II 2 ⚡. Copies in your discard pile are used first, then your draw pile, then your hand; the new card goes to your discard pile.</li>
       <li><b>🛒 Shop the market.</b> It starts with level-one cards; ones that cost more ⚡ to play arrive in later waves. Once you merge a card to a new level, the market starts stocking the level below it. Bought cards go to the bottom of your deck; the two leftmost stalls leave each turn.</li>
-      <li><b>👹 Beat the fuse.</b> Each threat wants something — Coin, Energy, Buys or cards — and has a fuse. Tap its button to pay. If the fuse runs out it detonates: it attacks and costs the town a ❤. Clear one and you may take a free card.</li>
+      <li><b>👹 Beat the fuse.</b> Each threat wants something — Coin, Energy, Buys or cards — and has a fuse. Tap its button to pay. A threat that wants anything but Coin can also be bribed away with Coin, at a steep price. If the fuse runs out it detonates: it attacks and costs the town a ❤. Clear one and you may take a free card. Coin demands grow faster every wave: only a deck whose Mult keeps climbing can keep up.</li>
       <li><b>🧊 Don't lean on one card.</b> The Snow Queen, and Elites from wave 5, seal your most valuable card in ice until they leave. The Bookworm eats everything your cards would draw until it is full.</li>
       <li><b>🏰 Hold all three slots.</b> If a threat arrives with every slot full, the town falls.</li>
-      <li><b>✨ Between waves</b> pick a charm that bends the rules, and visit the Inn to trash or copy a card, rest, or merge two different cards into one that does both and costs their average ⚡ (rounded up).</li>
+      <li><b>✨ Between waves</b> pick a charm that bends the rules, and visit the Inn to trash or copy a card, rest, or merge two different cards into one that does both and costs their average ⚡ (rounded up). Many charms grow as you feed them (merges, trashed cards, cleared threats). A charm can come Foil (+1 Mult), Holographic (+3), Polychrome (×1.5) or Negative (takes no slot); fragile ones may break as a wave ends.</li>
     </ol>
     <p class="hint">Classic mode opens the game as it was on 22 October 2026, before Energy and merging: Dominion-style Actions, splice mode and the original classic.</p>
     <button class="mbtn go" id="hClose">Got it</button>

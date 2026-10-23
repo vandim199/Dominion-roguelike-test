@@ -10,7 +10,7 @@
    ========================================================== */
 
 const UI = { layout:'wide', side:true, auto:1, scale:1, user:1, tapInspect:null, tab:'threats', touch:false,
-             lastCoin:0, hits:new Set(), ups:new Map() };
+             lastCoin:0, lastMult:1, hits:new Set(), ups:new Map() };
 const mqCoarse = matchMedia('(pointer: coarse)');
 
 function loadPrefs(){
@@ -101,6 +101,10 @@ function fx(kind,arg){
     case 'upgrade': UI.ups.set(arg,(UI.ups.get(arg)||0)+1); buzz(20);
       if(UI.layout==='short'){ UI.tab='market'; document.body.classList.add('tab-market'); } break;   // no render: later upgrades still to count
     case 'clear': floatText($('threats'),`${arg.art} cleared!`,'good'); buzz(25); break;
+    // Merge mode's big plays: a ×Mult landing, and a single gain of Coin worth shouting about.
+    case 'mult':  if(arg){ pulseClass($('rMult'),'boom',500); buzz(30); } break;
+    case 'jackpot': if(arg>=1e6){ pulseClass(document.body,'flash',600); pulseClass(document.body,'shake',420); buzz([40,30,80]); }
+                    else if(arg>=1e4){ pulseClass(document.body,'shake',420); buzz(40); } break;
     case 'wave':  banner(`Wave ${arg}`,arg%TUNE.eliteEvery===0?'An Elite leads the charge':''); break;
     case 'lose':  buzz([90,60,180]); break;
   }
@@ -120,7 +124,7 @@ function resetUI(){
   LEDGER.length=0;
   $('log').innerHTML=''; $('toasts').innerHTML='';
   $('over').classList.remove('on'); closeInspect(); closeMenu();
-  UI.lastCoin=0;
+  UI.lastCoin=0; UI.lastMult=1;
 }
 function showGameOver(text){
   $('overText').textContent=text;
@@ -196,12 +200,12 @@ function chooseOption(title,sub,options){
   });
 }
 
-function chooseJoker(keys,title,sub,{skip='Skip'}={}){
+function chooseJoker(keys,title,sub,{skip='Skip',eds={}}={}){
   return new Promise(res=>{
     openVeil(title,sub,'jokers');
     const p=$('pool');
     keys.forEach(k=>{
-      const el=jokerCardEl(k); el.tabIndex=0; el.setAttribute('role','button');
+      const el=jokerCardEl(k,'',eds[k]); el.tabIndex=0; el.setAttribute('role','button');
       el.onclick=()=>{closeVeil();res(k);};
       el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();closeVeil();res(k);}};
       p.appendChild(el);
@@ -259,7 +263,7 @@ function closeInspect(){ $('inspect').classList.remove('on'); }
 function inspectCard(c,act,label){
   const el=cardEl(c); el.classList.add('big');
   const info=[];
-  if(c.t==='treasure'&&G) info.push(`Produces ${tval(c)} Coin right now.`);
+  if(c.t==='treasure'&&G) info.push(`Produces ${fmt(tval(c))} Coin right now${merge()&&multNow()!==1?`, × ${fmtX(multNow())} Mult = ${fmt(fin(tval(c)*multNow()))}`:''}.`);
   if(G&&iced(c)){ const t=G.slots.find(t=>t&&t.id===c.ice); info.push(`🧊 Sealed in ice until ${t.n} leaves.`); }
   if(label&&label.startsWith('Buy')) info.push('Bought cards go to the bottom of your draw pile.');
   openInspect(el,info.join(' '),label?[[label,act,'go',!act]]:[]);
@@ -313,7 +317,7 @@ function cardEl(c,{badge,hand}={}){
     <div class="tx"><span>${ctext(c)}</span>${lines}</div>
     <div class="foot"><span>${kind}</span><span class="stars">${stars}</span></div>`;
   const handOnly=hand&&merge();
-  if(!handOnly){ const cost=document.createElement('div'); cost.className='cost'; cost.textContent=costOf(c); el.appendChild(cost); }
+  if(!handOnly){ const cost=document.createElement('div'); cost.className='cost'; cost.textContent=fmt(costOf(c)); el.appendChild(cost); }
   // merge mode: what it costs to play, in ⚡ (Wards are never played)
   if(d.merge&&(d.t==='action'||handOnly&&d.t==='treasure')){
     const e=document.createElement('div'); e.className='ecost'+(handOnly?' top':''); e.textContent=actCost(c); el.appendChild(e); }
@@ -322,11 +326,21 @@ function cardEl(c,{badge,hand}={}){
   return el;
 }
 
-function jokerCardEl(k,status){
-  const j=JOKERS[k], el=document.createElement('div');
-  el.className=`jcard ${j.r}`;
-  el.innerHTML=`<div class="jr">${j.r}</div><div class="jart">${j.art}</div><div class="jn">${j.n}</div><div class="jtx">${jtx(k)}</div>${status?`<div class="jst">Now: ${status}</div>`:''}`;
+// ed: a merge-mode edition (Foil, Holographic, Polychrome, Negative), shown as a ribbon and a line of text.
+function jokerCardEl(k,status,ed){
+  const j=JOKERS[k], e=EDITIONS[ed], el=document.createElement('div');
+  el.className=`jcard ${j.r}${e?' ed-'+ed:''}`;
+  el.innerHTML=`<div class="jr">${j.r}</div>${e?`<div class="jed">${e.art} ${e.n}</div>`:''}<div class="jart">${j.art}</div><div class="jn">${j.n}</div><div class="jtx">${jtx(k)}${e?`<br><b>${e.n}: ${e.tx}.</b>`:''}</div>${status?`<div class="jst">Now: ${status}</div>`:''}`;
   return el;
+}
+
+// A charm up close. In merge mode it can be moved a place left or right (Mult applies in order); the view follows it.
+function inspectJoker(i){
+  const j=G&&G.jokers[i]; if(!j) return;
+  const n=G.jokers.length, many=merge()&&n>1, go=d=>()=>inspectJoker(moveJoker(i,d)?i+d:i);
+  openInspect(jokerCardEl(j.key,jokerStatus(j),j.ed),
+    many?`Charm ${i+1} of ${n}. Mult applies left to right: +Mult charms do most before ×Mult ones; Blueprint copies the one to its right.`:'',
+    many?[['◀ Move left',go(-1),'',i===0||busy],['Move right ▶',go(1),'',i===n-1||busy]]:[]);
 }
 
 function spliceCardEl(k){
@@ -339,8 +353,8 @@ function spliceCardEl(k){
 function threatProgress(t){
   const cm=coinMult()>1?' (×2)':'', um=unitMult()>1?' (×2)':'';
   switch(t.kind){
-    case 'prog_coin':    return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} coin`, note:`${t.need-t.prog} owed${cm}`};
-    case 'once_coin':    return {pct:Math.min(1,G.coin/Math.max(1,coinFor(t.need))), left:`${t.need} coin at once${cm}`, note:`you hold ${G.coin}`};
+    case 'prog_coin':    return {pct:t.prog/t.need, left:`${fmt(t.prog)} / ${fmt(t.need)} coin`, note:`${fmt(t.need-t.prog)} owed${cm}`};
+    case 'once_coin':    return {pct:Math.min(1,G.coin/Math.max(1,coinFor(t.need))), left:`${fmt(t.need)} coin at once${cm}`, note:`you hold ${fmt(G.coin)}`};
     case 'prog_action':  return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} ${actW()}`, note:`${t.need-t.prog} owed${um}`};
     case 'prog_buy':     return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} Buys`, note:`${t.need-t.prog} owed${um}`};
     case 'prog_discard': return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} cards fed`, note:`${t.need-t.prog} wanted`};
@@ -348,7 +362,7 @@ function threatProgress(t){
     case 'panic':        return {pct:0, left:'instant', note:`costs ${plural(t.curses,'Curse')}`};
     case 'once_hybrid':  { const nc=Math.max(1,coinFor(t.needCoin)), na=Math.max(1,unitsFor(t.needAct));
                            return {pct:Math.min(1,(Math.min(G.coin,nc)/nc*0.75)+(Math.min(G.actions,na)/na*0.25)),
-                                   left:`${t.needCoin} coin + ${actN(t.needAct)}`, note:`you hold ${G.coin} / ${G.actions}`}; }
+                                   left:`${fmt(t.needCoin)} coin + ${actN(t.needAct)}`, note:`you hold ${fmt(G.coin)} / ${G.actions}`}; }
     case 'scavenge':     return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} fed`, note:'junk counts ×2'};
     case 'banish':       { const n=t.need-t.prog;
                            return {pct:Math.min(1,G.actionsPlayed/Math.max(1,n)), left:`${n} Actions in one turn`, note:`played ${G.actionsPlayed}`}; }
@@ -361,14 +375,14 @@ function threatProgress(t){
 function threatButton(t){
   const rem=t.need-t.prog;
   switch(t.kind){
-    case 'prog_coin':    return `Deposit ${Math.min(G.coin,coinFor(rem))} coin`;
-    case 'once_coin':    return `Pay ${coinFor(t.need)} coin`;
+    case 'prog_coin':    return `Deposit ${fmt(Math.min(G.coin,coinFor(rem)))} coin`;
+    case 'once_coin':    return `Pay ${fmt(coinFor(t.need))} coin`;
     case 'prog_action':  return `Spend ${actN(Math.min(G.actions,unitsFor(rem)))}`;
     case 'prog_buy':     return `Spend ${plural(Math.min(G.buys,unitsFor(rem)),'Buy')}`;
     case 'prog_discard': return 'Feed cards';
     case 'sacrifice':    return 'Sacrifice cards';
     case 'panic':        return 'Shake on it';
-    case 'once_hybrid':  return `Pay ${coinFor(t.needCoin)} coin + ${actN(unitsFor(t.needAct))}`;
+    case 'once_hybrid':  return `Pay ${fmt(coinFor(t.needCoin))} coin + ${actN(unitsFor(t.needAct))}`;
     case 'upgrade':      return 'Trash into the rift';
     case 'scavenge':     return 'Feed the nest';
     case 'banish':       return 'Banish it';
@@ -399,6 +413,7 @@ function threatInfoEl(t){
     <div class="tatk${t.cd<=1?' imminent':''}">${atkLine(t)}</div>
     ${rewardLine(t)}
     <p class="tnum"><span>${p.left}</span><span>${p.note}</span></p>
+    ${bribable(t)&&t.bribe?`<p class="tnum"><span>🪙 Bribe it away</span><span>${fmt(bribeCost(t))} coin</span></p>`:''}
     ${!fused()&&t.age>=TUNE.enrageAfter?'<p class="warn">Enraged: it attacks every turn until cleared.</p>':''}`;
   return el;
 }
@@ -426,17 +441,18 @@ function render(){
   else chip('cNext', untilSpawn===0?'Next threat at end of this turn':`Next threat in ${plural(untilSpawn,'turn')}`,
                      `⏳ ${untilSpawn===0?'now':untilSpawn}`, untilSpawn===0?'now':untilSpawn===1?'soon':'');
 
-  // jokers
+  // jokers — in merge mode their order is the order their Mult applies in; tap one to move it.
   const J=$('jokers'); J.innerHTML='<span class="jlabel">CHARMS</span>';
-  for(let i=0;i<TUNE.jokerSlots;i++){
+  const nSlots=TUNE.jokerSlots+G.jokers.filter(j=>j.ed==='negative').length;
+  for(let i=0;i<Math.max(nSlots,G.jokers.length);i++){
     const j=G.jokers[i], el=document.createElement('button');
     if(!j){ el.className='joker empty'; el.disabled=true; el.setAttribute('aria-label','Empty charm slot'); J.appendChild(el); continue; }
-    const d=JOKERS[j.key], st=jokerStatus(j);
-    el.className='joker '+d.r;
-    el.setAttribute('aria-label',`${d.n}: ${jtx(j.key)}`);
-    el.innerHTML=`<span class="ja">${d.art}</span><span class="jname">${d.n}</span>${st?`<span class="js">${st}</span>`:''}
-      <span class="jtip"><b>${d.n}</b> · <i>${d.r}</i><br>${jtx(j.key)}</span>`;
-    el.onclick=()=>openInspect(jokerCardEl(j.key,st),'');
+    const d=JOKERS[j.key], st=jokerStatus(j), e=EDITIONS[j.ed];
+    el.className='joker '+d.r+(e?' ed-'+j.ed:'');
+    el.setAttribute('aria-label',`${jname(j)}: ${jtx(j.key)}`);
+    el.innerHTML=`${merge()&&G.jokers.length>1?`<span class="jpos">${i+1}</span>`:''}<span class="ja">${d.art}</span><span class="jname">${d.n}</span>${st?`<span class="js">${st}</span>`:''}${e?`<span class="jed">${e.art}</span>`:''}
+      <span class="jtip"><b>${jname(j)}</b> · <i>${d.r}</i><br>${jtx(j.key)}${e?`<br><b>${e.n}:</b> ${e.tx}.`:''}</span>`;
+    el.onclick=()=>inspectJoker(i);
     J.appendChild(el);
   }
 
@@ -478,7 +494,8 @@ function render(){
       ${rewardLine(t)}
       <div class="tnum"><span>${p.left}</span><span class="dim">${p.note}</span></div>
       <div class="tbar"><div class="tfill ${t.bar}" style="width:${Math.round(clamp(p.pct,0,1)*100)}%"></div></div>`;
-    box.querySelector('.thead').onclick=()=>openInspect(threatInfoEl(t),'',[[threatButton(t),()=>clickThreat(t),'go',!(threatReady(t)&&live)]]);
+    box.querySelector('.thead').onclick=()=>openInspect(threatInfoEl(t),'',[[threatButton(t),()=>clickThreat(t),'go',!(threatReady(t)&&live)],
+      ...(bribable(t)&&t.bribe?[[`🪙 Bribe · ${fmt(bribeCost(t))}`,()=>bribeThreat(t),'',!(live&&canBribe(t))]]:[])]);
     const pips=[];
     if(t.elite) pips.push('<span class="pip elite">ELITE</span>');
     if(!fused()&&t.age>=TUNE.enrageAfter) pips.push('<span class="pip">ENRAGED</span>');
@@ -488,6 +505,10 @@ function render(){
     b.textContent=threatButton(t); b.disabled=!ready;
     b.onclick=()=>clickThreat(t);
     box.appendChild(b);
+    // Merge mode's valve: buy off a threat that wants anything but Coin.
+    if(bribable(t)&&t.bribe){ const cost=bribeCost(t), ok=live&&G.coin>=cost, bb=document.createElement('button');
+      bb.className='tbtn2 bribe'+(ok?' go':''); bb.textContent=`🪙 Bribe · ${fmt(cost)}`; bb.disabled=!ok;
+      bb.title='Pay Coin to send it away at once'; bb.onclick=()=>bribeThreat(t); box.appendChild(bb); }
     T.appendChild(box);
   });
 
@@ -496,8 +517,13 @@ function render(){
   // resources
   const r=(id,v,label,icon)=>{const e=$(id); e.innerHTML=`${icon}<span class="lbl"> ${label}</span> <b>${v}</b>`; e.classList.toggle('spent',v<=0);};
   r('rAct',G.actions,merge()?'Energy':'Actions','⚡'); r('rBuy',G.buys,'Buys','🛒');
-  $('rCoin').innerHTML=`🪙<span class="lbl"> Coin</span> <b>${G.coin}</b>`;
-  if(G.coin>UI.lastCoin){ floatText($('rCoin'),`+${G.coin-UI.lastCoin}`,'coin'); pulseClass($('rCoin'),'bump',300); }
+  // Mult (merge mode): the turn's own times every charm's, the number Coin from cards is multiplied by.
+  const mult=multNow(), rm=$('rMult'); rm.hidden=!merge();
+  rm.innerHTML=`✖<span class="lbl"> Mult</span> <b>${fmtX(mult)}</b>`;
+  if(merge()&&mult>UI.lastMult*1.0001&&G.phase==='turn'){ floatText(rm,`✖ ${fmtX(mult)}`,'mult'+(mult>=2*UI.lastMult?' big':'')); pulseClass(rm,'bump',300); }
+  UI.lastMult=mult;
+  $('rCoin').innerHTML=`🪙<span class="lbl"> Coin</span> <b>${fmt(G.coin)}</b>`;
+  if(G.coin>UI.lastCoin){ const d=G.coin-UI.lastCoin; floatText($('rCoin'),`+${fmt(d)}`,'coin'+(d>=1e4?' mega':d>=1e3?' big':'')); pulseClass($('rCoin'),'bump',300); }
   UI.lastCoin=G.coin;
   $('pDeck').innerHTML=`<span class="long">Draw </span><span class="short">📚 </span>${G.deck.length}`;
   $('pDisc').innerHTML=`<span class="long">Discard </span><span class="short">🗑 </span>${G.discard.length}`;

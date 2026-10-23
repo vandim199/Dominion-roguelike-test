@@ -31,7 +31,8 @@ function chooseOption(title,sub,options){
   return Promise.resolve(keys.includes(k)?k:keys[0]);
 }
 // Called a second time, with {skip}, to ask which charm to give away when the slots are full.
-function chooseJoker(keys,title,sub,o){ return Promise.resolve(o?SIM.bot.giveAway(keys):SIM.bot.charm(keys)); }
+// eds: the edition each offer rolled (merge mode).
+function chooseJoker(keys,title,sub,o={}){ return Promise.resolve(o.skip?SIM.bot.giveAway(keys):SIM.bot.charm(keys,o.eds||{})); }
 function confirmCard(){ return Promise.resolve(true); }
 function saveNow(){}
 function deleteSave(){}
@@ -72,6 +73,23 @@ const GIVES={
 const gives = c => { const d=DB[c.key];
   if(d.merge){ const e=d.eff(c.lv); return {act:e.energy,draw:e.cards,buy:e.buys,coin:d.t==='action'?e.coin:0}; }
   return (GIVES[c.key]||(()=>({})))(c.lv); };
+// Merge mode's Mult, as the bots see it. Coin is worth what it lands at: × the Mult at that moment.
+const effOf = c => DB[c.key].merge ? DB[c.key].eff(c.lv) : {};
+const isMult = c => { const e=effOf(c); return !!(e.addm||e.xm||e.cresc); };
+// When to play it: the engine first, then +Mult, Crescendo, ×Mult, and Coin last (Treasures and Alchemist after these).
+const stageOf = c => { const e=effOf(c); return e.xm?3 : e.cresc?2 : e.addm?1 : e.coin&&!e.energy&&!e.cards?4 : 0; };
+function multAfter(e,n=1){ let m=G.mult;
+  for(let i=0;i<n;i++){ m+=(e.addm||0)+(e.cresc||0)*(G.actionsPlayed+G.treasuresPlayed+1+i); if(e.xm) m*=e.xm; }
+  return m; }
+const multGain = (e,n=1) => merge() ? chainMult(multAfter(e,n),G.jokers)-chainMult(G.mult,G.jokers) : 0;
+// Coin still to come this turn, before Mult: Treasures and Coin cards in hand, and a guess at what draws bring.
+function coinAhead(skip){
+  let s=0, dr=0;
+  for(const x of G.hand){ if(x===skip||isFrozen(x)) continue; const e=effOf(x);
+    if(x.t==='treasure') s+=tval(x); else if(e.coin) s+=e.coin*(actCost(x)<=G.actions?1:.3);
+    if(e.cards) dr+=e.cards; }
+  return s+dr*density()*.7;
+}
 const power = c => DB[c.key].merge ? 1+c.lv : tierMult(c.lv);
 // Actions a card leaves you with: Tea House +1, Inventor 0, Map Room −1.
 const netAct = c => ((gives(c).act||0)+modCount(c,'quick'))*(hasMod(c,'twin')?2:1)-actCost(c);
@@ -102,10 +120,16 @@ const strikeValue = frac => Math.max(0,...live().map(t=>frac*owedCoin(t)));
 const junkIn = cards => cards.filter(isJunk);
 const isCopper = c => c.key==='copper'||(c.key==='coin'&&c.lv===0);
 
+// Replaying a card n times (Encore): ×Mult cards compound.
+function replayValue(x,n){
+  if(x.t==='treasure') return n*tval(x)*multNow();
+  return isMult(x) ? multGain(effOf(x),n)*coinAhead(x) : n*playValue(x);
+}
 function playValue(c){
-  const g=gives(c), l=c.lv, d=density(), junk=junkIn(G.hand).length;
+  const g=gives(c), l=c.lv, M=multNow(), d=density()*M, junk=junkIn(G.hand).length, e=effOf(c);
   const tr=()=>G.hand.filter(x=>x.t==='treasure'&&!isFrozen(x)).map(tval).sort((a,b)=>a-b);
-  let v=(g.coin||0)+(g.buy||0)*.5+(g.draw||0)*(g.treasure?avgTreasure():d);
+  let v=(g.coin||0)*M+(g.buy||0)*.5+(g.draw||0)*(g.treasure?avgTreasure()*M:d);
+  if(e.addm||e.xm||e.cresc) v+=multGain(e)*coinAhead(c);
   const worm=live().find(t=>t.kind==='leech');                 // the Bookworm only eats what cards draw
   if(worm&&g.draw&&!g.treasure) v+=3*Math.min(g.draw+modCount(c,'draw'),worm.need-worm.prog);
   switch(c.key){
@@ -129,7 +153,7 @@ function playValue(c){
     case 'rummage':     v+=(1+Math.min(1+l,junk))*d; break;
     case 'patron':      v+=1.5*(1+l); break;
     case 'reprise': { const o=G.hand.filter(x=>x.key!=='reprise'&&(x.t==='action'||x.t==='treasure')&&!isFrozen(x));
-                      v+=o.length?(1+l)*Math.max(...o.map(x=>x.t==='treasure'?tval(x):playValue(x))):0; break; }
+                      v+=o.length?Math.max(...o.map(x=>replayValue(x,DB.reprise.eff(l).replay))):0; break; }
     case 'alchemist':   break;                                   // played after the Treasures, see heuristicTurn
   }
   v+=modCount(c,'draw')*d+modCount(c,'coin')+(hasMod(c,'grow')?(c.grow||0):0)
@@ -148,14 +172,25 @@ const POLICY={
     charms:{golden:10,glass:8,midas:7,vintage:6,mirror:6,greedy:6,minimal:5,hourglass:5,gilded:4,piggy:4,wall:4,seal:3},
     splices:{twin:9,coin:6,retain:6,grow:5,draw:4,strike:4,trade:3,guard:3,quick:2,free:1} },
   // Merge mode. w is per level-one unit (×1, 2, 4… a level). energy: ⚡ supply wanted per ⚡ the deck's Actions cost.
+  // The new Mult cards and charms get middling weights here: these two take what comes, they don't build for Mult.
   merge_money:{ name:'Big Money (merge)',
-    w:{coin:1.2,spark:1,scout:1.3,bazaar:1.2,strongbox:1,rummage:1.2,alchemist:2,ward:.8}, cap:{bazaar:1,alchemist:2,ward:1}, energy:1, thin:false,
-    charms:{golden:10,glass:8,midas:7,vintage:6,mirror:6,greedy:6,minimal:6,hourglass:5,gilded:4,piggy:4,wall:4,seal:3},
+    w:{coin:1.2,spark:1,scout:1.3,bazaar:1.2,strongbox:1,rummage:1.2,alchemist:2,ward:.8,drum:1.2,crescendo:.8,fireworks:1.3}, cap:{bazaar:1,alchemist:2,ward:1}, energy:1, thin:false,
+    charms:{golden:10,glass:8,midas:7,vintage:6,mirror:6,greedy:6,minimal:6,hourglass:5,gilded:4,piggy:4,wall:4,seal:3,
+            banner:5,melon:5,tide:4,crier:4,hologram:3,campfire:3,bus:2,constellation:2,blueprint:3,brainstorm:3},
     splices:{} },
   merge_engine:{ name:'Engine (merge)',
     w:{coin:1,spark:1.3,scout:1.6,kindling:1.5,bazaar:1.5,bowman:1.8,watchdog:1.3,strongbox:1.2,almanac:1.4,seer:.6,
-       reprise:2,patron:1,rummage:1.4,alchemist:1.8,ward:1.2}, cap:{kindling:1,seer:1,patron:1,ward:2}, energy:1, thin:false,
-    charms:{greedy:8,wind:7,echo:7,golden:7,midas:6,momentum:6,minimal:5,hourglass:5,wall:4,seal:4,eagle:3,bounty:3},
+       reprise:2,patron:1,rummage:1.4,alchemist:1.8,ward:1.2,drum:1.2,crescendo:1.2,fireworks:1.5}, cap:{kindling:1,seer:1,patron:1,ward:2}, energy:1, thin:false,
+    charms:{greedy:8,wind:7,echo:7,golden:7,midas:6,momentum:6,minimal:5,hourglass:5,wall:4,seal:4,eagle:3,bounty:3,
+            banner:5,hologram:5,tide:5,melon:4,crier:4,campfire:3,glass:3,constellation:2,bus:2,blueprint:3,brainstorm:3},
+    splices:{} },
+  // Commits to Mult: buys +Mult and ×Mult cards and the draw and ⚡ to play them, plays them in order before its Coin,
+  // drafts and swaps charms for the biggest Mult chain (editions included), keeps them in the best order, and bribes.
+  merge_mult:{ name:'Mult (merge)', mult:true,
+    w:{coin:1.3,spark:1.5,scout:1.7,drum:2.4,crescendo:2,fireworks:3.6,reprise:2.2,alchemist:2,rummage:1.3,bowman:1.2,
+       kindling:1,bazaar:1.1,watchdog:.8,almanac:1.1,seer:.5,patron:1,ward:1,strongbox:.3},
+    cap:{kindling:1,seer:1,patron:1,ward:1,alchemist:3,reprise:2}, energy:1, thin:true,
+    charms:{greedy:7,wind:7,echo:6,golden:6,midas:5,mirror:4,hourglass:5,wall:4,seal:3,minimal:2,bounty:3,eagle:3},
     splices:{} },
   engine:{ name:'Engine',
     w:{silver:2,gold:3,treasury:2.5,nestegg:2.5,teahouse:3,maproom:3.5,inventor:4,parade:4,springclean:1.5,bonfire:2,
@@ -184,7 +219,8 @@ function want(P,c){
     const {supply,demand}=energyBudget(mine);
     if(c.key==='spark'&&supply>demand*P.energy+2) w*=.4;
     if(c.t==='action'&&netAct(c)<0&&demand+actCost(c)>supply*P.energy+1) w*=.3;
-    if(mine.filter(x=>twins(x,c)).length%2===1) w*=1.3;                // it would make a pair
+    const pair=mine.filter(x=>twins(x,c)).length%2===1; if(pair) w*=1.3;   // it would make a pair
+    if(P.mult&&!pair&&w<1+mine.length/25) return 0;                      // the Mult bot keeps its deck lean
     return w;
   }
   if(c.t==='action'){
@@ -197,6 +233,51 @@ function want(P,c){
 }
 const best = (arr,f) => arr.reduce((b,x)=>{ const v=f(x); return !b||v>b[1]?[x,v]:b; },null)?.[0];
 const rankBy = (keys,table) => best(keys,k=>(table[k]||1)+Math.random()*.5);
+
+/* ---------- the Mult bot's charms: draft, swap and order them for the biggest Mult chain ---------- */
+// Every order of up to 7 charms (Blueprint and Brainstorm make it matter); the one with the biggest Mult.
+function perms(a){ if(a.length<=1) return [a.slice()]; const out=[];
+  a.forEach((x,i)=>{ for(const p of perms([...a.slice(0,i),...a.slice(i+1)])) out.push([x,...p]); }); return out; }
+function bestOrder(js,base){
+  if(js.length>7) return js.slice();
+  let top=js, tv=-1; for(const p of perms(js)){ const v=chainMult(base,p); if(v>tv+1e-9){ tv=v; top=p; } } return top;
+}
+// A charm a few waves from now: what its counters will have grown to (Glass Crown and the Melon may break).
+function ahead(j){ const w=Math.max(1,G.wave), per=x=>3*x/w;
+  const k=j.key, n=j.n||0;
+  switch(k){
+    case 'hologram': return {...j,n:n+per(G.merges)};
+    case 'campfire': return {...j,n:n+Math.min(4,per(G.trash.length))};
+    case 'crier':    return {...j,n:n+per(G.runCleared)};
+    case 'tide':     return {...j,age:j.age+3};
+    case 'constellation': return {...j,n:n+(allCards().some(c=>c.key==='patron')?6:0)};
+    case 'glass':    return {...j,age:j.age+1};
+  }
+  return j;
+}
+const RISK={glass:.35,melon:.3};
+// A set of charms, in ln(Mult) of its best order (plus what the rest are worth to this bot).
+function setValue(P,js){
+  const base=Math.max(1.5,SIM.run.cardMult||1.5), fut=js.map(ahead);
+  let v=Math.log(chainMult(base,bestOrder(fut,base))/base);
+  for(const j of js){ if(!JOKERS[j.key].mx&&!['blueprint','brainstorm'].includes(j.key)) v+=(P.charms[j.key]||1)/12;
+    v-=RISK[j.key]||0; if(j.ed==='negative') v+=.15; }
+  return v;
+}
+function multCharm(self,keys,eds){
+  const P=self.P, cur=G.jokers; let top=null, tv=setValue(P,cur)+.04; self.out=null;
+  for(const k of keys){ const j={key:k,age:0,n:0,ed:eds[k]||''};
+    if(slotted()<TUNE.jokerSlots||j.ed==='negative'){ const v=setValue(P,[...cur,j]); if(v>tv){ tv=v; top=k; self.out=null; } continue; }
+    for(const o of cur){ if(o.ed==='negative') continue;
+      const v=setValue(P,[...cur.filter(x=>x!==o),j]); if(v>tv+.06){ tv=v; top=k; self.out=o.key; } } }
+  return top;
+}
+// Put the charms in their best order (free to do at any time).
+function orderCharms(){
+  const sig=G.jokers.map(j=>j.key).join();
+  if(SIM.run.order===sig) return;
+  G.jokers=bestOrder(G.jokers,Math.max(1.5,SIM.run.cardMult||1.5)); SIM.run.order=G.jokers.map(j=>j.key).join();
+}
 
 // Will this threat get away (detonate / attack) unless we pay now?
 function pressing(t){
@@ -231,12 +312,12 @@ function heuristic(P){
         // Fuse a Spark into the best card that costs 1 ⚡: it pays for itself and frees a slot.
         case 'fuse':      { const f=fusePair(pool); return f?[f[0]]:null; }
         case 'fuse2':     { const f=fusePair(G.deck); return f?[f[1]]:null; }
-        case 'spoils':    return [best(pool,c=>want(P,c)||worth(P,c)/4)];
+        case 'spoils':    return P.mult ? [best(pool,c=>want(P,c))].filter(c=>want(P,c)>0) : [best(pool,c=>want(P,c)||worth(P,c)/4)];
         case 'kindling':  return junk;
         case 'seer':      return junk;
         case 'rummage':   return pool.filter(c=>isJunk(c)||isFrozen(c)||DB[c.key].stays);   // a Ward only works from the discard pile
         case 'strongbox': return [best(pool,c=>-tval(c))];
-        case 'reprise':   return [best(pool,c=>c.t==='treasure'?tval(c):playValue(c))];
+        case 'reprise':   { const n=+((/(\d+) times/.exec(o.sub||'')||[])[1]||2); return [best(pool,c=>replayValue(c,n))]; }
         // Before playing, give up the least useful cards; after, whatever is left over.
         case 'prog_discard': return SIM.stage==='hand'?[...junk,...coppers(pool),...cheapest(pool)]:pool.filter(c=>!hasMod(c,'retain'));
         case 'sacrifice': case 'scavenge': return urg?[...junk,...coppers(pool),...cheapest(pool)]:junk;
@@ -252,8 +333,8 @@ function heuristic(P){
       const ts=live().filter(t=>keys.includes(t.id));                                                     // aiming a strike
       return best(ts,t=>-t.cd*100+owedCoin(t))?.id ?? keys[0];
     },
-    charm:keys=>G.jokers.length>=TUNE.jokerSlots?null:rankBy(keys,P.charms),
-    giveAway:()=>null,
+    charm:(keys,eds)=>P.mult ? multCharm(self,keys,eds) : slotted()>=TUNE.jokerSlots?null:rankBy(keys,P.charms),
+    giveAway:()=>self.out||null,
     spliceKey:keys=>rankBy(keys,P.splices),
     turn:()=>heuristicTurn(self),
   };
@@ -268,6 +349,7 @@ function heuristic(P){
   function inn(keys){
     const all=allCards(), junk=junkIn(all).length;
     if(keys.includes('heal')&&G.hearts<=2) return 'heal';
+    if(keys.includes('fuse')&&P.mult&&hasJ('campfire')&&junk+all.filter(isCopper).length>=2) return 'purge';    // feed the fire
     if(keys.includes('fuse')) return junk>=2 ? 'purge' : fusePair(all) ? 'fuse' : 'copy';
     if(keys.includes('mend')&&all.some(c=>worth(P,c)>3&&(hasMod(c,'heavy')||hasMod(c,'brittle')))) return 'mend';
     if(junk>=2) return 'purge';
@@ -299,19 +381,26 @@ function shouldPay(t,stage){
 async function heuristicTurn(B){
   const P=B.P, t0=G.turn, same=()=>!G.over&&G.turn===t0&&G.phase==='turn';
   SIM.dens=null;
+  if(P.mult) orderCharms();
   // 0. Threats that want cards from hand and can't wait take them before anything is played.
   await payThreats('hand',same);
   // 1. Actions: everything that keeps an Action spare first, then the best terminal.
   for(let i=0;i<80&&same();i++){
     SIM.dens=null;
-    const acts=G.hand.filter(c=>c.t==='action'&&canPlay(c));
+    // Merge mode: an Alchemist worth more than a card keeps its ⚡ for the end of the turn.
+    const alch=merge()&&G.hand.filter(c=>c.key==='alchemist'&&!isFrozen(c)).sort((a,b)=>b.lv-a.lv)[0];
+    const alchV=alch?(effOf(alch).mult-1)*(G.coin+coinAhead(alch)*multNow()):0;
+    const acts=G.hand.filter(c=>c.t==='action'&&canPlay(c)&&c!==alch&&(!alch||netAct(c)>=0||playValue(c)>alchV||G.actions-actCost(c)>=actCost(alch)));
     if(!acts.length) break;
     // Free: leaves the Actions (⚡) where they were or better, and does something (an Anvil with no pair waits).
     const free=acts.filter(c=>netAct(c)>0||(netAct(c)===0&&playValue(c)>0));
     // Otherwise the best value per Action (⚡) spent; draw first while there's ⚡ to spare after it.
-    const c=free.length ? best(free,c=>netAct(c)+playValue(c))
-                        : best(acts,c=>playValue(c)/Math.max(1,actCost(c))*(G.actions>actCost(c)&&gives(c).draw?1.2:1));
+    let c=free.length ? best(free,c=>netAct(c)+playValue(c))
+                      : best(acts,c=>playValue(c)/Math.max(1,actCost(c))*(G.actions>actCost(c)&&gives(c).draw?1.2:1));
     if(!free.length&&playValue(c)<=.01) break;
+    // Merge mode: whatever is played, the engine goes first, then +Mult, then ×Mult, and Coin last.
+    if(merge()){ const lower=acts.filter(x=>x!==c&&stageOf(x)<stageOf(c)&&playValue(x)>.01&&actCost(x)+actCost(c)<=G.actions+(effOf(x).energy||0));
+      if(lower.length){ const s=Math.min(...lower.map(stageOf)); c=best(lower.filter(x=>stageOf(x)===s),playValue); } }
     SIM.dens=null;
     await playCard(c);
   }
@@ -321,6 +410,7 @@ async function heuristicTurn(B){
   for(const c of G.hand.filter(c=>c.key==='alchemist').sort((a,b)=>b.lv-a.lv)) if(same()&&G.coin>1&&canPlay(c)) await playCard(c);
   if(!same()) return;
   recordTurn();
+  await bribeThreats('urgent',same);
   // 3. Pay what can't wait, 4. buy, 5. pour the rest into the threats.
   await payThreats('urgent',same);
   for(let i=0;i<10&&same()&&G.buys>0;i++){
@@ -331,8 +421,34 @@ async function heuristicTurn(B){
   }
   if(!same()) return;
   for(const c of G.hand.filter(c=>c.key==='rubble')) if(same()&&canPlay(c)&&!live().some(t=>t.kind==='prog_action'&&pressing(t))) await playCard(c);
+  await bribeThreats('rest',same);
   await payThreats('rest',same);
   if(same()) await endTurn();
+}
+// Could the threat be finished this turn the ordinary way?
+function canFinish(t){
+  const rem=t.need-t.prog;
+  switch(t.kind){
+    case 'prog_action':  return G.actions*unitMult()>=rem;
+    case 'prog_buy':     return G.buys*unitMult()>=rem;
+    case 'prog_discard': return G.hand.length>=rem;
+    case 'sacrifice':    return G.hand.filter(c=>c.key!=='rubble').length>=rem;
+    case 'scavenge':     return G.hand.reduce((n,c)=>n+(isJunk(c)?2:1),0)>=rem;
+    case 'banish': case 'once_hybrid': return threatReady(t);
+    case 'upgrade':      return G.hand.filter(c=>c.t==='treasure').length>=t.needT-t.gotT&&G.hand.filter(c=>c.t==='action').length>=t.needA-t.gotA;
+  }
+  return false;
+}
+// The valve: bribe a threat that is about to go off and can't be paid in time, or any that's cheap next to the purse.
+// After buying, bribe whatever won't be finished the ordinary way before its fuse, keeping what coin threats due now still need.
+async function bribeThreats(stage,same){
+  for(const t of live().sort((a,b)=>a.cd-b.cd)){
+    if(!same()) return;
+    if(!G.slots.includes(t)||!canBribe(t)) continue;
+    const c=bribeCost(t), coinOwed=live().filter(x=>x!==t&&!bribable(x)&&x.cd<=1).reduce((s,x)=>s+owedCoin(x),0);
+    const spare=G.coin-coinOwed, stuck=!canFinish(t)&&(t.kind!=='panic'||t.curses>1);
+    if(c<=spare*.35||(stuck&&(t.cd<=1||stage==='rest'&&t.cd<=3)&&c<=Math.max(spare,t.cd<=1?G.coin:0))) await bribeThreat(t);
+  }
 }
 async function payThreats(stage,same){
   for(const t of live().sort((a,b)=>a.cd-b.cd)){
@@ -357,6 +473,7 @@ function randomBot(){
                      ...live().filter(threatReady).filter(t=>t.kind!=='panic'||coin(.2)).map(t=>()=>clickThreat(t))];
         const buys=G.buys>0?G.market.map((c,i)=>[c,i]).filter(([c])=>c&&costOf(c)<=G.coin&&!isJunk(c)):[];
         if(buys.length&&coin(.3)){ const [c,i]=pick(buys); noteBuy(c); buyCard(i); continue; }
+        const br=live().filter(canBribe); if(br.length&&coin(.15)){ await bribeThreat(pick(br)); continue; }
         if(!moves.length||coin(.08)) break;
         await pick(moves)();
       }
@@ -389,7 +506,11 @@ function recordTurn(){
   if(!G.deck.length&&!G.discard.length) w.drewAll++;
   if(G.hand.some(c=>c.t==='action'&&!isFrozen(c)&&actCost(c)>G.actions)) w.stuck++;
   w.merges=G.merges-w.merges0; w.topLv=Math.max(w.topLv,...allCards().map(c=>c.lv));
+  const m=multNow(); w.mult=(w.mult||0)+m; w.peakMult=Math.max(w.peakMult||0,m);
+  R.cardMult = R.turns ? R.cardMult*.8+G.mult*.2 : G.mult;
+  if(m>R.peakMult) R.peakMult=m;
   R.income = R.turns++ ? R.income*.7+G.coin*.3 : G.coin;
+  if(G.coin>R.peak){ R.peak=G.coin; R.peakWave=G.wave; }
 }
 function noteBuy(c){ const k=c.key; SIM.run.bought[k]=(SIM.run.bought[k]||0)+1; SIM.run.buyTiers.push(c.lv); }
 
@@ -405,8 +526,8 @@ applyAttack=function(t){ const r=SIM.run&&SIM.run.threats[t.key]; if(r&&!t.deton
 async function simRun(o){
   seedRandom(o.seed); SIM.dens=null;
   SIM.keepLog=!!o.keepLog;
-  SIM.bot = o.bot==='random' ? randomBot() : heuristic(POLICY[(o.mode==='merge'?'merge_':'')+o.bot]);
-  SIM.run={ seed:o.seed, bot:o.bot, mode:o.mode, waves:{}, threats:{}, bought:{}, buyTiers:[], income:0, turns:0, lastWave:0 };
+  SIM.bot = o.bot==='random' ? randomBot() : heuristic(POLICY[(o.mode==='merge'?'merge_':'')+o.bot]||POLICY.engine);   // mult plays engine outside merge mode
+  SIM.run={ seed:o.seed, bot:o.bot, mode:o.mode, waves:{}, threats:{}, bought:{}, buyTiers:[], income:0, turns:0, lastWave:0, peak:0, peakWave:0, peakMult:1, cardMult:1, order:'' };
   newRun(o.mode);
   let steps=0;
   while(!G.over&&G.wave<=o.waves&&steps++<o.maxTurns&&deckSize()<=o.deckCap){ noteWave(); await SIM.bot.turn(); }
@@ -420,7 +541,8 @@ async function simRun(o){
     turns:G.turn, hearts:G.hearts, deckSize:deckSize(), cleared_threats:G.runCleared,
     deck: allCards().map(c=>c.key+(c.lv?'+'+c.lv:'')),
     charms: G.jokers.map(j=>j.key), splices: allCards().flatMap(c=>c.mods),
-    bought:R.bought, buyTiers:R.buyTiers, threats:R.threats, waves:Object.values(R.waves),
+    bought:R.bought, buyTiers:R.buyTiers, threats:R.threats, waves:Object.values(R.waves), peak:R.peak, peakWave:R.peakWave, peakMult:R.peakMult, bestTurn:G.bestTurn||0,
+    jokers: G.jokers.map(j=>j.key+(j.ed?'/'+j.ed:'')),
     log: o.keepLog ? logText(SIM.entries,`bot ${o.bot}, seed ${o.seed}`) : null,
   };
 }

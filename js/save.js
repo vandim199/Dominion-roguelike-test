@@ -9,7 +9,7 @@
    deleted.
    ========================================================== */
 const SAVE_KEY = 'coinkeep.save';
-const SAVE_VERSION = 1;
+const SAVE_VERSION = 2;                        // 2: Mult, charm editions and counters, bribes
 const SAVE = { armed:false, timer:0 };        // armed once a run is started or continued from the title screen
 
 function saveNow(){
