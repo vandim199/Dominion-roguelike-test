@@ -476,5 +476,10 @@ body.touch .sheet p.hint.keys{display:none}
 body.L-short .logo-art{font-size:3rem}
 body.L-short #title h1{font-size:2.6rem}
 body.L-short #title{gap:.6rem}
+/* the published site's version switcher (js/versions.js) */
+#title .versions{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:.4rem;max-width:24rem}
+#title .versions[hidden]{display:none}
+#title .versions .vlbl{width:100%;font-size:.75rem;color:var(--dim);letter-spacing:.08em;text-transform:uppercase}
+#title .versions .tbtn.on{background:var(--gold);color:#1A2260;cursor:default}
 
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}

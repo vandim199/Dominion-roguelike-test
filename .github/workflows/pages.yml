@@ -1,0 +1,46 @@
+# Publishes the site: main at the root, every wild/* branch under v/<branch name with / as ->/,
+# and versions.json listing them for the title screen's version switcher (js/versions.js).
+# Pages must be set to deploy from GitHub Actions (Settings → Pages → Source).
+name: Pages
+
+on:
+  push:
+    branches: [main, 'wild/**']
+  workflow_dispatch:
+
+jobs:
+  # A push to a version branch rebuilds the whole site from main, so only main ever deploys.
+  kick:
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions: {actions: write}
+    steps:
+      - run: gh workflow run pages.yml --ref main -R "$GITHUB_REPOSITORY"
+        env: {GH_TOKEN: '${{ github.token }}'}
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions: {contents: read, pages: write, id-token: write}
+    concurrency: {group: pages, cancel-in-progress: true}
+    environment: {name: github-pages, url: '${{ steps.deploy.outputs.page_url }}'}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Assemble main and every wild/* branch
+        run: |
+          set -e
+          mkdir _site && git archive HEAD | tar -x -C _site
+          list="{\"label\":\"Main\",\"path\":\"\",\"updated\":\"$(git log -1 --format=%cs HEAD)\"}"
+          for ref in $(git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/wild/*'); do
+            b=${ref#origin/}; slug=${b//\//-}; d=_site/v/$slug; label=${b#wild/}
+            mkdir -p "$d" && git archive "$ref" | tar -x -C "$d"
+            list="$list,{\"label\":\"${label^}\",\"path\":\"v/$slug/\",\"updated\":\"$(git log -1 --format=%cs "$ref")\"}"
+          done
+          rm -rf _site/.github _site/v/*/.github
+          echo "[$list]" > _site/versions.json && touch _site/.nojekyll
+          cat _site/versions.json
+      - uses: actions/upload-pages-artifact@v3
+        with: {path: _site}
+      - id: deploy
+        uses: actions/deploy-pages@v4

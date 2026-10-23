@@ -20,6 +20,10 @@ Works on desktop, tablets and phones in either orientation. Use **⚙ Settings**
 
 **Classic mode** opens `classic/`, a frozen copy of the game as it was on 22 October 2026 (commit 1e687d5), before Energy and merging. Its own title screen offers that version's Play (splice mode) and Classic. It keeps its own best-run record and has a link back. Changes to `js/` don't touch it. The current code still has classic and splice mode too (the simulator's `--mode classic` / `--mode splice`), but they are no longer on the title screen.
 
+## Published versions
+
+GitHub Pages is built by `.github/workflows/pages.yml` (Settings → Pages → Source must be **GitHub Actions**). It publishes `main` at the site's root and every `wild/*` branch under `v/<branch>/` (`wild/mult` → `v/wild-mult/`), and writes `versions.json`, which the title screen's **Versions** row (`js/versions.js`) lists, so every version is a tap away. A push to `main` or to any `wild/*` branch rebuilds the whole site; a new `wild/*` branch appears on its own. Each version keeps its own save and best run (`SLOT` in `js/game.js`). Opened as a local file, the Versions row stays hidden.
+
 ## Simulator
 
 `sim/` plays the game headless with bots, so balance changes can be measured instead of guessed. It needs Node.js and loads `js/data.js` and `js/game.js` exactly as they are, so edit the game and rerun:
@@ -44,6 +48,7 @@ The report shows, per bot: waves cleared, the share of runs that cleared 20+ wav
 - `js/game.js` — rules: waves, turns, threats, attacks, the Inn
 - `js/ui.js` — rendering, modals, inspector, effects, layout and scaling, settings
 - `js/save.js` — automatic saving and loading
+- `js/versions.js` — the title screen's version switcher on the published site
 - `manifest.webmanifest`, `icon.svg` — install-to-home-screen metadata
 - `classic/` — the 22 October 2026 version, frozen, behind the Classic mode button
 - `sim/sim.js` — the simulator: options, sandbox, report
