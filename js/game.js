@@ -68,8 +68,12 @@ const isFrozen = c => !!c.frozen || iced(c);
 // How much a card is worth to you: what a threat would most like to take away.
 const cardWorth = c => isJunk(c) ? -1 : (c.t==='treasure'?tval(c):baseCost(c)) + 4*slotsUsed(c);
 
-function loadBest(){ try{ return +localStorage.getItem('dcrisis.best')||0; }catch(e){ return 0; } }
-function saveBest(n){ try{ if(n>loadBest()) localStorage.setItem('dcrisis.best',String(n)); }catch(e){} }
+// The published site serves every wild/* branch under v/<branch>/ (see .github/workflows/pages.yml). They share one
+// browser storage, so each keeps its own save and best run under its own slot. Main (and the simulator) has none.
+const SLOT = (typeof location!=='undefined'&&(/\/v\/([\w-]+)\//.exec(location.pathname)||[])[1]) || '';
+const slotKey = k => SLOT ? `${k}.${SLOT}` : k;
+function loadBest(){ try{ return +localStorage.getItem(slotKey('dcrisis.best'))||0; }catch(e){ return 0; } }
+function saveBest(n){ try{ if(n>loadBest()) localStorage.setItem(slotKey('dcrisis.best'),String(n)); }catch(e){} }
 
 function jokerStatus(j){
   switch(j.key){
