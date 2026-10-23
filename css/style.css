@@ -130,6 +130,10 @@ body.L-short.tab-market .market-rail{flex:1;justify-content:center}
 .tslot.ready{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold),0 .35rem 0 #141A4A,0 0 1.2rem rgba(255,201,60,.35)}
 .tslot.new{animation:drop .5s cubic-bezier(.3,1.6,.6,1)}
 .tslot.hit{animation:hit .45s ease-out}
+.market .card.upgraded{animation:upPop .7s cubic-bezier(.3,1.6,.5,1);position:relative;z-index:2}
+@keyframes upPop{0%{transform:scale(1)}15%{transform:scale(.88);filter:brightness(1.6)}45%{transform:scale(var(--pop,1.15));filter:brightness(1.35) drop-shadow(0 0 .7rem var(--gold))}100%{transform:none;filter:none}}
+.up-tag{position:absolute;top:30%;left:50%;font-family:var(--head);font-weight:700;font-size:.9rem;color:var(--coin-ink);background:var(--gold);border:2px solid var(--gold-d);padding:.05rem .5rem;border-radius:1rem;white-space:nowrap;z-index:4;pointer-events:none;opacity:0;animation:upTag 1.3s ease-out}
+@keyframes upTag{0%{opacity:0;transform:translate(-50%,0) scale(.4)}20%{opacity:1;transform:translate(-50%,-.6rem) scale(1.25)}35%{transform:translate(-50%,-.8rem) scale(1)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-2.2rem)}}
 @keyframes drop{0%{transform:translateY(-2rem) scale(.9);opacity:0}100%{transform:none;opacity:1}}
 @keyframes hit{0%{transform:scale(1)}25%{transform:scale(.94) rotate(-1.5deg);filter:brightness(1.8)}60%{transform:scale(1.03) rotate(1deg)}100%{transform:none}}
 .thead{display:flex;align-items:center;gap:.55rem;text-align:left;width:100%}

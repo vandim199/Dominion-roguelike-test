@@ -10,7 +10,7 @@
    ========================================================== */
 
 const UI = { layout:'wide', side:true, auto:1, scale:1, user:1, tapInspect:null, tab:'threats', touch:false,
-             lastCoin:0, hits:new Set() };
+             lastCoin:0, hits:new Set(), ups:new Map() };
 const mqCoarse = matchMedia('(pointer: coarse)');
 
 function loadPrefs(){
@@ -98,6 +98,8 @@ function fx(kind,arg){
     case 'shake': pulseClass(document.body,'shake',420); buzz(40); break;
     case 'hurt':  pulseClass(document.body,'hurt',500); buzz(80); break;
     case 'hit':   UI.hits.add(arg.id); break;
+    case 'upgrade': UI.ups.set(arg,(UI.ups.get(arg)||0)+1); buzz(20);
+      if(UI.layout==='short'){ UI.tab='market'; document.body.classList.add('tab-market'); } break;   // no render: later upgrades still to count
     case 'clear': floatText($('threats'),`${arg.art} cleared!`,'good'); buzz(25); break;
     case 'wave':  banner(`Wave ${arg}`,arg%TUNE.eliteEvery===0?'An Elite leads the charge':''); break;
     case 'lose':  buzz([90,60,180]); break;
@@ -448,10 +450,15 @@ function render(){
       el.classList.toggle('buyable',afford); el.classList.toggle('dead',!afford);
       bindCard(el,c,afford?()=>buyCard(i):null,`Buy for ${price}`);
       slot.appendChild(el);
+      // A Patron's upgrades: the card pops, the tag counts the levels it gained.
+      const up=UI.ups.get(c);
+      if(up){ el.classList.add('upgraded'); el.style.setProperty('--pop',Math.min(1.35,1.12+.06*up));
+        const tag=document.createElement('div'); tag.className='up-tag'; tag.textContent=`▲ +${up}`; slot.appendChild(tag); }
       if(i<2){ const tag=document.createElement('div'); tag.className='leaving-tag'; tag.textContent='leaves'; slot.appendChild(tag); }
     }
     m.appendChild(slot);
   });
+  UI.ups.clear();
   $('tabBadge').textContent=affordable?affordable:'';
   $('tabThreats').classList.toggle('on',UI.tab==='threats');
   $('tabMarket').classList.toggle('on',UI.tab==='market');

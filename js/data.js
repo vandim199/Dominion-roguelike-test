@@ -253,7 +253,7 @@ function effText(e){
   if(e.peek)    s.push(e.peek===1?'Look at the top card of your deck. Discard it or leave it there.'
     :`Look at the top ${e.peek} cards of your deck. Discard any of them; the rest stay.`);
   if(e.replay)  s.push(`Play a card from your hand ${e.replay===2?'twice':`${e.replay} times`}, for free.`);
-  if(e.upmarket)s.push(`Upgrade ${e.upmarket===1?'a random market card':`${e.upmarket} random market cards`} a level.`);
+  if(e.upmarket)s.push((e.upmarket===1?'Upgrade a random market card a level.':`Upgrade a random market card a level, ${e.upmarket} times. The same card can be picked again.`));
   if(e.rummage) s.push(`Discard up to ${plural(e.rummage,'card')}, then draw one more than you discarded.`);
   if(e.mult)    s.push(`Multiply your Coin by ${e.mult}.`);
   if(e.ward)    s.push(`In your discard pile: threats lose ${pctTxt(e.ward)} of what they want each turn. Stays in hand at end of turn (draw 1 fewer).`);
@@ -287,10 +287,10 @@ async function mergeFx(s,l){
     if(c){ pull(G.hand,c); G.inPlay.push(c); log(`${title}: ${cname(c)}, ${e.replay} times.`,'hl');
       for(let i=0;i<e.replay;i++){ if(c.t==='treasure'){ const v=tval(c); C(v); log(`${cname(c)} adds ${v} to your purse.`); } else await runAction(c); render(); }
       afterPlay(c); } }
-  // Each market card is upgraded once before any is upgraded again.
-  if(e.upmarket){ const pool=G.market.filter(c=>c&&DB[c.key].merge), st=[];
-    while(pool.length&&st.length<e.upmarket) st.push(...shuffle(pool.slice()).slice(0,e.upmarket-st.length));
-    st.forEach(c=>{ const was=cname(c); c.lv++; log(`${title} upgrades ${was} in the market to ${cname(c)}.`,'good'); }); }
+  // Each upgrade picks any market card, so one can go up several levels at once.
+  if(e.upmarket){ const pool=G.market.filter(c=>c&&DB[c.key].merge);
+    for(let i=0;i<e.upmarket&&pool.length;i++){ const c=pick(pool), was=cname(c); c.lv++; fx('upgrade',c);
+      log(`${title} upgrades ${was} in the market to ${cname(c)}.`,'good'); } }
   if(e.rummage){ const ch=await chooseCards(G.hand,{min:0,max:e.rummage,why:s.key,title,sub:'Discard any, then draw one more than you discarded.'});
     ch.forEach(c=>{pull(G.hand,c);G.discard.push(c);}); draw(ch.length+1); }
   if(e.mult){ const was=G.coin; G.coin=Math.floor(G.coin*e.mult); log(`${title} turns ${was} coin into ${G.coin}.`,'big'); }
