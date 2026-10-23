@@ -14,7 +14,7 @@ const clamp = (x,a,b) => Math.max(a,Math.min(b,x));
 const plural = (n,w,p) => `${n} ${n===1?w:(p||w+'s')}`;
 
 const TUNE = {
-  slots:3, handSize:5, jokerSlots:5, marketSize:6,
+  slots:3, handSize:5, jokerSlots:5, marketSize:6, rareWeight:.25,
   threatsInWave: w => Math.min(8, 2+Math.floor(w/2)),
   spawnEvery:    w => w<9 ? 3 : 2,          // a queued threat arrives every Nth turn of a wave
   eliteEvery:3,                             // every Nth wave ends with an Elite
@@ -221,7 +221,7 @@ mdef('coin',     {n:'Copper',c:2,t:'treasure',v:1,names:['Copper','Silver','Gold
   eff:X=>({coin:X})});
 mdef('spark',    {n:'Spark',c:2,art:'⚡',         eff:X=>({energy:X})});
 mdef('scout',    {n:'Scout',c:2,art:'🔭',pc:1,    eff:X=>({cards:X})});
-mdef('anvil',    {n:'Anvil',c:3,art:'🔨',noMarket:true,noMerge:true, eff:()=>({merges:hasJ('hammers')?2:1})});
+mdef('anvil',    {n:'Anvil',c:3,art:'🔨',rare:true,noMerge:true, eff:()=>({merges:hasJ('hammers')?2:1})});
 mdef('kindling', {n:'Bonfire',c:2,art:'🔥',pc:1,  eff:X=>({trash:X})});
 mdef('bazaar',   {n:'Trader',c:3,art:'🏪',pc:1,   eff:X=>({buys:X,coin:X})});
 mdef('bowman',   {n:'Archer',c:3,art:'🏹',pc:1,   eff:X=>({strike:Math.min(100,20*X)})});
@@ -245,7 +245,7 @@ function effText(e){
   if(e.buys)   p.push(`+${plural(e.buys,'Buy')}`);
   if(e.coin)   p.push(`+${e.coin} Coin`);
   const s=p.length?[p.join(', ')]:[];
-  if(e.merges) s.push(`Merge ${e.merges===1?'a pair':'2 pairs'} of identical cards from anywhere: discard first, then deck, then hand. The new card goes to your discard.`);
+  if(e.merges) s.push(`Merge ${e.merges===1?'a pair':'2 pairs'} of identical cards from anywhere: discard and played cards first, then deck, then hand. The new card goes to your discard.`);
   if(e.trash)   s.push(`Trash up to ${plural(e.trash,'card')} from your hand.`);
   if(e.strike)  s.push(`Strike a threat for ${e.strike}% of what it still wants.`);
   if(e.bank)    s.push(`Discard a Treasure from your hand. Next turn, gain its Coin +${e.bank}.`);
@@ -287,7 +287,9 @@ async function mergeFx(s,l){
     if(c){ pull(G.hand,c); G.inPlay.push(c); log(`${title}: ${cname(c)}, ${e.replay} times.`,'hl');
       for(let i=0;i<e.replay;i++){ if(c.t==='treasure'){ const v=tval(c); C(v); log(`${cname(c)} adds ${v} to your purse.`); } else await runAction(c); render(); }
       afterPlay(c); } }
-  if(e.upmarket){ const st=shuffle(G.market.filter(c=>c&&DB[c.key].merge)).slice(0,e.upmarket);
+  // Each market card is upgraded once before any is upgraded again.
+  if(e.upmarket){ const pool=G.market.filter(c=>c&&DB[c.key].merge), st=[];
+    while(pool.length&&st.length<e.upmarket) st.push(...shuffle(pool.slice()).slice(0,e.upmarket-st.length));
     st.forEach(c=>{ const was=cname(c); c.lv++; log(`${title} upgrades ${was} in the market to ${cname(c)}.`,'good'); }); }
   if(e.rummage){ const ch=await chooseCards(G.hand,{min:0,max:e.rummage,why:s.key,title,sub:'Discard any, then draw one more than you discarded.'});
     ch.forEach(c=>{pull(G.hand,c);G.discard.push(c);}); draw(ch.length+1); }

@@ -136,8 +136,10 @@ function randomTreasure(){
   const w=G.wave;
   return mk(wpick([['copper',Math.max(6,40-w*6)],['silver',40],['gold',12+w*4]]),rollTier());
 }
+// Rare cards (the Anvil) turn up a quarter as often as the rest.
+const stockPick = ks => wpick(ks.map(k=>[k,DB[k].rare?TUNE.rareWeight:1]));
 function marketCard(){
-  if(merge()){ const k=pick(stocked().filter(k=>k!=='coin')); return mk(k,rollLevel(k)); }
+  if(merge()){ const k=stockPick(stocked().filter(k=>k!=='coin')); return mk(k,rollLevel(k)); }
   return mk(pick(splice()?CORE:KINGDOM),rollTier());
 }
 function ensureCoin(){ if(!G.market.some(c=>c&&c.t==='treasure')) G.market[G.market.length-1]=randomTreasure(); }
@@ -395,7 +397,7 @@ function pairsIn(cards){
 // The new card keeps no splices; the market starts stocking its level.
 function mergePair(a,b,to){
   if(!a||!b) return null;
-  for(const c of [a,b]) [G.discard,G.deck,G.hand].some(p=>pull(p,c));
+  for(const c of [a,b]) [G.discard,G.inPlay,G.deck,G.hand].some(p=>pull(p,c));
   const m=mk(a.key,a.lv+1); to.push(m);
   G.merges++;
   const was=G.unlock[a.key]||0;
@@ -404,12 +406,12 @@ function mergePair(a,b,to){
   log(`🔨 ${cname(a)} + ${cname(b)} → ${cname(m)}.`,'good');
   return m;
 }
-// The Anvil merges from anywhere: copies in the discard pile go first, then the draw pile, then the hand.
+// The Anvil merges from anywhere: copies in the discard pile and in play go first, then the draw pile, then the hand.
 async function mergeAnywhere(n,title){
-  const piles=[G.discard,G.deck,G.hand], pool=pairsIn(piles.flat());
-  if(!pool.length){ log('Nothing to merge: you have no two identical cards outside play.'); return; }
+  const piles=[G.discard,G.inPlay,G.deck,G.hand], pool=pairsIn(piles.flat());
+  if(!pool.length){ log('Nothing to merge: you have no two identical cards.'); return; }
   const ch=await chooseCards(pool,{min:0,max:n,why:'merge',title,badge:c=>'→ '+nextName(c),
-    sub:`Pick ${n===1?'a pair':`up to ${n} pairs`} to merge. Copies in your discard pile are used first, then your draw pile, then your hand. The new card goes to your discard pile.`});
+    sub:`Pick ${n===1?'a pair':`up to ${n} pairs`} to merge. Copies in your discard pile and cards you've played are used first, then your draw pile, then your hand. The new card goes to your discard pile.`});
   for(const a of ch){
     const [x,y]=piles.flat().filter(c=>twins(c,a)&&!isFrozen(c));
     mergePair(x,y,G.discard);
@@ -418,7 +420,8 @@ async function mergeAnywhere(n,title){
 
 // Merge mode: a cleared threat leaves spoils — pick one of a few free cards.
 async function claimSpoils(p){
-  const keys=shuffle(stocked()).slice(0,TUNE.spoils+(p.elite?1:0));
+  const left=stocked(), keys=[];
+  while(left.length&&keys.length<TUNE.spoils+(p.elite?1:0)){ const k=stockPick(left); keys.push(k); pull(left,k); }
   const offers=keys.map(k=>mk(k));
   const s=await chooseCards(offers,{min:0,max:1,why:'spoils',title:`${p.from} cleared — take a card`,sub:'It goes to your discard pile.'});
   if(s[0]){ G.discard.push(s[0]); log(`You take ${cname(s[0])}.`,'good'); }

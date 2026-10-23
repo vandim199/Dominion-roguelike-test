@@ -120,7 +120,7 @@ function playValue(c){
     case 'archer':      v+=strikeValue(strikePct(30,l)/100); break;
     case 'powderkeg':   v+=strikeValue(strikePct(60,l)/100)-2; break;
     case 'lullaby':     v+=live().length?1:0; break;
-    case 'anvil':       v+=4*Math.min(DB.anvil.eff(l).merges,pairsIn([...G.discard,...G.deck,...G.hand]).length); break;
+    case 'anvil':       v+=4*Math.min(DB.anvil.eff(l).merges,pairsIn([...G.discard,...G.inPlay,...G.deck,...G.hand]).length); break;
     case 'kindling':    v+=3*Math.min(1+l,junk); break;
     case 'bowman':      v+=strikeValue(DB.bowman.eff(l).strike/100); break;
     case 'strongbox':   v+=G.hand.some(x=>x.t==='treasure'&&!isFrozen(x))?1+l:0; break;
