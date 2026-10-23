@@ -348,6 +348,8 @@ function heuristic(P){
   }
   function inn(keys){
     const all=allCards(), junk=junkIn(all).length;
+    // Asked again in the same camp: the service picked last time had nothing to work on (no card to copy, say). Move on.
+    const at=G.wave+':'+G.turn; if(self.innAt===at) return keys.includes('heal')&&G.hearts<TUNE.hearts?'heal':'rest'; self.innAt=at;
     if(keys.includes('heal')&&G.hearts<=2) return 'heal';
     if(keys.includes('fuse')&&P.mult&&hasJ('campfire')&&junk+all.filter(isCopper).length>=2) return 'purge';    // feed the fire
     if(keys.includes('fuse')) return junk>=2 ? 'purge' : fusePair(all) ? 'fuse' : 'copy';
