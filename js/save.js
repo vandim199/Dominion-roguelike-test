@@ -8,7 +8,7 @@
    there is nothing to reroll. When the town falls the save is
    deleted.
    ========================================================== */
-const SAVE_KEY = 'coinkeep.save';
+const SAVE_KEY = slotKey('coinkeep.save');         // each published version has its own (game.js, SLOT)
 const SAVE_VERSION = 1;
 const SAVE = { armed:false, timer:0 };        // armed once a run is started or continued from the title screen
 
