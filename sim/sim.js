@@ -11,21 +11,22 @@
      node sim/sim.js --bot money --log run.txt     also save run 1's log
      node sim/sim.js --json out.json               every run, raw
      --waves 30 --turns 2000 --deckcap 400         when a run stops early
+     --tune synergy=1.03,merge.ramp=1.01          try other TUNE numbers without editing data.js
 
-   Bots: engine (Actions & draw), money (Big Money), random.
+   Bots: monolith (one fused card), engine (Actions & draw), money (Big Money), random.
    ========================================================== */
 const fs=require('fs'), path=require('path'), vm=require('vm');
 
 const ROOT=path.join(__dirname,'..');
 const SCRIPTS=['js/data.js','js/game.js','sim/bots.js'].map(f=>new vm.Script(fs.readFileSync(path.join(ROOT,f),'utf8'),{filename:f}));
-const BOTS=['engine','money','random'];
+const BOTS=['monolith','engine','money','random'];
 
 function args(){
-  const o={bot:'all',runs:100,mode:'merge',seed:1,waves:30,turns:2000,deckcap:400,json:null,log:null};
+  const o={bot:'all',runs:100,mode:'merge',seed:1,waves:30,turns:2000,deckcap:400,json:null,log:null,tune:''};
   const a=process.argv.slice(2);
   for(let i=0;i<a.length;i++){
     const k=a[i].replace(/^--/,''), v=a[i+1];
-    if(k==='help'||k==='h'){ console.log(fs.readFileSync(__filename,'utf8').split('\n').slice(3,15).join('\n').replace(/^ *\*? ?/gm,'')); process.exit(0); }
+    if(k==='help'||k==='h'){ console.log(fs.readFileSync(__filename,'utf8').split('\n').slice(3,16).join('\n').replace(/^ *\*? ?/gm,'')); process.exit(0); }
     if(!(k in o)){ console.error(`Unknown option --${k}. Try --help.`); process.exit(1); }
     o[k]= typeof o[k]==='number' ? +v : v; i++;
   }
@@ -38,6 +39,9 @@ function args(){
 function sandbox(){
   const ctx=vm.createContext({console, setTimeout:f=>{ f(); return 0; }, clearTimeout(){}});
   for(const s of SCRIPTS) s.runInContext(ctx);
+  // --tune synergy=1.03,merge.ramp=1.01: override TUNE numbers for this run, to try a change without editing data.js
+  for(const kv of (O.tune||'').split(',').filter(Boolean)){ const [k,v]=kv.split('=');
+    vm.runInContext(`(()=>{ let o=TUNE; const p=${JSON.stringify(k.split('.'))}; while(p.length>1) o=o[p.shift()]; o[p[0]]=${+v}; })()`,ctx); }
   return ctx;
 }
 
@@ -52,7 +56,8 @@ async function play(o,bot){
   const names=vm.runInContext(`({cards:Object.fromEntries(Object.entries(DB).map(([k,d])=>[k,d.n])),
     charms:Object.fromEntries(Object.entries(JOKERS).map(([k,j])=>[k,j.n])),
     threats:Object.fromEntries(Object.entries(THREATS).map(([k,t])=>[k,t.n])),
-    splices:Object.fromEntries(Object.entries(SPLICES).map(([k,s])=>[k,s.n]))})`,ctx);
+    splices:Object.fromEntries(Object.entries(SPLICES).map(([k,s])=>[k,s.n])),
+    antes:typeof ANTES==='undefined'?{}:Object.fromEntries(Object.entries(ANTES).map(([k,a])=>[k,a.n]))})`,ctx);
   return {runs,names:JSON.parse(JSON.stringify(names))};
 }
 
@@ -84,31 +89,31 @@ function report(bot,{runs,names},o){
   // Per wave: what a turn looks like, and what the wave asks of it.
   const W={};
   for(const r of runs) for(const w of r.waves){
-    const a=W[w.wave] ||= {runs:0,lost:0,turns:0,coin:0,actsLeft:0,played:0,seen:0,deck:0,drewAll:0,stuck:0,tc:[],price:[],tier:w.maxTier,merges:0,topLv:0};
-    a.runs++; a.merges+=w.merges||0; a.topLv+=w.topLv||0; a.turns+=w.turns; a.coin+=w.coin; a.actsLeft+=w.actsLeft; a.played+=w.played; a.seen+=w.seen; a.deck+=w.deck;
+    const a=W[w.wave] ||= {runs:0,lost:0,turns:0,coin:0,actsLeft:0,played:0,seen:0,deck:0,drewAll:0,stuck:0,tc:[],price:[],tier:w.maxTier,merges:0,topLv:0,parts:0,peak:[]};
+    a.runs++; a.parts+=w.parts||0; a.peak.push(w.peak||0); a.merges+=w.merges||0; a.topLv+=w.topLv||0; a.turns+=w.turns; a.coin+=w.coin; a.actsLeft+=w.actsLeft; a.played+=w.played; a.seen+=w.seen; a.deck+=w.deck;
     a.drewAll+=w.drewAll; a.stuck+=w.stuck;
     a.tc.push(...w.threats.filter(t=>t.coin).map(t=>t.coin)); a.price.push(...w.market.map(m=>m.cost));
     if(r.cleared===w.wave-1&&(r.result==='hearts'||r.result==='board full')) a.lost++;
   }
   out.push('\nPer wave (averages per turn). seen = cards in hand+play ÷ deck size. drew all = turns that drew the whole deck.');
   const M=o.mode==='merge';
-  out.push('stuck = turns ending with an Action in hand it could not pay for. threat ÷ income = turns of income a coin threat asks for.'+(M?' top lv = highest card level in the deck (1 = level one).':''));
-  out.push(table(['wave','runs','lost',M?'merges':'tier',M?'top lv':'','turns','coin','⚡ spare','played','seen','deck','drew all','stuck','coin threat','÷ income','market med','÷ income'],
+  out.push('stuck = turns ending with an Action in hand it could not pay for. threat ÷ income = turns of income a coin threat asks for.'+(M?' top lv = highest card level in the deck (1 = level one). parts = most parts in one fusion. peak = median of the wave\'s best turn.':''));
+  out.push(table(['wave','runs','lost',M?'merges':'tier',M?'top lv':'',...(M?['parts','peak']:[]),'turns','coin','⚡ spare','played','seen','deck','drew all','stuck','coin threat','÷ income','market med','÷ income'],
     Object.entries(W).map(([wave,a])=>{ const T=a.turns||1, inc=a.coin/T, tc=mean(a.tc), mp=quant(a.price,.5);
-      return [wave,a.runs,pct(a.lost,a.runs),M?f1(a.merges/a.runs):a.tier,M?f1(1+a.topLv/a.runs):'',f1(a.turns/a.runs),f1(inc),f1(a.actsLeft/T),f1(a.played/T),
-        pct(a.seen,a.deck),f1(a.deck/T),pct(a.drewAll,T),pct(a.stuck,T),Math.round(tc),inc?f1(tc/inc):'—',mp,inc?f1(mp/inc):'—']; })));
+      return [wave,a.runs,pct(a.lost,a.runs),M?f1(a.merges/a.runs):a.tier,M?f1(1+a.topLv/a.runs):'',...(M?[f1(a.parts/a.runs),big(quant(a.peak,.5))]:[]),f1(a.turns/a.runs),big(inc),a.actsLeft/T>=1e3?big(a.actsLeft/T):f1(a.actsLeft/T),f1(a.played/T),
+        pct(a.seen,a.deck),f1(a.deck/T),pct(a.drewAll,T),pct(a.stuck,T),big(tc),inc?f1(tc/inc):'—',mp,inc?f1(mp/inc):'—']; })));
 
   // Threats: which ones get cleared, which ones get through.
   const TH={};
   for(const r of runs) for(const [k,t] of Object.entries(r.threats)){
-    const a=TH[k] ||= {spawned:0,cleared:0,detonated:0,hits:0,clearAge:0};
-    for(const f in a) a[f]+=t[f];
+    const a=TH[k] ||= {spawned:0,cleared:0,detonated:0,hits:0,clearAge:0,prepaid:0};
+    for(const f in a) a[f]+=t[f]||0;
   }
   const classic=o.mode==='classic';
-  out.push('\nThreats. turns = average turns on the board before being cleared.'+(classic?' hits = attacks that landed (not blocked).':''));
-  out.push(table(['threat','seen','cleared',classic?'hits':'detonated','turns'],
+  out.push('\nThreats. turns = average turns on the board before being cleared.'+(classic?' hits = attacks that landed (not blocked).':'')+(M?' prepaid = paid off by Overkill before it arrived.':''));
+  out.push(table(['threat','seen','cleared',classic?'hits':'detonated','turns',...(M?['prepaid']:[])],
     Object.entries(TH).sort((a,b)=>(a[1].cleared/a[1].spawned)-(b[1].cleared/b[1].spawned))
-      .map(([k,a])=>[names.threats[k],a.spawned,pct(a.cleared,a.spawned),classic?a.hits:pct(a.detonated,a.spawned),a.cleared?f1(a.clearAge/a.cleared):'—'])));
+      .map(([k,a])=>[names.threats[k],a.spawned,pct(a.cleared,a.spawned),classic?a.hits:pct(a.detonated,a.spawned),a.cleared?f1(a.clearAge/a.cleared):'—',...(M?[pct(a.prepaid,a.spawned)]:[])])));
 
   // Cards, charms, splices: how often taken, and how runs that took them did.
   const lift=(label,key,get)=>{
@@ -122,11 +127,15 @@ function report(bot,{runs,names},o){
   lift('card bought','cards',r=>Object.keys(r.bought));
   lift('charm','charms',r=>r.charms);
   lift('splice','splices',r=>r.splices);
+  if(M){ lift('Ante Up taken','antes',r=>Object.keys(r.antes||{}));
+    const top=runs.slice().sort((a,b)=>b.cleared-a.cleared||b.peak-a.peak)[0];
+    if(top&&top.mono) out.push(`\nBest run: seed ${top.seed}, ${top.cleared} waves, peak turn ${big(top.peak)} coin. Charms: ${top.charms.join(', ')||'none'}. Deck ${top.deckSize}.\n  ${top.mono.name}: ${top.mono.groups}\n  ${top.mono.text}`); }
   return out.join('\n');
 }
 
+let O={};
 (async()=>{
-  const o=args(), all={};
+  const o=O=args(), all={};
   const t0=Date.now();
   for(const bot of o.bots){
     const res=await play(o,bot); all[bot]=res.runs;

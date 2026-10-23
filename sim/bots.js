@@ -26,8 +26,8 @@ function chooseCards(pool,o={}){
   for(const c of pool){ if(ch.length>=min) break; if(!ch.includes(c)) ch.push(c); }
   return Promise.resolve(ch);
 }
-function chooseOption(title,sub,options){
-  const keys=options.map(o=>o[0]), k=SIM.bot.option(keys,title);
+function chooseOption(title,sub,options,why){
+  const keys=options.map(o=>o[0]), k=SIM.bot.option(keys,title,why);
   return Promise.resolve(keys.includes(k)?k:keys[0]);
 }
 // Called a second time, with {skip}, to ask which charm to give away when the slots are full.
@@ -150,12 +150,21 @@ const POLICY={
   // Merge mode. w is per level-one unit (×1, 2, 4… a level). energy: ⚡ supply wanted per ⚡ the deck's Actions cost.
   merge_money:{ name:'Big Money (merge)',
     w:{coin:1.2,spark:1,scout:1.3,bazaar:1.2,strongbox:1,rummage:1.2,alchemist:2,ward:.8}, cap:{bazaar:1,alchemist:2,ward:1}, energy:1, thin:false,
-    charms:{golden:10,glass:8,midas:7,vintage:6,mirror:6,greedy:6,minimal:6,hourglass:5,gilded:4,piggy:4,wall:4,seal:3},
+    charms:{golden:10,glass:8,midas:7,vintage:6,mirror:6,greedy:6,minimal:6,hourglass:5,gilded:4,piggy:4,wall:4,seal:3,mittens:2,monk:2,keystone:2},
     splices:{} },
   merge_engine:{ name:'Engine (merge)',
     w:{coin:1,spark:1.3,scout:1.6,kindling:1.5,bazaar:1.5,bowman:1.8,watchdog:1.3,strongbox:1.2,almanac:1.4,seer:.6,
        reprise:2,patron:1,rummage:1.4,alchemist:1.8,ward:1.2}, cap:{kindling:1,seer:1,patron:1,ward:2}, energy:1, thin:false,
-    charms:{greedy:8,wind:7,echo:7,golden:7,midas:6,momentum:6,minimal:5,hourglass:5,wall:4,seal:4,eagle:3,bounty:3},
+    charms:{greedy:8,wind:7,echo:7,golden:7,midas:6,momentum:6,minimal:5,hourglass:5,wall:4,seal:4,eagle:3,bounty:3,monk:3,keystone:3,mittens:2},
+    splices:{} },
+  // The archetype: trash down, fuse everything into one card, absorb every spoil into it, take the tiny-deck
+  // charms, Overkill every turn and take Ante Up contracts when far enough ahead. w: what a part is worth to it.
+  merge_monolith:{ name:'Monolith (merge)', mono:true,
+    w:{coin:1.2,spark:.5,scout:.3,kindling:1,bazaar:1.2,bowman:.8,watchdog:1.1,strongbox:.1,almanac:.2,seer:.1,
+       reprise:1,patron:.1,rummage:.3,alchemist:2.4,ward:0,anvil:0}, cap:{}, energy:1, thin:true,
+    charms:{hermit:14,keystone:13,wolf:12,echo:10,minimal:10,mittens:9,monk:8,wall:6,hourglass:6,tidy:5,bounty:4,trophy:4,
+            scrapper:3,interest:4,wind:3,eagle:2,thorns:2},
+    ante:{double:1.5,crowd:1,fuse:.8},                                // take one when last wave's best turn beats one of the next wave's threats this many times over
     splices:{} },
   engine:{ name:'Engine',
     w:{silver:2,gold:3,treasury:2.5,nestegg:2.5,teahouse:3,maproom:3.5,inventor:4,parade:4,springclean:1.5,bonfire:2,
@@ -166,6 +175,19 @@ const POLICY={
     splices:{twin:9,free:8,draw:6,quick:6,retain:5,coin:4,strike:4,grow:3,guard:3,trade:2} },
 };
 
+// The bot's biggest fusion (most parts), or else its best fusable card: what it builds on.
+const bigFusion = cards => best(cards.filter(c=>fusable(c)&&!isFrozen(c)),c=>partCount(c)*100+(DB[c.key].c||0)) || null;
+// What a level-one card adds as a part of the monolith: its weight, more for what the monolith still lacks.
+function partValue(P,k,mono){
+  const e=mono?DB[mono.key].eff(mono.lv):{}, w=P.w[k]||0;
+  if(k==='kindling') return e.trash ? .4 : 3;                       // the Bonfire keeps a tiny deck clean of Rubble
+  if(k==='reprise')  return e.replay ? .3 : 2.5;                    // one Encore makes it all resolve twice
+  if(k==='alchemist') return (e.coin||0)>=4 ? w*1.5 : w*.6;           // a multiplier needs Coin to multiply
+  if(k==='coin'||k==='bazaar'||k==='watchdog') return w*(1+3/Math.max(1,e.coin||0));
+  return w;
+}
+// What one of a wave's threats costs in Coin, roughly: what an Ante Up contract has to beat.
+const threatPrice = w => TUNE.exchange*TUNE.merge.coinScale(w);
 // A card's raw worth to this bot: weight × tier power.
 const worth = (P,c) => isJunk(c) ? -1 : DB[c.key].fused ? partsOf(c).reduce((s,p)=>s+(P.w[p.key]||0)*(1+p.lv),0)
   : (P.w[c.key]||0)*power(c)*(hasMod(c,'twin')?2:1)+slotsUsed(c);
@@ -210,12 +232,51 @@ function heuristic(P){
   const thinOk = () => allCards().filter(c=>c.t==='treasure').reduce((s,c)=>s+tval(c),0)>=12;
   const coppers = pool => pool.filter(isCopper).sort((a,b)=>a.lv-b.lv);
   const cheapest = pool => pool.filter(c=>!isJunk(c)).sort((a,b)=>worth(P,a)-worth(P,b));
+  // The monolith bot never gives its monolith away: not to a threat, not to a trash effect.
+  const spare = arr => { if(!P.mono) return arr; const m=best(allCards().filter(fusable),c=>partCount(c)); return arr.filter(c=>c!==m||partCount(c)<2); };
   const self={ P,
     cards(pool,o){
+      const r=pick1(pool,o);
+      return Array.isArray(r)&&['purge','bonfire','kindling','pawnshop','prog_discard','sacrifice','scavenge','upgrade','rummage','strategist'].includes(o.why) ? spare(r) : r;
+    },
+    option(keys,title,why){
+      if(why==='ante') return P.ante ? anteChoice(keys) : 'none';
+      if(why==='wipe') return 'service';
+      if(keys.includes('take')){                                                                        // a reaction
+        const k=['snare','moat','dog','guard','rip'].find(k=>keys.includes(k));
+        // The monolith blocks with itself only when a heart matters more than its next turn.
+        if(P.mono&&k==='dog'&&G.hand.filter(c=>DB[c.key].react).every(c=>c===bigFusion(allCards()))&&G.hearts>2) return 'take';
+        return k||'take';
+      }
+      if(keys.includes('rest')) return inn(keys);
+      if(keys.includes('y')) return 'y';                                                                 // only asked once we chose to
+      const ts=live().filter(t=>keys.includes(t.id));                                                     // aiming a strike
+      return best(ts,t=>-t.cd*100+owedCoin(t))?.id ?? keys[0];
+    },
+    charm:keys=>G.jokers.length>=TUNE.jokerSlots?(P.mono?swapCharm(keys):null):rankBy(keys,P.charms),
+    giveAway:keys=>P.mono?best(keys.filter(k=>(P.charms[k]||1)<SIM.want),k=>-(P.charms[k]||1))||null:null,
+    spliceKey:keys=>rankBy(keys,P.splices),
+    turn:()=>heuristicTurn(self),
+  };
+  // Full charm slots: the monolith bot swaps its weakest charm for a much better one.
+  function swapCharm(keys){
+    const k=rankBy(keys,P.charms), worst=Math.min(...G.jokers.map(j=>P.charms[j.key]||1));
+    if((P.charms[k]||1)<worst+4) return null;
+    SIM.want=P.charms[k]||1; return k;
+  }
+  // Ante Up: take the richest contract the last wave's best turn can afford, by a safe margin.
+  function anteChoice(keys){
+    const peak=SIM.run.wavePeak||0, price=threatPrice(G.wave+1);
+    const ok=k=>keys.includes(k)&&peak>=price*P.ante[k]*(k==='double'?TUNE.ante.double:1);
+    const k=['double','crowd','fuse'].find(ok)||'none';
+    if(k!=='none') SIM.run.antes[k]=(SIM.run.antes[k]||0)+1;
+    return k;
+  }
+  function pick1(pool,o){
       const t=SIM.cur, urg=t&&pressing(t), junk=junkIn(pool);
       switch(o.why){
         case 'springclean': return pool.filter(c=>isJunk(c)||isFrozen(c));
-        case 'bonfire': case 'purge': return [...junk,...(P.thin&&thinOk()?coppers(pool):[])];
+        case 'bonfire': case 'purge': return P.mono ? [...junk,...pool.filter(c=>c.key==='anvil'||DB[c.key].stays)] : [...junk,...(P.thin&&thinOk()?coppers(pool):[])];
         case 'pawnshop':  return junk.length?junk:(P.thin&&thinOk()?coppers(pool).slice(0,1):[]);
         case 'ragpicker': return junk;
         case 'strategist': { const dead=pool.filter(c=>c.t==='action'&&G.actions===0);
@@ -229,10 +290,13 @@ function heuristic(P){
         case 'splice':    return [spliceTarget(pool)];
         case 'merge':     return pool.slice().sort((a,b)=>worth(P,b)-worth(P,a));
         // Fuse a Spark into the best card that costs 1 ⚡: it pays for itself and frees a slot.
-        case 'fuse':      { const f=fusePair(pool); return f?[f[0]]:null; }
-        case 'fuse2':     { const f=fusePair(G.deck); return f?[f[1]]:null; }
-        case 'spoils':    return [best(pool,c=>want(P,c)||worth(P,c)/4)];
-        case 'kindling':  return junk;
+        // The monolith bot fuses everything it can into one card.
+        case 'fuse':      { if(P.mono) return pool.length>=2?pool.slice().sort((a,b)=>partCount(b)-partCount(a)||worth(P,b)-worth(P,a)):null; const f=fusePair(pool); return f; }
+        case 'spoils':    { if(!P.mono) return [best(pool,c=>want(P,c)||worth(P,c)/4)];
+          const m=bigFusion(allCards()), f=pool.filter(fusable);
+          return f.length?[best(f,c=>partValue(P,c.key,m)+Math.random()*.1)]:[]; }
+        case 'absorb':    return P.mono ? [bigFusion(pool)] : [];
+        case 'kindling':  return P.mono ? [...junk,...pool.filter(c=>c.key==='anvil')] : junk;
         case 'seer':      return junk;
         case 'rummage':   return pool.filter(c=>isJunk(c)||isFrozen(c)||DB[c.key].stays);   // a Ward only works from the discard pile
         case 'strongbox': return [best(pool,c=>-tval(c))];
@@ -244,19 +308,7 @@ function heuristic(P){
           return [...(urg?low('treasure'):coppers(pool)).slice(0,nT),...(urg?low('action'):[]).slice(0,nA)]; }
       }
       return pool.slice(0,o.min||0);
-    },
-    option(keys){
-      if(keys.includes('take')) return ['snare','moat','dog','guard','rip'].find(k=>keys.includes(k))||'take';   // a reaction: always block
-      if(keys.includes('rest')) return inn(keys);
-      if(keys.includes('y')) return 'y';                                                                 // only asked once we chose to
-      const ts=live().filter(t=>keys.includes(t.id));                                                     // aiming a strike
-      return best(ts,t=>-t.cd*100+owedCoin(t))?.id ?? keys[0];
-    },
-    charm:keys=>G.jokers.length>=TUNE.jokerSlots?null:rankBy(keys,P.charms),
-    giveAway:()=>null,
-    spliceKey:keys=>rankBy(keys,P.splices),
-    turn:()=>heuristicTurn(self),
-  };
+  }
   function spliceTarget(pool){
     const pref={quick:'action',draw:'action',free:'action',strike:'action',coin:'treasure',grow:'treasure',retain:'treasure'}[SIM.splice];
     return best(pool,c=>(worth(P,c)||cardWorth(c)/10)*(c.t===pref?2:1));
@@ -268,7 +320,12 @@ function heuristic(P){
   function inn(keys){
     const all=allCards(), junk=junkIn(all).length;
     if(keys.includes('heal')&&G.hearts<=2) return 'heal';
-    if(keys.includes('fuse')) return junk>=2 ? 'purge' : fusePair(all) ? 'fuse' : 'copy';
+    if(P.mono){                                                       // fuse it all, then clear out the rest
+      if(keys.includes('fuse')&&G.deck.filter(fusable).length>=2) return 'fuse';
+      if(junk||all.some(c=>c.key==='anvil'||DB[c.key].stays)) return 'purge';
+      return keys.includes('heal')&&G.hearts<TUNE.hearts ? 'heal' : 'rest';
+    }
+    if(keys.includes('fuse')) return junk>=2 ? 'purge' : fusePair(all) ? 'fuse' : all.some(c=>!isJunk(c)&&c.lv<=TUNE.copyMax) ? 'copy' : 'rest';
     if(keys.includes('mend')&&all.some(c=>worth(P,c)>3&&(hasMod(c,'heavy')||hasMod(c,'brittle')))) return 'mend';
     if(junk>=2) return 'purge';
     return 'temper';
@@ -278,8 +335,10 @@ function heuristic(P){
 
 // Threats paid in cards from hand. When pressing, they're paid before anything is played.
 const HAND_KINDS=['prog_discard','sacrifice','scavenge','upgrade'];
+const COIN_KINDS=['prog_coin','once_coin','once_hybrid'];
 function shouldPay(t,stage){
   if(!threatReady(t)) return false;
+  if(stage==='native'){ if(COIN_KINDS.includes(t.kind)) return false; stage='urgent'; }   // the monolith bot pays coin by chain and Overkill
   const u=stage==='rest'||pressing(t), rem=t.need-t.prog;
   if(stage==='hand') return HAND_KINDS.includes(t.kind)&&t.cd<=1;
   switch(t.kind){
@@ -301,6 +360,8 @@ async function heuristicTurn(B){
   SIM.dens=null;
   // 0. Threats that want cards from hand and can't wait take them before anything is played.
   await payThreats('hand',same);
+  // The monolith goes first: with Lone Wolf it is the one card that resolves.
+  if(P.mono){ const m=bigFusion(G.hand.filter(canPlay)); if(m&&same()) await playCard(m); }
   // 1. Actions: everything that keeps an Action spare first, then the best terminal.
   for(let i=0;i<80&&same();i++){
     SIM.dens=null;
@@ -321,6 +382,7 @@ async function heuristicTurn(B){
   for(const c of G.hand.filter(c=>c.key==='alchemist').sort((a,b)=>b.lv-a.lv)) if(same()&&G.coin>1&&canPlay(c)) await playCard(c);
   if(!same()) return;
   recordTurn();
+  if(P.mono) return monolithPay(P,same);
   // 3. Pay what can't wait, 4. buy, 5. pour the rest into the threats.
   await payThreats('urgent',same);
   for(let i=0;i<10&&same()&&G.buys>0;i++){
@@ -332,6 +394,28 @@ async function heuristicTurn(B){
   if(!same()) return;
   for(const c of G.hand.filter(c=>c.key==='rubble')) if(same()&&canPlay(c)&&!live().some(t=>t.kind==='prog_action'&&pressing(t))) await playCard(c);
   await payThreats('rest',same);
+  if(same()&&canOverkill()) await overkill();                        // leftover coin spills into the queue
+  if(same()) await endTurn();
+}
+// The monolith bot's payday: ⚡, Buys and cards where a threat takes them, then the coin threats it can
+// clear outright, cheapest first (each clear swells the rest), maybe one part to fuse at the Inn, then Overkill.
+async function monolithPay(P,same){
+  await payThreats('native',same);
+  for(let i=0;i<12&&same();i++){
+    const ts=live().filter(t=>(t.kind==='prog_coin'||t.kind==='once_coin')&&coinPrice(t)<=G.coin).sort((a,b)=>coinPrice(a)-coinPrice(b));
+    if(!ts.length) break;
+    SIM.cur=ts[0]; await clickThreat(ts[0]); SIM.cur=null;
+  }
+  if(!same()) return;
+  const roomy=!hasJ('hermit')||deckSize()<TUNE.hermitDeck;
+  if(roomy&&G.buys>0&&G.wave<=TUNE.eliteEvery*2){
+    const m=bigFusion(allCards()), offer=G.market.map((c,i)=>[c,i]).filter(([c])=>c&&fusable(c)&&costOf(c)<=G.coin*.3);
+    const pk=best(offer,([c])=>partValue(P,c.key,m)*(1+c.lv));
+    if(pk&&partValue(P,pk[0].key,m)>=1){ noteBuy(pk[0]); buyCard(pk[1]); }
+  }
+  for(const c of G.hand.filter(c=>c.key==='rubble')) if(same()&&canPlay(c)&&!live().some(t=>t.kind==='prog_action'&&pressing(t))) await playCard(c);
+  if(same()) await payThreats('native',same);
+  if(same()&&canOverkill()) await overkill();
   if(same()) await endTurn();
 }
 async function payThreats(stage,same){
@@ -354,7 +438,8 @@ function randomBot(){
       const t0=G.turn, same=()=>!G.over&&G.turn===t0&&G.phase==='turn';
       for(let i=0;i<60&&same();i++){
         const moves=[...G.hand.filter(canPlay).map(c=>()=>playCard(c)),
-                     ...live().filter(threatReady).filter(t=>t.kind!=='panic'||coin(.2)).map(t=>()=>clickThreat(t))];
+                     ...live().filter(threatReady).filter(t=>t.kind!=='panic'||coin(.2)).map(t=>()=>clickThreat(t)),
+                     ...(canOverkill()&&coin(.3)?[()=>overkill()]:[])];
         const buys=G.buys>0?G.market.map((c,i)=>[c,i]).filter(([c])=>c&&costOf(c)<=G.coin&&!isJunk(c)):[];
         if(buys.length&&coin(.3)){ const [c,i]=pick(buys); noteBuy(c); buyCard(i); continue; }
         if(!moves.length||coin(.08)) break;
@@ -376,6 +461,7 @@ function waveRec(){
 }
 function noteWave(){
   if(SIM.run.lastWave===G.wave) return;
+  const prev=SIM.run.waves[SIM.run.lastWave]; SIM.run.wavePeak=prev?prev.peak||0:0;   // what the bot weighs Ante Up with
   SIM.run.lastWave=G.wave;
   const w=waveRec();
   w.market=G.market.filter(Boolean).map(c=>({key:c.key,lv:c.lv,cost:baseCost(c)}));
@@ -390,13 +476,15 @@ function recordTurn(){
   if(G.hand.some(c=>c.t==='action'&&!isFrozen(c)&&actCost(c)>G.actions)) w.stuck++;
   w.merges=G.merges-w.merges0; w.topLv=Math.max(w.topLv,...allCards().map(c=>c.lv));
   R.income = R.turns++ ? R.income*.7+G.coin*.3 : G.coin;
-  R.peak = Math.max(R.peak,G.coin);
+  R.peak = Math.max(R.peak,G.coin); w.peak=Math.max(w.peak||0,G.coin);
+  w.parts=Math.max(w.parts||0,...allCards().map(partCount));
 }
 function noteBuy(c){ const k=c.key; SIM.run.bought[k]=(SIM.run.bought[k]||0)+1; SIM.run.buyTiers.push(c.lv); }
 
 // Wrap a few rules to count clears, detonations and hits per threat.
 const _complete=completeThreat, _detonate=detonate, _apply=applyAttack;
-completeThreat=function(t){ const r=SIM.run&&SIM.run.threats[t.key]; if(r&&G.slots.includes(t)){ r.cleared++; r.clearAge+=t.age; } return _complete(t); };
+completeThreat=function(t){ const r=SIM.run&&SIM.run.threats[t.key]; if(r&&(G.slots.includes(t)||G.queue.includes(t))){ r.cleared++; r.clearAge+=t.age;
+  if(!G.slots.includes(t)) r.prepaid=(r.prepaid||0)+1; } return _complete(t); };
 detonate=async function(t){ const r=SIM.run&&SIM.run.threats[t.key]; if(r) r.detonated++; return _detonate(t); };
 applyAttack=function(t){ const r=SIM.run&&SIM.run.threats[t.key]; if(r&&!t.detonating) r.hits++; return _apply(t); };
 
@@ -406,8 +494,8 @@ applyAttack=function(t){ const r=SIM.run&&SIM.run.threats[t.key]; if(r&&!t.deton
 async function simRun(o){
   seedRandom(o.seed); SIM.dens=null;
   SIM.keepLog=!!o.keepLog;
-  SIM.bot = o.bot==='random' ? randomBot() : heuristic(POLICY[(o.mode==='merge'?'merge_':'')+o.bot]);
-  SIM.run={ seed:o.seed, bot:o.bot, mode:o.mode, waves:{}, threats:{}, bought:{}, buyTiers:[], income:0, turns:0, lastWave:0, peak:0 };
+  SIM.bot = o.bot==='random' ? randomBot() : heuristic(POLICY[(o.mode==='merge'?'merge_':'')+o.bot]||POLICY[o.mode==='merge'?'merge_engine':'engine']);
+  SIM.run={ seed:o.seed, bot:o.bot, mode:o.mode, waves:{}, threats:{}, bought:{}, buyTiers:[], income:0, turns:0, lastWave:0, peak:0, antes:{} };
   newRun(o.mode);
   let steps=0;
   while(!G.over&&G.wave<=o.waves&&steps++<o.maxTurns&&deckSize()<=o.deckCap){ noteWave(); await SIM.bot.turn(); }
@@ -418,7 +506,9 @@ async function simRun(o){
     cleared: G.over ? G.wave-1 : Math.min(G.wave-1,o.waves),
     result: G.over ? (/lost heart/.test(over)?'hearts':'board full') : G.wave>o.waves ? 'survived' : deckSize()>o.deckCap ? 'runaway deck' : 'stalled',
     killer: killer ? killer.replace(/^Elite /,'') : null,
-    turns:G.turn, peak:R.peak, hearts:G.hearts, deckSize:deckSize(), cleared_threats:G.runCleared,
+    turns:G.turn, peak:R.peak, hearts:G.hearts, antes:R.antes||{},
+    mono:(()=>{ const f=allCards().filter(c=>DB[c.key].fused).sort((a,b)=>partCount(b)-partCount(a))[0];
+      return f?{name:cname(f),parts:partCount(f),groups:DB[f.key].fused.map(p=>`${p.key}.${p.lv}${p.n>1?'*'+p.n:''}`).join(' '),text:ctext(f)}:null; })(), deckSize:deckSize(), cleared_threats:G.runCleared,
     deck: allCards().map(c=>c.key+(c.lv?'+'+c.lv:'')),
     charms: G.jokers.map(j=>j.key), splices: allCards().flatMap(c=>c.mods),
     bought:R.bought, buyTiers:R.buyTiers, threats:R.threats, waves:Object.values(R.waves),

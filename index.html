@@ -33,6 +33,7 @@
       <span class="chip" id="cQueue"></span>
       <span class="chip" id="cNext"></span>
       <span class="chip" id="cTier"></span>
+      <span class="chip ante" id="cAnte" hidden></span>
     </div>
     <span class="spacer"></span>
     <button class="tbtn wide-only" id="btnDeck">Deck</button>
@@ -63,8 +64,10 @@
       <div class="res" id="rAct"></div>
       <div class="res" id="rBuy"></div>
       <div class="res coin" id="rCoin"></div>
+      <div class="res chain" id="rChain" hidden title="Every threat cleared this turn swells your Coin by ×1.25"></div>
       <span class="spacer"></span>
       <button class="pile" id="pTreas" title="Play every Treasure in your hand (T)">▶ Treasures</button>
+      <button class="pile" id="pOver" hidden title="Pour all your Coin into the threats, then the queue; the overflow spills on (O)">💥 Overkill</button>
       <button class="pile" id="pDeck" title="View your draw pile"></button>
       <button class="pile" id="pDisc" title="View your discard pile"></button>
       <button id="endturn" title="End turn (E)">End turn</button>
@@ -107,7 +110,7 @@
       <button class="tbtn" id="mHow">How to play</button>
       <button class="tbtn" id="mNew">New run</button>
     </div>
-    <p class="hint keys">Keys: <b>E</b> end turn · <b>T</b> play treasures · <b>+ / −</b> UI size · right-click any card to read it.</p>
+    <p class="hint keys">Keys: <b>E</b> end turn · <b>T</b> play treasures · <b>O</b> Overkill · <b>+ / −</b> UI size · right-click any card to read it.</p>
     <button class="mbtn go" id="mClose">Done</button>
   </div>
 </div>
@@ -150,10 +153,12 @@
       <li><b>⚡ Spend Energy.</b> You get 1 ⚡ a turn. Each card shows what it costs to play in its blue pip; Treasures are free. Sparks give ⚡, Scouts draw cards, and the rest give Coin, Buys or strike threats.</li>
       <li><b>🔨 Merge.</b> Play your Anvil to merge two identical cards from anywhere in your deck into one a level higher — two Coppers make a Silver, two Sparks a Spark II. It costs the same to play and does one more: Silver gives 2 Coin, Spark II 2 ⚡. Copies in your discard pile are used first, then your draw pile, then your hand; the new card goes to your discard pile.</li>
       <li><b>🛒 Shop the market.</b> It starts with level-one cards; ones that cost more ⚡ to play arrive in later waves. Once you merge a card to a new level, the market starts stocking the level below it. Bought cards go to the bottom of your deck; the two leftmost stalls leave each turn.</li>
-      <li><b>👹 Beat the fuse.</b> Each threat wants something — Coin, Energy, Buys or cards — and has a fuse. Tap its button to pay. If the fuse runs out it detonates: it attacks and costs the town a ❤. Clear one and you may take a free card.</li>
-      <li><b>🧊 Don't lean on one card.</b> The Snow Queen, and Elites from wave 5, seal your most valuable card in ice until they leave. The Bookworm eats everything your cards would draw until it is full.</li>
+      <li><b>👹 Beat the fuse.</b> Each threat wants something — Coin, Energy, Buys or cards — and has a fuse. Tap its button to pay. If the fuse runs out it detonates: it attacks and costs the town a ❤. Clear one and you may take a free card, then fuse it straight into one of your cards instead of adding it to your deck. Coin demands climb faster every wave, like antes: a deck that only grows steadily hits a wall.</li>
+      <li><b>💥 Overkill.</b> The Overkill button pours all your Coin into the threats, the most urgent first, then into those still queued: what one doesn't need spills into the next, so a huge turn pays off threats before they arrive. Coin pays for Energy, Buy and card threats too, at a price that grows with the wave. Every threat you clear in a turn makes the rest of that turn's Coin worth ×1.25 (the ⛓ chain). Clear 3 or more in the turn that ends the wave for a 🌊 Wipe: an extra charm or Inn service.</li>
+      <li><b>🗿 Build a Monolith.</b> A fusion's numbers grow ×1.02 for every part beyond the first, compounding, and it costs the average ⚡ of its parts, rounded down. Hermit, Monk, Lone Wolf, Minimalist and Keystone reward a tiny deck. Strikes take at most 40% of what a threat still wants.</li>
+      <li><b>🧊 Don't lean on one card.</b> The Snow Queen, and every Elite, seal your most valuable card in ice until they leave (Warm Mittens: for one turn only). Pay them off in the queue and they never arrive. The Bookworm eats everything your cards would draw until it is full.</li>
       <li><b>🏰 Hold all three slots.</b> If a threat arrives with every slot full, the town falls.</li>
-      <li><b>✨ Between waves</b> pick a charm that bends the rules, and visit the Inn to trash or copy a card, rest, or merge two different cards into one that does both and costs their average ⚡ (rounded up).</li>
+      <li><b>✨ Between waves</b> pick a charm that bends the rules, and visit the Inn to trash or copy a card, rest, or merge 2 or 3 different cards into one that does it all. A deck of 6 cards or fewer gets two services. Then <b>📜 Ante Up</b> if you dare: a contract makes the next wave harder (×2 demands, 2 more threats, or shorter fuses) and pays a rare charm, an extra service or a free fused card if you clear it without losing a heart.</li>
     </ol>
     <p class="hint">Classic mode opens the game as it was on 22 October 2026, before Energy and merging: Dominion-style Actions, splice mode and the original classic.</p>
     <button class="mbtn go" id="hClose">Got it</button>
