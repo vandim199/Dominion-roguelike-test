@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1A2354">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Coinkeep Classic</title>
+<meta name="description" content="Coinkeep — a pocket deckbuilder. Build your deck, pay off the troubles, hold the town.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script src="js/data.js" defer></script>
+<script src="js/game.js" defer></script>
+<script src="js/ui.js" defer></script>
+</head>
+<body>
+
+<div id="app">
+  <header id="topbar">
+    <span class="brand">🪙 Coinkeep</span>
+    <div class="chips">
+      <span class="chip wave" id="cWave"></span>
+      <span class="chip" id="cTurn"></span>
+      <span class="chip" id="cHearts" hidden></span>
+      <span class="chip" id="cQueue"></span>
+      <span class="chip" id="cNext"></span>
+      <span class="chip" id="cTier"></span>
+    </div>
+    <span class="spacer"></span>
+    <button class="tbtn wide-only" id="btnDeck">Deck</button>
+    <button class="tbtn wide-only" id="btnTrash">Trash</button>
+    <button class="tbtn wide-only" id="btnNew">New run</button>
+    <button class="tbtn" id="btnLedger" aria-label="Log">📜<span class="long"> Log</span></button>
+    <button class="tbtn" id="btnMenu" aria-label="Settings and menu">⚙<span class="long"> Settings</span></button>
+  </header>
+
+  <main id="main">
+    <div id="subbar">
+      <div id="tabs" role="tablist">
+        <button id="tabThreats" role="tab">Threats</button>
+        <button id="tabMarket" role="tab">Market <span id="tabBadge" class="badge-n"></span></button>
+      </div>
+      <div id="jokers"></div>
+    </div>
+
+    <div id="board">
+      <section class="market-rail">
+        <div class="rail-label">Market</div>
+        <div class="market" id="market"></div>
+      </section>
+      <section id="threats"></section>
+    </div>
+
+    <div id="bar">
+      <div class="res" id="rAct"></div>
+      <div class="res" id="rBuy"></div>
+      <div class="res coin" id="rCoin"></div>
+      <span class="spacer"></span>
+      <button class="pile" id="pTreas" title="Play every Treasure in your hand (T)">▶ Treasures</button>
+      <button class="pile" id="pDeck" title="View your draw pile"></button>
+      <button class="pile" id="pDisc" title="View your discard pile"></button>
+      <button id="endturn" title="End turn (E)">End turn</button>
+    </div>
+
+    <div id="handwrap"><div id="hand"></div></div>
+  </main>
+
+  <aside id="side">
+    <div class="side-h"><span>TOWN LOG</span><span class="side-btns"><button class="tbtn" id="logSave" title="Download the whole log as a text file">⬇ Save</button><button id="sideClose" aria-label="Close log">✕</button></span></div>
+    <div id="log"></div>
+  </aside>
+</div>
+
+<div id="toasts" aria-live="polite"></div>
+
+<div id="inspect" role="dialog" aria-modal="true">
+  <div id="inspectBody"></div>
+  <div id="inspectInfo"></div>
+  <div class="mbtns" id="inspectBtns"></div>
+</div>
+
+<div id="menu" role="dialog" aria-modal="true" aria-labelledby="menuTitle">
+  <div class="sheet">
+    <h3 id="menuTitle">Settings</h3>
+    <div class="srow">
+      <span class="slabel">UI size</span>
+      <button class="sbtn" id="sDown" aria-label="Smaller">−</button>
+      <input type="range" id="sRange" min="60" max="160" step="5" aria-label="UI size">
+      <button class="sbtn" id="sUp" aria-label="Larger">+</button>
+      <span id="sVal">100%</span>
+    </div>
+    <div class="srow hint"><span id="sEff"></span><button class="tbtn" id="sAuto">Reset</button></div>
+    <label class="srow check"><input type="checkbox" id="sTap"> Tap a card to read it before playing or buying</label>
+    <div class="srow btns">
+      <button class="tbtn" id="mDeck">Deck</button>
+      <button class="tbtn" id="mTrash">Trash</button>
+      <button class="tbtn" id="mLedger">Log</button>
+      <button class="tbtn" id="mSave">Save log</button>
+      <button class="tbtn" id="mHow">How to play</button>
+      <button class="tbtn" id="mNew">New run</button>
+    </div>
+    <p class="hint keys">Keys: <b>E</b> end turn · <b>T</b> play treasures · <b>+ / −</b> UI size · right-click any card to read it.</p>
+    <button class="mbtn go" id="mClose">Done</button>
+  </div>
+</div>
+
+<div id="veil" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+  <h2 id="mTitle"></h2>
+  <div class="sub" id="mSub"></div>
+  <div id="pool"></div>
+  <div class="opts" id="mOpts"></div>
+  <div class="mbtns" id="mBtns"></div>
+</div>
+
+<div id="over">
+  <div class="over-art">🏚</div>
+  <h1 id="overTitle">The town falls</h1>
+  <p id="overText"></p>
+  <button class="mbtn go big" id="overBtn">Try again</button>
+  <button class="mbtn" id="overSave">Save log</button>
+</div>
+
+<div id="banner" aria-hidden="true"></div>
+
+<div id="title" class="on" role="dialog" aria-modal="true" aria-labelledby="tName">
+  <div class="logo">
+    <div class="logo-art">🏰</div>
+    <h1 id="tName">Coinkeep</h1>
+    <p class="tag">Build a deck. Pay off the trouble. Hold the town.</p>
+    <p class="tag">Classic — the game as it was on 22 October 2026.</p>
+  </div>
+  <p class="best" id="tBest"></p>
+  <button class="mbtn go big" id="tPlay">Play</button>
+  <button class="mbtn alt" id="tClassic">Classic mode</button>
+  <button class="mbtn" id="tHow">How to play</button>
+  <a class="mbtn" href="../index.html" style="text-decoration:none">← Back to the current game</a>
+</div>
+
+<div id="howto" role="dialog" aria-modal="true" aria-labelledby="hTitle">
+  <div class="sheet">
+    <h3 id="hTitle">How to play</h3>
+    <ol class="steps">
+      <li><b>🃏 Play your hand.</b> Action cards give Cards, Actions, Buys and Coin. Treasures give Coin.</li>
+      <li><b>👹 Beat the fuse.</b> Each threat wants something — Coin, Actions, Buys or cards — and has a fuse. Tap its button to pay. If the fuse runs out it detonates: it attacks, scars one of your cards and costs the town a ❤.</li>
+      <li><b>🧬 Splice your cards.</b> Every threat you clear lets you graft a keyword onto a card in your deck — Encore with +1 Action, a Gold that's Sticky, a Twin Forge. Clear a threat within two turns for a swift bonus.</li>
+      <li><b>🛒 Shop the market.</b> A small set of core cards — splicing is where the depth is. They go to the bottom of your deck. The two leftmost stalls leave each turn. Every wave the stalls stock higher tiers: each tier hits harder and costs more, on the same steep curve as the threats.</li>
+      <li><b>🧊 Don't lean on one card.</b> The Snow Queen, and Elites from wave 5, seal your most valuable card in ice until they leave. The Bookworm eats everything your cards would draw until it is full.</li>
+      <li><b>🏰 Hold all three slots.</b> If a threat arrives with every slot full, the town falls.</li>
+      <li><b>✨ Between waves</b> pick a charm that bends the rules, and visit the Inn to upgrade, copy, mend or trash a card, or rest.</li>
+    </ol>
+    <p class="hint">Classic mode is the original game: a big card pool, and threats that attack every few turns until you pay them off. Cards with ★ are upgraded. Upgrades stack — a Forge★ can turn Gold into Gold★★.</p>
+    <button class="mbtn go" id="hClose">Got it</button>
+  </div>
+</div>
+
+</body>
+</html>

@@ -560,7 +560,8 @@ $('tabMarket').onclick=()=>setTab('market');
 $('overBtn').onclick=()=>newRun(G.mode);
 const startMode=mode=>{ $('title').classList.remove('on'); newRun(mode); };
 $('tPlay').onclick=()=>startMode('merge');
-$('tClassic').onclick=()=>startMode('classic');
+// Classic is a frozen copy of the game from 22 October 2026, in classic/.
+$('tClassic').onclick=()=>{ location.href='classic/index.html'; };
 $('tHow').onclick=()=>$('howto').classList.add('on');
 $('hClose').onclick=()=>$('howto').classList.remove('on');
 $('mHow').onclick=()=>{ closeMenu(); $('howto').classList.add('on'); };

@@ -14,7 +14,7 @@ Works on desktop, tablets and phones in either orientation. Use **⚙ Settings**
 
 **Play** is merge mode. Cards are played with ⚡ Energy (1 a turn; each card's play cost is in its blue pip). Your Anvil merges a pair of identical cards from anywhere in your deck (discard pile first, then draw pile, then hand) into one a level higher, which goes to your discard pile. A card's play cost never changes as it levels; its effect goes up by one: Copper → Silver → Gold (+1, +2, +3 Coin), Spark +1/+2/+3 ⚡ for 0, Scout +1/+2/+3 Cards for 1 ⚡. The Anvil isn't sold; the Twin Hammers charm lets it merge 2 pairs. The market stocks each card one level below the best you've merged it to (`TUNE.marketLag`), and cards that cost more ⚡ to play arrive in later waves (`TUNE.energyFrom`). The Ward stays in your hand and only works once it's in your discard pile. At the Inn between waves, **Merge** combines two different cards into one that does both and costs their average ⚡, rounded up (a fusion is a card of its own, so two copies of one can be merged by the Anvil, raising every part a level). Every Inn service has a Back button. In your hand a card shows only its ⚡ cost; the market and the close-up view show its price too. Threats have fuses: one that runs out detonates, attacks and costs a heart. Clearing one offers a free level-one card. The cards are `mdef`s in `js/data.js`; merge mode's threat curves are `TUNE.merge`.
 
-**Classic mode** is the original game: Dominion-style Actions, market tiers that climb every wave, and threats that attack every few turns until paid. Splice mode (keywords grafted onto cards) is still in the code but off the title screen.
+**Classic mode** opens `classic/`, a frozen copy of the game as it was on 22 October 2026 (commit 1e687d5), before Energy and merging. Its own title screen offers that version's Play (splice mode) and Classic. It keeps its own best-run record and has a link back. Changes to `js/` don't touch it. The current code still has classic and splice mode too (the simulator's `--mode classic` / `--mode splice`), but they are no longer on the title screen.
 
 ## Simulator
 
@@ -39,5 +39,6 @@ The report shows, per bot: waves cleared; how runs end and which threat ended th
 - `js/game.js` — rules: waves, turns, threats, attacks, the Inn
 - `js/ui.js` — rendering, modals, inspector, effects, layout and scaling, settings
 - `manifest.webmanifest`, `icon.svg` — install-to-home-screen metadata
+- `classic/` — the 22 October 2026 version, frozen, behind the Classic mode button
 - `sim/sim.js` — the simulator: options, sandbox, report
 - `sim/bots.js` — runs inside the sandbox: stand-ins for `ui.js`, the bots, the recording
