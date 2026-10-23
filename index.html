@@ -63,6 +63,7 @@
       <div class="res" id="rAct"></div>
       <div class="res" id="rBuy"></div>
       <div class="res coin" id="rCoin"></div>
+      <button class="res vault" id="rVault" hidden title="Take your savings out of the Vault (V)"></button>
       <span class="spacer"></span>
       <button class="pile" id="pTreas" title="Play every Treasure in your hand (T)">▶ Treasures</button>
       <button class="pile" id="pDeck" title="View your draw pile"></button>
@@ -107,7 +108,7 @@
       <button class="tbtn" id="mHow">How to play</button>
       <button class="tbtn" id="mNew">New run</button>
     </div>
-    <p class="hint keys">Keys: <b>E</b> end turn · <b>T</b> play treasures · <b>+ / −</b> UI size · right-click any card to read it.</p>
+    <p class="hint keys">Keys: <b>E</b> end turn · <b>T</b> play treasures · <b>V</b> open the Vault · <b>+ / −</b> UI size · right-click any card to read it.</p>
     <button class="mbtn go" id="mClose">Done</button>
   </div>
 </div>
@@ -150,7 +151,9 @@
       <li><b>⚡ Spend Energy.</b> You get 1 ⚡ a turn. Each card shows what it costs to play in its blue pip; Treasures are free. Sparks give ⚡, Scouts draw cards, and the rest give Coin, Buys or strike threats.</li>
       <li><b>🔨 Merge.</b> Play your Anvil to merge two identical cards from anywhere in your deck into one a level higher — two Coppers make a Silver, two Sparks a Spark II. It costs the same to play and does one more: Silver gives 2 Coin, Spark II 2 ⚡. Copies in your discard pile are used first, then your draw pile, then your hand; the new card goes to your discard pile.</li>
       <li><b>🛒 Shop the market.</b> It starts with level-one cards; ones that cost more ⚡ to play arrive in later waves. Once you merge a card to a new level, the market starts stocking the level below it. Bought cards go to the bottom of your deck; the two leftmost stalls leave each turn.</li>
-      <li><b>👹 Beat the fuse.</b> Each threat wants something — Coin, Energy, Buys or cards — and has a fuse. Tap its button to pay. If the fuse runs out it detonates: it attacks and costs the town a ❤. Clear one and you may take a free card.</li>
+      <li><b>👹 Beat the fuse.</b> Each threat wants something — Coin, Energy, Buys or cards — and has a fuse. Tap its button to pay; one that doesn't want Coin can also be <b>bought off</b> with Coin. If the fuse runs out it detonates: it attacks and costs the town a ❤ (you have 3). Clear one and you may take a free card. Demands climb faster and faster as the waves go on.</li>
+      <li><b>🌱 Grow your cards.</b> Nest Eggs grow Coin every time you play them, Snowballs compound, Saplings sprout every wave, Warrens breed and pair off into higher levels. What a card grows stays on it (🌱), even through merges. A 💔 Cracked card plays two levels higher but may shatter each time you play it; two Cracked twins merge into a stable card.</li>
+      <li><b>🏦 Save in the Vault.</b> Coin you don't spend is saved at the end of the turn and earns interest. Tap the Vault to take it out. Alchemists don't multiply Vault coin.</li>
       <li><b>🧊 Don't lean on one card.</b> The Snow Queen, and Elites from wave 5, seal your most valuable card in ice until they leave. The Bookworm eats everything your cards would draw until it is full.</li>
       <li><b>🏰 Hold all three slots.</b> If a threat arrives with every slot full, the town falls.</li>
       <li><b>✨ Between waves</b> pick a charm that bends the rules, and visit the Inn to trash or copy a card, rest, or merge two different cards into one that does both and costs their average ⚡ (rounded up).</li>

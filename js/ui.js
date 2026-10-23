@@ -101,6 +101,12 @@ function fx(kind,arg){
     case 'upgrade': UI.ups.set(arg,(UI.ups.get(arg)||0)+1); buzz(20);
       if(UI.layout==='short'){ UI.tab='market'; document.body.classList.add('tab-market'); } break;   // no render: later upgrades still to count
     case 'clear': floatText($('threats'),`${arg.art} cleared!`,'good'); buzz(25); break;
+    // merge mode: a card shatters, rises again, a big merge, a huge Alchemist, the Vault's interest
+    case 'shatter': floatText($('hand'),`💥 ${cname(arg)} shatters!`,'bad'); pulseClass(document.body,'shake',420); buzz(60); break;
+    case 'reborn':  floatText($('hand'),`🐦‍🔥 ${cname(arg)}!`,'good'); break;
+    case 'merge':   floatText($('hand'),`🔨 ${cname(arg)}!`,arg.lv>=5||arg.grow>=1e4?'huge':'good'); if(arg.lv>=5) pulseClass(document.body,'flash',600); break;
+    case 'jackpot': floatText($('rCoin'),`✨ +${fmt(arg)}`,'huge'); pulseClass(document.body,'flash',600); buzz(50); break;
+    case 'interest':floatText($('rVault'),`+${fmt(arg)}`,'coin'); break;
     case 'wave':  banner(`Wave ${arg}`,arg%TUNE.eliteEvery===0?'An Elite leads the charge':''); break;
     case 'lose':  buzz([90,60,180]); break;
   }
@@ -259,7 +265,8 @@ function closeInspect(){ $('inspect').classList.remove('on'); }
 function inspectCard(c,act,label){
   const el=cardEl(c); el.classList.add('big');
   const info=[];
-  if(c.t==='treasure'&&G) info.push(`Produces ${tval(c)} Coin right now.`);
+  if(c.t==='treasure'&&G) info.push(`Produces ${fmt(tval(c))} Coin right now.`);
+  if(c.grow) info.push(`🌱 It has grown +${fmt(c.grow)} Coin for good.`);
   if(G&&iced(c)){ const t=G.slots.find(t=>t&&t.id===c.ice); info.push(`🧊 Sealed in ice until ${t.n} leaves.`); }
   if(label&&label.startsWith('Buy')) info.push('Bought cards go to the bottom of your draw pile.');
   openInspect(el,info.join(' '),label?[[label,act,'go',!act]]:[]);
@@ -293,9 +300,9 @@ function bindCard(el,c,act,label){
 // hand: in merge mode a card in your hand shows only what it costs to play, top left.
 function cardEl(c,{badge,hand}={}){
   const d=DB[c.key], el=document.createElement('div');
-  el.className=`card t-${d.t}${d.r?' r':''}${c.lv?` lv${Math.min(3,c.lv)}`:''}${G&&iced(c)?' frozen iced':c.frozen?' frozen':''}`;
+  el.className=`card t-${d.t}${d.r?' r':''}${effLv(c)?` lv${Math.min(3,effLv(c))}`:''}${c.crack?' cracked':''}${G&&iced(c)?' frozen iced':c.frozen?' frozen':''}`;
   const kind=d.r?'Reaction':({treasure:'Treasure',action:'Action',ward:'Ward',victory:'Junk',junk:'Junk',curse:'Junk'}[d.t]||d.t);
-  const stars=c.lv?(c.lv<=3?'★'.repeat(c.lv):`★${c.lv}`):'';
+  const lv=effLv(c), stars=lv?(lv<=3?'★'.repeat(lv):`★${lv}`):'';
   // splices: one chip per keyword with a count (scars in red), empty slots in splice mode,
   // and one text line per keyword for the big view — so a card with 30 splices still fits
   let chips='', lines='';
@@ -309,11 +316,11 @@ function cardEl(c,{badge,hand}={}){
     if(c.mods.length) el.classList.add('spliced');
   }
   el.innerHTML=`<div class="banner">${cname(c)}</div>
-    <div class="art"><span>${cart(c)||'✦'}</span>${chips?`<div class="mods">${chips}</div>`:''}</div>
+    <div class="art"><span>${cart(c)||'✦'}</span>${chips?`<div class="mods">${chips}</div>`:''}${c.grow?`<i class="grown">🌱+${fmt(c.grow)}</i>`:''}${c.crack?'<i class="crack">💔</i>':''}</div>
     <div class="tx"><span>${ctext(c)}</span>${lines}</div>
     <div class="foot"><span>${kind}</span><span class="stars">${stars}</span></div>`;
   const handOnly=hand&&merge();
-  if(!handOnly){ const cost=document.createElement('div'); cost.className='cost'; cost.textContent=costOf(c); el.appendChild(cost); }
+  if(!handOnly){ const cost=document.createElement('div'); cost.className='cost'; cost.textContent=fmt(costOf(c)); el.appendChild(cost); }
   // merge mode: what it costs to play, in ⚡ (Wards are never played)
   if(d.merge&&(d.t==='action'||handOnly&&d.t==='treasure')){
     const e=document.createElement('div'); e.className='ecost'+(handOnly?' top':''); e.textContent=actCost(c); el.appendChild(e); }
@@ -339,8 +346,8 @@ function spliceCardEl(k){
 function threatProgress(t){
   const cm=coinMult()>1?' (×2)':'', um=unitMult()>1?' (×2)':'';
   switch(t.kind){
-    case 'prog_coin':    return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} coin`, note:`${t.need-t.prog} owed${cm}`};
-    case 'once_coin':    return {pct:Math.min(1,G.coin/Math.max(1,coinFor(t.need))), left:`${t.need} coin at once${cm}`, note:`you hold ${G.coin}`};
+    case 'prog_coin':    return {pct:t.prog/t.need, left:`${fmt(t.prog)} / ${fmt(t.need)} coin`, note:`${fmt(t.need-t.prog)} owed${cm}`};
+    case 'once_coin':    return {pct:Math.min(1,G.coin/Math.max(1,coinFor(t.need))), left:`${fmt(t.need)} coin at once${cm}`, note:`you hold ${fmt(G.coin)}`};
     case 'prog_action':  return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} ${actW()}`, note:`${t.need-t.prog} owed${um}`};
     case 'prog_buy':     return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} Buys`, note:`${t.need-t.prog} owed${um}`};
     case 'prog_discard': return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} cards fed`, note:`${t.need-t.prog} wanted`};
@@ -348,7 +355,7 @@ function threatProgress(t){
     case 'panic':        return {pct:0, left:'instant', note:`costs ${plural(t.curses,'Curse')}`};
     case 'once_hybrid':  { const nc=Math.max(1,coinFor(t.needCoin)), na=Math.max(1,unitsFor(t.needAct));
                            return {pct:Math.min(1,(Math.min(G.coin,nc)/nc*0.75)+(Math.min(G.actions,na)/na*0.25)),
-                                   left:`${t.needCoin} coin + ${actN(t.needAct)}`, note:`you hold ${G.coin} / ${G.actions}`}; }
+                                   left:`${fmt(t.needCoin)} coin + ${actN(t.needAct)}`, note:`you hold ${fmt(G.coin)} / ${G.actions}`}; }
     case 'scavenge':     return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} fed`, note:'junk counts ×2'};
     case 'banish':       { const n=t.need-t.prog;
                            return {pct:Math.min(1,G.actionsPlayed/Math.max(1,n)), left:`${n} Actions in one turn`, note:`played ${G.actionsPlayed}`}; }
@@ -361,14 +368,14 @@ function threatProgress(t){
 function threatButton(t){
   const rem=t.need-t.prog;
   switch(t.kind){
-    case 'prog_coin':    return `Deposit ${Math.min(G.coin,coinFor(rem))} coin`;
-    case 'once_coin':    return `Pay ${coinFor(t.need)} coin`;
+    case 'prog_coin':    return `Deposit ${fmt(Math.min(G.coin,coinFor(rem)))} coin`;
+    case 'once_coin':    return `Pay ${fmt(coinFor(t.need))} coin`;
     case 'prog_action':  return `Spend ${actN(Math.min(G.actions,unitsFor(rem)))}`;
     case 'prog_buy':     return `Spend ${plural(Math.min(G.buys,unitsFor(rem)),'Buy')}`;
     case 'prog_discard': return 'Feed cards';
     case 'sacrifice':    return 'Sacrifice cards';
     case 'panic':        return 'Shake on it';
-    case 'once_hybrid':  return `Pay ${coinFor(t.needCoin)} coin + ${actN(unitsFor(t.needAct))}`;
+    case 'once_hybrid':  return `Pay ${fmt(coinFor(t.needCoin))} coin + ${actN(unitsFor(t.needAct))}`;
     case 'upgrade':      return 'Trash into the rift';
     case 'scavenge':     return 'Feed the nest';
     case 'banish':       return 'Banish it';
@@ -415,13 +422,13 @@ function render(){
   // top bar
   chip('cWave',`Wave ${G.wave}`,`W${G.wave}`,'wave');
   chip('cTurn',`Turn ${G.turnInWave}`,`T${G.turnInWave}`);
-  chip('cHearts',`❤ ${G.hearts} / ${TUNE.hearts}`,`❤ ${G.hearts}`,G.hearts<=2?'now':'hearts');
+  chip('cHearts',`❤ ${G.hearts} / ${maxHearts()}`,`❤ ${G.hearts}`,G.hearts<=Math.min(2,maxHearts()-1)?'now':'hearts');
   $('cHearts').hidden=!fused();
   const remaining=G.queue.length+G.slots.filter(s=>s).length;
   chip('cQueue',`Threats ${remaining} / ${G.waveTotal}`,`☠ ${remaining}/${G.waveTotal}`);
   if(merge()) chip('cTier',`🔨 ${plural(G.merges,'merge')}`,`🔨 ${G.merges}`);
   else chip('cTier',`Market tier: ${tierName(TUNE.maxTier(G.wave))}`,`Tier ${tierName(TUNE.maxTier(G.wave))}`);
-  const every=TUNE.spawnEvery(G.wave), untilSpawn=G.slots.every(s=>!s)?0:every-(G.turnInWave%every||every);
+  const every=spawnEvery(), untilSpawn=G.slots.every(s=>!s)?0:every-(G.turnInWave%every||every);
   if(!G.queue.length) chip('cNext','No more threats this wave','⏳ —');
   else chip('cNext', untilSpawn===0?'Next threat at end of this turn':`Next threat in ${plural(untilSpawn,'turn')}`,
                      `⏳ ${untilSpawn===0?'now':untilSpawn}`, untilSpawn===0?'now':untilSpawn===1?'soon':'');
@@ -478,7 +485,9 @@ function render(){
       ${rewardLine(t)}
       <div class="tnum"><span>${p.left}</span><span class="dim">${p.note}</span></div>
       <div class="tbar"><div class="tfill ${t.bar}" style="width:${Math.round(clamp(p.pct,0,1)*100)}%"></div></div>`;
-    box.querySelector('.thead').onclick=()=>openInspect(threatInfoEl(t),'',[[threatButton(t),()=>clickThreat(t),'go',!(threatReady(t)&&live)]]);
+    const acts=[[threatButton(t),()=>clickThreat(t),'go',!(threatReady(t)&&live)]];
+    if(t.bribe) acts.push([`💰 Buy off: ${fmt(bribeOf(t))} coin`,()=>payBribe(t),'',!(bribeReady(t)&&live)]);
+    box.querySelector('.thead').onclick=()=>openInspect(threatInfoEl(t),t.bribe?'Any threat that doesn\'t want Coin can be bought off with it.':'',acts);
     const pips=[];
     if(t.elite) pips.push('<span class="pip elite">ELITE</span>');
     if(!fused()&&t.age>=TUNE.enrageAfter) pips.push('<span class="pip">ENRAGED</span>');
@@ -488,6 +497,9 @@ function render(){
     b.textContent=threatButton(t); b.disabled=!ready;
     b.onclick=()=>clickThreat(t);
     box.appendChild(b);
+    if(t.bribe){ const k=document.createElement('button'), ok=bribeReady(t)&&live;
+      k.className='tbtn2 bribe'+(ok?' go':''); k.textContent=`💰 Buy off ${fmt(bribeOf(t))}`; k.disabled=!ok;
+      k.onclick=()=>payBribe(t); box.appendChild(k); }
     T.appendChild(box);
   });
 
@@ -496,9 +508,15 @@ function render(){
   // resources
   const r=(id,v,label,icon)=>{const e=$(id); e.innerHTML=`${icon}<span class="lbl"> ${label}</span> <b>${v}</b>`; e.classList.toggle('spent',v<=0);};
   r('rAct',G.actions,merge()?'Energy':'Actions','⚡'); r('rBuy',G.buys,'Buys','🛒');
-  $('rCoin').innerHTML=`🪙<span class="lbl"> Coin</span> <b>${G.coin}</b>`;
-  if(G.coin>UI.lastCoin){ floatText($('rCoin'),`+${G.coin-UI.lastCoin}`,'coin'); pulseClass($('rCoin'),'bump',300); }
+  $('rCoin').innerHTML=`🪙<span class="lbl"> Coin</span> <b>${fmt(G.coin)}</b>`;
+  // a big jump in Coin (a grown card, a Snowball) gets a big number and a flash
+  if(G.coin>UI.lastCoin){ const d=G.coin-UI.lastCoin, huge=d>=1000&&d>=4*UI.lastCoin;
+    floatText($('rCoin'),`+${fmt(d)}`,huge?'huge':'coin'); pulseClass($('rCoin'),'bump',300); if(huge) pulseClass(document.body,'flash',600); }
   UI.lastCoin=G.coin;
+  // the Vault: what's saved; tap to take it all out and spend it this turn
+  const vb=$('rVault'); vb.hidden=!merge();
+  vb.innerHTML=`🏦<span class="lbl"> Vault</span> <b>${fmt(G.vault||0)}</b>`;
+  vb.disabled=!live||!(G.vault>0); vb.title=`Unspent Coin is saved here at the end of each turn and earns ${Math.round(vaultRate()*100)}% interest a turn (up to ${fmt(vaultCap())}). Tap to take it all out.`;
   $('pDeck').innerHTML=`<span class="long">Draw </span><span class="short">📚 </span>${G.deck.length}`;
   $('pDisc').innerHTML=`<span class="long">Discard </span><span class="short">🗑 </span>${G.discard.length}`;
   $('pTreas').disabled=!live||!G.hand.some(c=>c.t==='treasure');
@@ -553,6 +571,7 @@ function setTab(tab){ UI.tab=tab; document.body.classList.toggle('tab-market',UI
 /* ---------- wiring ---------- */
 $('endturn').onclick=endTurn;
 $('pTreas').onclick=playAllTreasures;
+$('rVault').onclick=withdraw;
 $('btnDeck').onclick=()=>viewPile('Your whole deck',allCards());
 $('btnTrash').onclick=()=>viewPile('Trash',G.trash);
 $('btnNew').onclick=confirmNewRun;
@@ -610,6 +629,7 @@ document.addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT') return;
   if(e.key==='e') endTurn();
   if(e.key==='t') playAllTreasures();
+  if(e.key==='v') withdraw();
   if(e.key==='+'||e.key==='=') setUserScale(UI.user+.1);
   if(e.key==='-') setUserScale(UI.user-.1);
 });

@@ -12,13 +12,13 @@
      node sim/sim.js --json out.json               every run, raw
      --waves 30 --turns 2000 --deckcap 400         when a run stops early
 
-   Bots: engine (Actions & draw), money (Big Money), random.
+   Bots: compound (growing cards in a thin deck), engine (Actions & draw), money (Big Money), random.
    ========================================================== */
 const fs=require('fs'), path=require('path'), vm=require('vm');
 
 const ROOT=path.join(__dirname,'..');
 const SCRIPTS=['js/data.js','js/game.js','sim/bots.js'].map(f=>new vm.Script(fs.readFileSync(path.join(ROOT,f),'utf8'),{filename:f}));
-const BOTS=['engine','money','random'];
+const BOTS=['compound','engine','money','random'];
 
 function args(){
   const o={bot:'all',runs:100,mode:'merge',seed:1,waves:30,turns:2000,deckcap:400,json:null,log:null};
@@ -61,6 +61,7 @@ const mean = a => a.length ? a.reduce((s,x)=>s+x,0)/a.length : 0;
 const quant = (a,q) => { if(!a.length) return 0; const s=a.slice().sort((x,y)=>x-y); return s[Math.min(s.length-1,Math.floor(q*s.length))]; };
 const pct = (n,d) => d ? Math.round(100*n/d)+'%' : '—';
 const f1 = x => (Math.round(x*10)/10).toFixed(1);
+const big = x => x<1e4 ? String(Math.round(x)) : x<1e15 ? (x/10**(3*Math.floor(Math.log10(x)/3))).toPrecision(3)+['','K','M','B','T'][Math.floor(Math.log10(x)/3)] : x.toExponential(1);
 function table(head,rows){
   const all=[head,...rows].map(r=>r.map(String)), w=head.map((_,i)=>Math.max(...all.map(r=>r[i].length)));
   return all.map((r,j)=>r.map((c,i)=>i===0?c.padEnd(w[i]):c.padStart(w[i])).join('  ')+(j===0?'\n'+w.map(n=>'─'.repeat(n)).join('  '):'')).join('\n');
@@ -70,6 +71,9 @@ function report(bot,{runs,names},o){
   const out=[], N=runs.length, cl=runs.map(r=>r.cleared);
   out.push(`\n████ ${bot.toUpperCase()} — ${N} runs, ${o.mode} mode, seeds ${o.seed}–${o.seed+N-1}, cap ${o.waves} waves`);
   out.push(`Waves cleared: mean ${f1(mean(cl))} · median ${quant(cl,.5)} · p10 ${quant(cl,.1)} · p90 ${quant(cl,.9)} · best ${Math.max(...cl)}`);
+  out.push(`Cleared 20+ waves: ${pct(cl.filter(c=>c>=20).length,N)}`);
+  const pk=runs.map(r=>r.peak||0);
+  out.push(`Peak turn coin: median ${big(quant(pk,.5))} · p90 ${big(quant(pk,.9))} · max ${big(Math.max(...pk))}`);
   const ends={}; runs.forEach(r=>ends[r.result]=(ends[r.result]||0)+1);
   out.push('Ends: '+Object.entries(ends).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`${k} ${pct(n,N)}`).join(' · '));
   const kill={}; runs.forEach(r=>{ if(r.killer) kill[r.killer]=(kill[r.killer]||0)+1; });
@@ -89,8 +93,8 @@ function report(bot,{runs,names},o){
   out.push('stuck = turns ending with an Action in hand it could not pay for. threat ÷ income = turns of income a coin threat asks for.'+(M?' top lv = highest card level in the deck (1 = level one).':''));
   out.push(table(['wave','runs','lost',M?'merges':'tier',M?'top lv':'','turns','coin','⚡ spare','played','seen','deck','drew all','stuck','coin threat','÷ income','market med','÷ income'],
     Object.entries(W).map(([wave,a])=>{ const T=a.turns||1, inc=a.coin/T, tc=mean(a.tc), mp=quant(a.price,.5);
-      return [wave,a.runs,pct(a.lost,a.runs),M?f1(a.merges/a.runs):a.tier,M?f1(1+a.topLv/a.runs):'',f1(a.turns/a.runs),f1(inc),f1(a.actsLeft/T),f1(a.played/T),
-        pct(a.seen,a.deck),f1(a.deck/T),pct(a.drewAll,T),pct(a.stuck,T),Math.round(tc),inc?f1(tc/inc):'—',mp,inc?f1(mp/inc):'—']; })));
+      return [wave,a.runs,pct(a.lost,a.runs),M?f1(a.merges/a.runs):a.tier,M?f1(1+a.topLv/a.runs):'',f1(a.turns/a.runs),inc>=1e4?big(inc):f1(inc),f1(a.actsLeft/T),f1(a.played/T),
+        pct(a.seen,a.deck),f1(a.deck/T),pct(a.drewAll,T),pct(a.stuck,T),big(tc),inc?f1(tc/inc):'—',big(mp),inc?f1(mp/inc):'—']; })));
 
   // Threats: which ones get cleared, which ones get through.
   const TH={};
@@ -132,7 +136,8 @@ function report(bot,{runs,names},o){
   }
   if(o.bots.length>1){
     console.log('\n████ SUMMARY');
-    console.log(table(['bot','runs','mean waves','median','p90'],o.bots.map(b=>{ const c=all[b].map(r=>r.cleared); return [b,c.length,f1(mean(c)),quant(c,.5),quant(c,.9)]; })));
+    console.log(table(['bot','runs','mean waves','median','p10','p90','best','20+','peak med','peak max'],o.bots.map(b=>{ const c=all[b].map(r=>r.cleared), pk=all[b].map(r=>r.peak||0);
+      return [b,c.length,f1(mean(c)),quant(c,.5),quant(c,.1),quant(c,.9),Math.max(...c),pct(c.filter(x=>x>=20).length,c.length),big(quant(pk,.5)),big(Math.max(...pk))]; })));
   }
   if(o.json){ for(const b in all) all[b].forEach(r=>{ delete r.log; }); fs.writeFileSync(o.json,JSON.stringify({options:o,runs:all},null,1)); console.log(`\nRaw runs saved to ${o.json}`); }
   console.log(`\n${o.bots.length*o.runs} runs in ${((Date.now()-t0)/1000).toFixed(1)}s`);

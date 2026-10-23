@@ -12,6 +12,11 @@ const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
 const clamp = (x,a,b) => Math.max(a,Math.min(b,x));
 const plural = (n,w,p) => `${n} ${n===1?w:(p||w+'s')}`;
+// Numbers get huge: 9999, 12.3K, 4.5M, 6.7B, 8.9T, then 1.2e15. fin keeps them finite integers.
+const fmt = n => { n=Math.floor(n); if(Number.isNaN(n)) return '0'; if(!Number.isFinite(n)) return '∞'; const a=Math.abs(n);
+  if(a<1e4) return String(n); if(a>=1e15) return n.toExponential(1).replace('+','');
+  const i=Math.floor(Math.log10(a)/3), v=n/10**(3*i); return (v>=100?Math.floor(v):Math.floor(v*10)/10)+'KMBT'[i-1]; };
+const fin = x => Number.isFinite(x) ? Math.floor(x) : x>0 ? 1e300 : 0;
 
 const TUNE = {
   slots:3, handSize:5, jokerSlots:5, marketSize:6, rareWeight:.25,
@@ -32,11 +37,23 @@ const TUNE = {
   marketLag: 1,                             // merge mode: the market stocks a card this many levels below your best merge of it
   energyFrom: [1,1,3,5],                    // merge mode: the wave a card first goes on sale, by its ⚡ cost (0, 1, 2, 3+)
   // Merge mode's own threat curves: its economy grows slower than the old tiers, and ⚡ and draws are scarce.
-  merge:{ coinScale:  w => 0.6*Math.pow(1.3,w-1),
-          actScale:   w => 0.6*Math.pow(1.15,w-1),
-          buyScale:   w => 0.6*Math.pow(1.15,w-1),
-          countScale: w => 0.6*(1+0.15*(w-1)) },
+  // Coin demands are ×1.3 a wave, then steeper and steeper after wave 6, like antes: only decks that compound keep up.
+  merge:{ coinScale:  w => 1.3*Math.pow(1.3,w-1)*Math.pow(1.02,Math.max(0,w-6)**2),
+          actScale:   w => 0.9*Math.pow(1.15,w-1),
+          buyScale:   w => 0.9*Math.pow(1.15,w-1),
+          countScale: w => 0.8*(1+0.15*(w-1)),
+          bribe: 22,                              // every threat that doesn't want Coin can be bought off: this × the coin scale
+          hearts: 3, heal: 1,                     // fewer hearts, and the Inn mends less: a bad start can end a run early
+          threatsInWave: w => Math.min(8,3+Math.floor(w/2)),     // and one more threat a wave,
+          spawnEvery: w => w<5||w>=9 ? 2 : 3 },                  // arriving fast in the first waves
+  crackLv: 2,                               // merge mode: a Cracked card plays this many levels higher…
+  crackOdds: .25,                           // …and shatters (is trashed) this often each time it's played
+  crackSpoils: .25, crackMarket: .12,       // how often a spoils offer / a market card is Cracked
+  mitosis: 1/3, phoenix: 1/3,               // Mitosis: a merge leaves one of the pair behind; Phoenix: a shattered card returns
+  vaultRate: .1,                            // merge mode: the Vault pays this much interest a turn…
+  vaultCap: w => 1+w,                       // …up to this much a turn: a mid-game cushion, not a late-game engine
   hearts:5,                                 // splice mode: detonations cost hearts; lose at 0
+  heal:2,                                   // the Inn's rest recovers this many
   spliceSlots: c => 2+Math.floor(c.lv/2),   // keywords a card can hold (scars ignore the limit)
 };
 
@@ -68,7 +85,7 @@ const isJunk = c => !!DB[c.key].noLv;
 
 const A = n => { if(G.phase==='attack') G.next.actions+=n; else G.actions+=n; };
 const B = n => { if(G.phase==='attack') G.next.buys+=n;    else G.buys+=n; };
-const C = n => { if(G.phase==='attack') G.next.coin+=n;    else G.coin+=n; };
+const C = n => { n=fin(n); if(G.phase==='attack') G.next.coin=fin(G.next.coin+n); else G.coin=fin(G.coin+n); };
 
 /* --- draw & actions --- */
 def('teahouse',{n:'Tea House',c:3,art:'🍵',t:'action',
@@ -234,8 +251,14 @@ mdef('patron',   {n:'Patron',c:4,art:'👑',pc:3,   eff:X=>({upmarket:X})});
 mdef('rummage',  {n:'Rummage',c:3,art:'🧺',       eff:X=>({rummage:X})});
 mdef('alchemist',{n:'Alchemist',c:5,art:'⚗',pc:2, eff:X=>({mult:1+X*.5})});
 mdef('ward',     {n:'Ward',c:4,t:'ward',art:'🧿',stays:true,eff:X=>({ward:5*X/(100+5*X)})});
+// Growing cards: what they grow is kept on the card (c.grow, extra Coin) and survives merging.
+mdef('egg',      {n:'Nest Egg',c:3,t:'treasure',art:'🥚',eff:X=>({coin:X-1,grow:X})});
+mdef('snowball', {n:'Snowball',c:4,t:'treasure',art:'⛄',eff:X=>({coin:X,snow:12+5*X})});
+mdef('sapling',  {n:'Sapling',c:2,t:'treasure',art:'🌱',eff:X=>({coin:X,sprout:X})});
+mdef('warren',   {n:'Warren',c:3,art:'🐇',pc:1,     eff:X=>({coin:X,breed:1})});
 const MERGE_POOL=['coin','spark','scout','anvil','kindling','bazaar','bowman','watchdog',
-                  'strongbox','almanac','seer','reprise','patron','rummage','alchemist','ward'];
+                  'strongbox','almanac','seer','reprise','patron','rummage','alchemist','ward',
+                  'egg','snowball','sapling','warren'];
 
 const pctTxt = f => `${Math.round(f*1000)/10}%`;
 function effText(e){
@@ -243,7 +266,7 @@ function effText(e){
   if(e.energy) p.push(`+${e.energy} ⚡`);
   if(e.cards)  p.push(`+${plural(e.cards,'Card')}`);
   if(e.buys)   p.push(`+${plural(e.buys,'Buy')}`);
-  if(e.coin)   p.push(`+${e.coin} Coin`);
+  if(e.coin)   p.push(`+${fmt(e.coin)} Coin`);
   const s=p.length?[p.join(', ')]:[];
   if(e.merges) s.push(`Merge ${e.merges===1?'a pair':'2 pairs'} of identical cards from anywhere: discard and played cards first, then deck, then hand. The new card goes to your discard.`);
   if(e.trash)   s.push(`Trash up to ${plural(e.trash,'card')} from your hand.`);
@@ -255,13 +278,17 @@ function effText(e){
   if(e.replay)  s.push(`Play a card from your hand ${e.replay===2?'twice':`${e.replay} times`}, for free.`);
   if(e.upmarket)s.push((e.upmarket===1?'Upgrade a random market card a level.':`Upgrade a random market card a level, ${e.upmarket} times. The same card can be picked again.`));
   if(e.rummage) s.push(`Discard up to ${plural(e.rummage,'card')}, then draw one more than you discarded.`);
-  if(e.mult)    s.push(`Multiply your Coin by ${e.mult}.`);
+  if(e.mult)    s.push(`Multiply your Coin by ${e.mult} (not Coin taken from the Vault).`);
+  if(e.grow)    s.push(`Grows +${fmt(e.grow)} Coin for good each time you play it.`);
+  if(e.snow)    s.push(`Grows ${e.snow}% each time you play it, compounding.`);
+  if(e.sprout)  s.push(`Grows +${fmt(e.sprout)} Coin for good at the start of every wave, played or not.`);
+  if(e.breed)   s.push(`Breeds: gain ${e.breed===1?'a plain copy':`${e.breed} plain copies`} of this into your discard pile, then merge a pair of them from anywhere.`);
   if(e.ward)    s.push(`In your discard pile: threats lose ${pctTxt(e.ward)} of what they want each turn. Stays in hand at end of turn (draw 1 fewer).`);
   if(p.length&&s.length>1) s[0]+='.';                            // "+2 ⚡. Strike a threat…"
   return s.join(' ');
 }
 async function mergeFx(s,l){
-  const e=DB[s.key].eff(l), title=cname(s);
+  const e=cardEff(s), title=cname(s);
   if(e.energy) A(e.energy);
   if(e.cards)  draw(e.cards);
   if(e.buys)   B(e.buys);
@@ -285,7 +312,7 @@ async function mergeFx(s,l){
     const ch=await chooseCards(cand,{min:0,max:1,why:s.key,title,sub:`Play it ${e.replay===2?'twice':e.replay+' times'}, for free.`});
     const c=ch[0];
     if(c){ pull(G.hand,c); G.inPlay.push(c); log(`${title}: ${cname(c)}, ${e.replay} times.`,'hl');
-      for(let i=0;i<e.replay;i++){ if(c.t==='treasure'){ const v=tval(c); C(v); log(`${cname(c)} adds ${v} to your purse.`); } else await runAction(c); render(); }
+      for(let i=0;i<e.replay&&!c.gone;i++){ if(c.t==='treasure') resolveTreasure(c); else await runAction(c); render(); }
       afterPlay(c); } }
   // Each upgrade picks any market card, so one can go up several levels at once.
   if(e.upmarket){ const pool=G.market.filter(c=>c&&DB[c.key].merge);
@@ -293,7 +320,13 @@ async function mergeFx(s,l){
       log(`${title} upgrades ${was} in the market to ${cname(c)}.`,'good'); } }
   if(e.rummage){ const ch=await chooseCards(G.hand,{min:0,max:e.rummage,why:s.key,title,sub:'Discard any, then draw one more than you discarded.'});
     ch.forEach(c=>{pull(G.hand,c);G.discard.push(c);}); draw(ch.length+1); }
-  if(e.mult){ const was=G.coin; G.coin=Math.floor(G.coin*e.mult); log(`${title} turns ${was} coin into ${G.coin}.`,'big'); }
+  if(e.mult){ const was=G.coin, cold=Math.min(G.coin,G.fromVault||0); G.coin=fin((G.coin-cold)*e.mult)+cold;
+    log(`${title} turns ${fmt(was)} coin into ${fmt(G.coin)}.`,'big'); if(G.coin-was>=1000) fx('jackpot',G.coin-was); }
+  // Rabbits breed, then pair off by themselves: copies pyramid into levels (2^n of them make one n levels up).
+  if(e.breed){ for(let i=0;i<e.breed;i++) G.discard.push(mk(s.key,s.lv));
+    log(`🐇 ${title} breeds: ${e.breed===1?'a new '+cname(mk(s.key,s.lv)):e.breed+' more'} in your discard pile.`,'good');
+    const piles=[G.discard,G.inPlay,G.deck,G.hand], top=pairsIn(piles.flat().filter(c=>c.key===s.key)).sort((a,b)=>b.lv-a.lv)[0];
+    if(top){ const [x,y]=piles.flat().filter(c=>twins(c,top)&&!isFrozen(c)); mergePair(x,y,G.discard); } }
 }
 
 // The resource cards are played with: Actions in classic and splice mode, ⚡ Energy in merge mode.
@@ -337,7 +370,7 @@ const JOKERS={
   wind:    {n:'Second Wind',art:'💨',r:'common',tx:'+1 Action at the start of each turn.',mtx:'+1 ⚡ at the start of each turn.'},
   seal:    {n:"Merchant's Seal",art:'🛒',r:'common',tx:'+1 Buy each turn. Market cards cost 1 less.'},
   gilded:  {n:'Gilded Copper',art:'🪙',r:'common',tx:'Copper produces +2 Coin.'},
-  piggy:   {n:'Piggy Bank',art:'🐷',r:'common',tx:'Half your unspent Coin carries over to next turn.'},
+  piggy:   {off:'merge',n:'Piggy Bank',art:'🐷',r:'common',tx:'Half your unspent Coin carries over to next turn.'},
   scrapper:{n:'Scrapper',art:'♻',r:'common',tx:'Whenever a card is trashed, +2 Coin.'},
   bounty:  {n:'Bounty Hunter',art:'🎯',r:'common',tx:'Clearing a threat gives +1 Card, +1 Action and +2 Coin.',mtx:'Clearing a threat gives +1 Card, +1 ⚡ and +2 Coin.'},
   tidy:    {n:'Tidy Mind',art:'🧹',r:'common',tx:'Hauling Rubble costs no Action and draws a card.',mtx:'Hauling Rubble costs no ⚡ and draws a card.'},
@@ -352,7 +385,7 @@ const JOKERS={
   clerk:   {n:'Head Clerk',art:'🖋',r:'uncommon',tx:'Actions and Buys spent on threats count double.',mtx:'Energy and Buys spent on threats count double.'},
   mirror:  {n:'Mirror',art:'🪞',r:'uncommon',tx:'The first Treasure you play each turn produces twice.'},
   trophy:  {n:'Trophy Wall',art:'🦌',r:'uncommon',tx:'+1 Coin at the start of each turn for every 2 threats cleared this run.'},
-  goose:   {off:'merge',n:'Golden Goose',art:'🪿',r:'uncommon',tx:'Nest Eggs grow by 2 each time you play them, not 1.'},
+  goose:   {n:'Golden Goose',art:'🪿',r:'uncommon',tx:'Nest Eggs grow by 2 each time you play them, not 1.',mtx:'Nest Eggs and Saplings grow twice as much.'},
   hourglass:{n:'Hourglass',art:'⏳',r:'uncommon',tx:'Threats attack one turn less often.'},
   hammers: {only:'merge',n:'Twin Hammers',art:'⚒',r:'common',tx:'Anvil can now upgrade 2 pairs at once.'},
   mittens: {n:'Warm Mittens',art:'🧤',r:'common',tx:'Your cards cannot be frozen (Ice Coffins still hold).'},
@@ -362,6 +395,14 @@ const JOKERS={
   interest:{n:'Compound Interest',art:'💹',r:'rare',tx:'Coin poured into threats counts double.'},
   glass:   {n:'Glass Crown',art:'🥂',r:'rare',tx:'Treasures produce ×3 Coin — but every threat attacks one turn sooner.'},
   vintage: {n:'Vintage',art:'🍷',r:'rare',tx:'Treasures produce +1 Coin for each wave this charm has been held.'},
+  // Merge mode: growth, breeding, Cracked cards and the Vault.
+  hiker:   {only:'merge',n:'Hiker',art:'🥾',r:'uncommon',tx:'Every card you play gets +1 Coin for good.'},
+  mitosis: {only:'merge',n:'Mitosis',art:'🧫',r:'rare',tx:'Each merge has a 1 in 3 chance to leave one of the pair behind.'},
+  phoenix: {only:'merge',n:'Phoenix',art:'🐦‍🔥',r:'uncommon',tx:'A card that shatters comes back a level higher, 1 time in 3.'},
+  ossuary: {only:'merge',n:'Ossuary',art:'💀',r:'uncommon',tx:'+1 Coin at the start of each turn for every 2 cards trashed this run.'},
+  avalanche:{only:'merge',n:'Avalanche',art:'🏔',r:'rare',tx:'Snowballs grow 10% more each time you play them.'},
+  jar:     {only:'merge',n:'Savings Jar',art:'🫙',r:'common',tx:"The Vault's interest is 15%, not 10%, and its cap is doubled."},
+  hoard:   {only:'merge',n:"Dragon's Hoard",art:'🐲',r:'rare',tx:"The Vault's interest cap is ×10."},
 };
 // off: a mode the charm makes no sense in; only: the one mode it is offered in.
 // mtx: its text in merge mode; ftx: with fuses (splice and merge).

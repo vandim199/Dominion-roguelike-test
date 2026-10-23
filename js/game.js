@@ -20,15 +20,21 @@ Math.random=()=>{
 function mk(key,lv=0){ return {uid:++uid,key,lv:DB[key].noLv?0:lv,t:DB[key].t,mods:[]}; }
 function pull(a,c){const i=a.indexOf(c);if(i>=0)a.splice(i,1);return i>=0;}
 const hasJ  = k => !!G && G.jokers.some(j=>j.key===k);
+// Merge mode: a Cracked card plays two levels up (TUNE.crackLv) and is named for the level it plays at.
+const effLv = c => c.lv+(c.crack?TUNE.crackLv:0);
+// What a merge card does right now: its level's effect plus the Coin it has grown (c.grow).
+function cardEff(c){ const e={...DB[c.key].eff(effLv(c))}; if(c.grow) e.coin=fin((e.coin||0)+c.grow); return e; }
 // Merge cards count levels in Roman numerals (Spark, Spark II…); Coins have names (Copper, Silver…).
-const cname = c => { const d=DB[c.key];
+const cname = c => { const d=DB[c.key], lv=effLv(c), k=c.crack?'Cracked ':'';
   if(!d.merge) return d.n+plus(c.lv);
   if(d.fused) return partsOf(c).map(p=>cname(p)).join('-');
-  if(d.names) return c.lv<d.names.length ? d.names[c.lv] : `${d.names.at(-1)} ${roman(c.lv-d.names.length+2)}`;
-  return c.lv ? `${d.n} ${roman(c.lv+1)}` : d.n; };
-const cart = c => { const d=DB[c.key]; return d.arts ? d.arts[Math.min(c.lv,d.arts.length-1)] : d.art; };
+  if(d.names) return k+(lv<d.names.length ? d.names[lv] : `${d.names.at(-1)} ${roman(lv-d.names.length+2)}`);
+  return k+(lv ? `${d.n} ${roman(lv+1)}` : d.n); };
+const cart = c => { const d=DB[c.key]; return d.arts ? d.arts[Math.min(effLv(c),d.arts.length-1)] : d.art; };
+const sentence = (t,u) => t+(t.endsWith('.')?' ':'. ')+u;
 const ctext = c => { const d=DB[c.key];
-  if(d.merge){ const t=effText(d.eff(c.lv)); return d.react ? t+(t.endsWith('.')?' ':'. ')+d.react : t; }
+  if(d.merge){ let t=effText(cardEff(c)); if(d.react) t=sentence(t,d.react);
+    return c.crack ? sentence(t,`💔 Cracked: 1 in ${Math.round(1/TUNE.crackOdds)} to shatter each time it's played.`) : t; }
   if(merge()&&d.mtx) return d.mtx;
   if(typeof d.tx==='function') return d.tx(c.lv,c);
   if(d.tx) return d.tx;
@@ -36,7 +42,7 @@ const ctext = c => { const d=DB[c.key];
 // Prices climb on the same curve as power: base + base×(tier bonus) + a small step per tier.
 // A merge card's price climbs with its level: base × level, plus 1 a level for the merging you skipped.
 const baseCost = c => { const d=DB[c.key];
-  if(d.merge) return d.c*(1+c.lv)+c.lv;
+  if(d.merge){ const l=c.lv+(c.crack?1:0); return d.c*(1+l)+l; }     // a Cracked card costs one level more, not two
   return d.c + (d.c||2)*(tierMult(c.lv)-1) + d.step*c.lv; };
 const costOf   = c => Math.max(0, baseCost(c)-(G?G.discount:0));
 const allCards = () => [...G.deck,...G.hand,...G.discard,...G.inPlay];
@@ -47,6 +53,9 @@ const splice = () => !!G && G.mode==='splice';
 const merge  = () => !!G && G.mode==='merge';
 // Splice and merge mode share the fuse: a threat detonates once, costs hearts and leaves.
 const fused  = () => splice()||merge();
+const maxHearts = () => merge()?TUNE.merge.hearts:TUNE.hearts;
+const healBy    = () => merge()?TUNE.merge.heal:TUNE.heal;
+const spawnEvery = () => (merge()?TUNE.merge:TUNE).spawnEvery(G.wave);
 const hasMod = (c,k) => c.mods.includes(k);
 const modCount = (c,k) => c.mods.filter(m=>m===k).length;
 const slotsUsed = c => c.mods.filter(m=>!SPLICES[m].scar).length;
@@ -68,14 +77,17 @@ function jokerStatus(j){
     case 'vintage': return `+${j.age}`;
     case 'hoarder': return `+${Math.floor(deckSize()/4)}`;
     case 'trophy':  return `+${Math.floor(G.runCleared/2)}`;
+    case 'ossuary': return `+${Math.floor(G.trash.length/2)}`;
+    case 'jar': case 'hoard': return `cap ${fmt(vaultCap())}`;
   }
   return '';
 }
 
 function newRun(mode){
   // G.actions is the play resource: Actions in classic and splice mode, ⚡ Energy in merge mode.
-  G={ rng:(nativeRandom()*4294967296)>>>0, mode:mode||(G&&G.mode)||'merge', hearts:TUNE.hearts, pending:[], deck:[],hand:[],discard:[],inPlay:[],trash:[],
-      coin:0,actions:0,buys:0,actionsPlayed:0,treasuresPlayed:0,discount:0,echoUsed:false,wallUsed:false,
+  mode=mode||(G&&G.mode)||'merge';
+  G={ rng:(nativeRandom()*4294967296)>>>0, mode, hearts:mode==='merge'?TUNE.merge.hearts:TUNE.hearts, pending:[], deck:[],hand:[],discard:[],inPlay:[],trash:[],
+      coin:0,actions:0,buys:0,actionsPlayed:0,treasuresPlayed:0,discount:0,echoUsed:false,wallUsed:false,vault:0,fromVault:0,
       market:[], slots:new Array(TUNE.slots).fill(null), queue:[],
       wave:0, turn:0, turnInWave:0, waveTotal:0, runCleared:0, unlock:{}, merges:0,
       jokers:[], next:{actions:0,buys:0,coin:0}, later:{coin:0,cards:0}, phase:'turn', over:false };
@@ -113,6 +125,7 @@ function newThreat(key,w,elite){
     case 'banish':      t.need=Math.round((d.need+steps)*em); break;
   }
   t.full={need:t.need,needCoin:t.needCoin,curses:t.curses,needT:t.needT,needA:t.needA};   // what it first wanted, for Wards
+  if(merge()&&!COIN_KINDS.includes(d.kind)) t.bribe=r(T.bribe*cs*em);
   if(t.atk.n) t.atk.n+=Math.floor((w-1)/5);
   if(elite){ t.n='Elite '+d.n; t.atk.every=Math.max(1,d.atk.every-1); t.fuse=(d.fuse||4)+1;
     if(w>=TUNE.coffinFrom) t.coffin=(t.coffin||0)+1; }
@@ -131,15 +144,18 @@ function rollTier(){ const m=TUNE.maxTier(G.wave); return Math.max(0,wpick([[m,4
 const stocked = () => MERGE_POOL.filter(k=>!DB[k].noMarket&&G.wave>=TUNE.energyFrom[Math.min(3,DB[k].cost)]);
 // Each is stocked up to TUNE.marketLag levels below the best you have merged it to.
 function rollLevel(k){ const m=Math.max(0,(G.unlock[k]||0)-TUNE.marketLag); return Math.max(0,wpick([[m,50],[m-1,30],[m-2,20]])); }
+// Merge mode: some cards on offer are Cracked — two levels stronger, but they may shatter when played.
+const crackable = c => DB[c.key].merge&&!DB[c.key].noMerge&&!DB[c.key].stays&&!DB[c.key].fused;
+function mayCrack(c,odds){ if(crackable(c)&&Math.random()<odds) c.crack=true; return c; }
 function randomTreasure(){
-  if(merge()) return mk('coin',rollLevel('coin'));
+  if(merge()) return mayCrack(mk('coin',rollLevel('coin')),TUNE.crackMarket);
   const w=G.wave;
   return mk(wpick([['copper',Math.max(6,40-w*6)],['silver',40],['gold',12+w*4]]),rollTier());
 }
 // Rare cards (the Anvil) turn up a quarter as often as the rest.
 const stockPick = ks => wpick(ks.map(k=>[k,DB[k].rare?TUNE.rareWeight:1]));
 function marketCard(){
-  if(merge()){ const k=stockPick(stocked().filter(k=>k!=='coin')); return mk(k,rollLevel(k)); }
+  if(merge()){ const k=stockPick(stocked().filter(k=>k!=='coin')); return mayCrack(mk(k,rollLevel(k)),TUNE.crackMarket); }
   return mk(pick(splice()?CORE:KINGDOM),rollTier());
 }
 function ensureCoin(){ if(!G.market.some(c=>c&&c.t==='treasure')) G.market[G.market.length-1]=randomTreasure(); }
@@ -198,7 +214,7 @@ function gainJunk(key,n,where='discard'){
 function tval(c){
   let v = c.key==='treasury'
     ? tierMult(c.lv)*(G.inPlay.filter(x=>x.t==='treasure'&&x!==c).length+1)
-    : DB[c.key].merge ? DB[c.key].eff(c.lv).coin
+    : DB[c.key].merge ? cardEff(c).coin||0
     : DB[c.key].v*tierMult(c.lv)+(c.grow||0);
   v=Math.max(0,v+(modCount(c,'coin')-modCount(c,'rust'))*tierMult(c.lv));
   if(hasJ('midas')) v+=1;
@@ -216,11 +232,12 @@ function tval(c){
 function startWave(w){
   G.wave=w; G.turnInWave=0; G.wallUsed=false;
   gatherDeck();
-  const n=TUNE.threatsInWave(w), elite=w%TUNE.eliteEvery===0;
+  const n=(merge()?TUNE.merge:TUNE).threatsInWave(w), elite=w%TUNE.eliteEvery===0;
   const pool=THREAT_KEYS.filter(k=>w>=3||!THREATS[k].late);
   G.queue=[]; for(let i=0;i<n;i++) G.queue.push(newThreat(pick(pool),w,elite&&i===n-1));
   G.waveTotal=n;
   const prevTier=w>1?TUNE.maxTier(w-1):0;
+  if(merge()) sprout();
   newMarket();
   log(`Wave ${w}`,'wave'); fx('wave',w);
   log(`${plural(n,'threat')} approach${elite?', led by an Elite':''}.`,'hl');
@@ -236,6 +253,7 @@ async function endWave(){
   log(`Wave ${G.wave} cleared!`,'good');
   saveBest(G.wave);
   G.jokers.forEach(j=>j.age++);
+  if(merge()) G.vault=fin(G.vault+G.coin);                   // what's left over is saved
   gatherDeck(); G.coin=0; G.actions=0; G.buys=0; render();
   G.camp={step:'draft',offers:rollJokers(G.wave%TUNE.eliteEvery===0?4:3)};
   saveNow();
@@ -287,7 +305,7 @@ function deckSummary(){
 // Every service has a Back button: backing out of one returns to the Inn to pick another.
 async function campService(){
   for(;;){
-    const heal=['heal',`❤ Rest — recover 2 hearts (${G.hearts}/${TUNE.hearts})`];
+    const heal=['heal',`❤ Rest — recover ${plural(healBy(),'heart')} (${G.hearts}/${maxHearts()})`];
     const o=await chooseOption('🍺 The Inn',`${deckSummary()}. Choose one service before wave ${G.wave+1}.`,[
       ['purge','🔥 Clear out — trash up to 2 cards'],
       ...(merge()?[['fuse','🧬 Merge — combine two different cards into one that does both'],
@@ -312,15 +330,15 @@ async function innService(o){
     if(!c) return false;
     const was=cname(c); c.lv++; log(`${was} is tempered into ${cname(c)}.`,'good');
   } else if(o==='copy'){
-    const c=await pick(sorted().filter(c=>!isJunk(c)&&(!merge()||c.lv<=TUNE.copyMax)),{why:'copy',title:'Copyist',sub:'Add a copy of one card to your deck.'});
+    const c=await pick(sorted().filter(c=>!isJunk(c)&&(!merge()||c.lv<=TUNE.copyMax&&!c.crack)),{why:'copy',title:'Copyist',sub:`Add a copy of one card to your deck.${merge()?' The copy has grown nothing yet.':''}`});
     if(!c) return false;
-    G.deck.push(clone(c)); log(`You copy ${cname(c)}.`,'good');
+    G.deck.push(merge()?mk(c.key,c.lv):clone(c)); log(`You copy ${cname(c)}.`,'good');
   } else if(o==='mend'){
     const c=await pick(sorted().filter(c=>c.mods.some(m=>SPLICES[m].scar)),{why:'mend',title:'Mender',sub:'Remove every scar from one card.'});
     if(!c) return false;
     c.mods=c.mods.filter(m=>!SPLICES[m].scar); log(`${cname(c)} is mended.`,'good');
   } else if(o==='heal'){
-    G.hearts=Math.min(TUNE.hearts,G.hearts+2); log(`You rest. The town has ${plural(G.hearts,'heart')}.`,'good');
+    G.hearts=Math.min(maxHearts(),G.hearts+healBy()); log(`You rest. The town has ${plural(G.hearts,'heart')}.`,'good');
   }
 }
 
@@ -331,7 +349,7 @@ async function innService(o){
    so two copies of one can still be merged by an Anvil, which
    raises every part a level.
    ========================================================== */
-const fusable = c => !isJunk(c) && DB[c.key].merge && !DB[c.key].noMerge && !DB[c.key].stays;
+const fusable = c => !isJunk(c) && DB[c.key].merge && !DB[c.key].noMerge && !DB[c.key].stays && !c.crack;
 const partsOf = c => DB[c.key].fused ? DB[c.key].fused.map(p=>({key:p.key,lv:p.lv+c.lv})) : [{key:c.key,lv:c.lv}];
 // Effects add up; multipliers multiply, replays take the larger, strikes cap at 100%.
 function combineEff(es){
@@ -347,7 +365,9 @@ function combineEff(es){
 }
 function fusionOf(a,b){
   const parts=[...partsOf(a),...partsOf(b)].sort((x,y)=>(x.key+x.lv).localeCompare(y.key+y.lv));
-  return mk(defFusion(parts,Math.ceil((actCost(a)+actCost(b))/2)));
+  const f=mk(defFusion(parts,Math.ceil((actCost(a)+actCost(b))/2))), g=(a.grow||0)+(b.grow||0);
+  if(g) f.grow=g;                                             // it keeps what both had grown
+  return f;
 }
 // A saved run's fusions are rebuilt from their keys: fz:<key>.<level>+…:<⚡ cost>.
 function ensureFusion(k){
@@ -382,8 +402,9 @@ async function fuseService(deck){
 /* ==========================================================
    MERGING — two identical cards become one a level higher.
    ========================================================== */
-const twins = (a,b) => a.key===b.key && a.lv===b.lv;
-const nextName = c => cname({key:c.key,lv:c.lv+1});
+// Growth doesn't stop two cards merging (the new one keeps the sum); Cracked cards only merge with Cracked twins.
+const twins = (a,b) => a.key===b.key && a.lv===b.lv && !a.crack===!b.crack;
+const nextName = c => cname({key:c.key,lv:c.lv+1+(c.crack?TUNE.crackLv:0)});
 // One card per mergeable pair (four Coppers offer two), frozen cards, junk and Anvils left out.
 function pairsIn(cards){
   const free=cards.filter(c=>DB[c.key].merge&&!DB[c.key].noMerge&&!isFrozen(c)), out=[], used=new Set();
@@ -394,16 +415,22 @@ function pairsIn(cards){
   }
   return out;
 }
-// The new card keeps no splices; the market starts stocking its level.
+// The new card keeps no splices but all the growth of both; the market starts stocking its level.
+// Two Cracked twins make a stable card at the level they played at, plus one. Mitosis may leave one behind.
 function mergePair(a,b,to){
   if(!a||!b) return null;
-  for(const c of [a,b]) [G.discard,G.inPlay,G.deck,G.hand].some(p=>pull(p,c));
-  const m=mk(a.key,a.lv+1); to.push(m);
+  const keep=hasJ('mitosis')&&Math.random()<TUNE.mitosis?b:null;
+  for(const c of [a,b]) if(c!==keep){ [G.discard,G.inPlay,G.deck,G.hand].some(p=>pull(p,c)); c.gone=true; }
+  const m=mk(a.key,a.lv+1+(a.crack&&b.crack?TUNE.crackLv:0)), g=(a.grow||0)+(b.grow||0);
+  if(g) m.grow=fin(g);
+  to.push(m);
   G.merges++;
   const was=G.unlock[a.key]||0;
   if(m.lv>was&&!DB[m.key].noMarket){ G.unlock[a.key]=m.lv;
     if(m.lv-TUNE.marketLag>Math.max(0,was-TUNE.marketLag)) log(`The market now stocks ${cname({key:m.key,lv:m.lv-TUNE.marketLag})}.`,'good'); }
-  log(`🔨 ${cname(a)} + ${cname(b)} → ${cname(m)}.`,'good');
+  log(`🔨 ${cname(a)} + ${cname(b)} → ${cname(m)}${a.crack&&b.crack?', no longer cracked':''}.`,'good');
+  if(keep) log(`🧫 Mitosis: ${cname(keep)} is left behind.`,'good');
+  if(m.lv>=3||keep||g>=1000) fx('merge',m);
   return m;
 }
 // The Anvil merges from anywhere: copies in the discard pile and in play go first, then the draw pile, then the hand.
@@ -422,7 +449,7 @@ async function mergeAnywhere(n,title){
 async function claimSpoils(p){
   const left=stocked(), keys=[];
   while(left.length&&keys.length<TUNE.spoils+(p.elite?1:0)){ const k=stockPick(left); keys.push(k); pull(left,k); }
-  const offers=keys.map(k=>mk(k));
+  const offers=keys.map(k=>mayCrack(mk(k),TUNE.crackSpoils));
   const s=await chooseCards(offers,{min:0,max:1,why:'spoils',title:`${p.from} cleared — take a card`,sub:'It goes to your discard pile.'});
   if(s[0]){ G.discard.push(s[0]); log(`You take ${cname(s[0])}.`,'good'); }
 }
@@ -541,6 +568,52 @@ function afterPlay(c){
   if(hasMod(c,'brittle')&&pull(G.inPlay,c)){ trashCard(c,true); log(`${cname(c)} crumbles to dust.`,'bad'); }
 }
 
+/* ==========================================================
+   GROWTH — merge mode. A card keeps what it grows (c.grow,
+   extra Coin) for good, through merges and fusions.
+   ========================================================== */
+// Each time a card resolves: Nest Eggs grow, Snowballs compound, Hiker adds 1 to anything; then a Cracked card may shatter.
+function resolved(c){
+  if(!merge()) return;
+  const e=cardEff(c); let g=0;
+  if(e.grow) g+=e.grow*(hasJ('goose')?2:1);
+  if(e.snow){ const v=(e.coin||0)*(e.snow+(hasJ('avalanche')?10:0))/100; g+=Math.floor(v)+(Math.random()<v%1?1:0); }
+  if(hasJ('hiker')) g++;
+  if(g) c.grow=fin((c.grow||0)+g);
+  shatter(c);
+}
+function resolveTreasure(c){ const v=tval(c); C(v); log(`${cname(c)} adds ${fmt(v)} to your purse.`); resolved(c); }
+// A Cracked card shatters 1 time in 4: it is trashed. With Phoenix it may rise again, a level higher and still cracked.
+function shatter(c){
+  if(!c.crack||Math.random()>=TUNE.crackOdds) return false;
+  c.gone=true; [G.inPlay,G.hand,G.discard,G.deck].some(p=>pull(p,c)); trashCard(c,true);
+  log(`💥 ${cname(c)} shatters!`,'bad'); fx('shatter',c);
+  if(hasJ('phoenix')&&Math.random()<TUNE.phoenix){
+    const r=mk(c.key,c.lv+1); r.crack=true; if(c.grow) r.grow=c.grow; G.discard.push(r);
+    log(`🐦‍🔥 ${cname(r)} rises from the ashes into your discard pile.`,'good'); fx('reborn',r); }
+  return true;
+}
+// Saplings grow at the start of every wave, wherever they are.
+function sprout(){
+  const sp=allCards().filter(c=>DB[c.key].merge&&cardEff(c).sprout);
+  for(const c of sp) c.grow=fin((c.grow||0)+cardEff(c).sprout*(hasJ('goose')?2:1));
+  if(sp.length) log(`🌱 ${sp.length>1?`${sp.length} growing cards sprout`:`${cname(sp[0])} sprouts`}.`,'good');
+}
+
+/* ---------- the Vault: unspent Coin is saved at the end of a turn and earns interest ---------- */
+const vaultRate = () => hasJ('jar')?.15:TUNE.vaultRate;
+const vaultCap  = () => TUNE.vaultCap(G.wave)*(hasJ('jar')?2:1)*(hasJ('hoard')?10:1);
+function interest(){
+  const i=Math.min(vaultCap(),Math.floor(G.vault*vaultRate()));
+  if(i>0){ G.vault=fin(G.vault+i); log(`🏦 The Vault pays ${fmt(i)} interest (${fmt(G.vault)} saved).`,'good'); fx('interest',i); }
+}
+// Take everything out of the Vault to spend this turn. What's left at the end of the turn goes back in.
+function withdraw(){
+  if(busy||G.over||G.phase!=='turn'||!(G.vault>0)) return;
+  const v=G.vault; G.vault=0; G.coin=fin(G.coin+v); G.fromVault+=v;
+  log(`🏦 You take ${fmt(v)} coin out of the Vault.`,'hl'); render();
+}
+
 function isDone(t){
   switch(t.kind){
     case 'once_coin':   return t.need<=0;
@@ -601,6 +674,24 @@ async function chooseThreat(title,sub){
 }
 
 const coinMult = () => hasJ('interest')?2:1;
+// Merge mode: any threat that doesn't want Coin can be bought off with it. The price shrinks with what's left of it.
+const COIN_KINDS=['prog_coin','once_coin'];
+function leftShare(t){ const f=t.full;
+  switch(t.kind){
+    case 'once_hybrid': return t.needCoin/Math.max(1,f.needCoin);
+    case 'panic':       return t.curses/Math.max(1,f.curses);
+    case 'upgrade':     return ((t.needT-t.gotT)+(t.needA-t.gotA))/Math.max(1,f.needT+f.needA);
+  }
+  return Math.max(0,t.need-t.prog)/Math.max(1,t.need);
+}
+const bribeOf = t => t.bribe ? Math.max(1,Math.ceil(t.bribe*leftShare(t)/coinMult())) : 0;
+const bribeReady = t => !!t.bribe && G.coin>=bribeOf(t);
+async function payBribe(t){
+  if(busy||G.over||G.phase!=='turn'||!G.slots.includes(t)||!bribeReady(t)) return;
+  busy=true;
+  try{ const p=bribeOf(t); G.coin-=p; log(`💰 You buy off ${t.n} for ${fmt(p)} coin.`,'hl'); completeThreat(t); await settle(); }
+  finally { busy=false; render(); }
+}
 const unitMult = () => hasJ('clerk')?2:1;
 const coinFor  = need => Math.ceil(need/coinMult());
 const unitsFor = need => Math.ceil(need/unitMult());
@@ -632,10 +723,10 @@ async function clickThreat(t){
       case 'prog_coin':{
         const amt=Math.min(G.coin,coinFor(rem));
         G.coin-=amt; t.prog=Math.min(t.need,t.prog+amt*coinMult());
-        log(`You pour ${amt} coin into ${t.n} (${t.prog}/${t.need}).`,'hl'); break; }
+        log(`You pour ${fmt(amt)} coin into ${t.n} (${fmt(t.prog)}/${fmt(t.need)}).`,'hl'); break; }
       case 'once_coin':{
         const amt=coinFor(t.need); G.coin-=amt; t.need=0;
-        log(`You pay ${amt} coin to ${t.n} in one stroke.`,'hl'); break; }
+        log(`You pay ${fmt(amt)} coin to ${t.n} in one stroke.`,'hl'); break; }
       case 'prog_action':{
         const amt=Math.min(G.actions,unitsFor(rem));
         G.actions-=amt; t.prog=Math.min(t.need,t.prog+amt*unitMult());
@@ -673,7 +764,7 @@ async function clickThreat(t){
       case 'once_hybrid':{
         const c=coinFor(t.needCoin), a=unitsFor(t.needAct);
         G.coin-=c; G.actions-=a; t.needCoin=0; t.needAct=0;
-        log(`You hand ${t.n} ${c} coin and ${actN(a)} at once.`,'hl'); break; }
+        log(`You hand ${t.n} ${fmt(c)} coin and ${actN(a)} at once.`,'hl'); break; }
       case 'upgrade':{
         const elig=G.hand.filter(c=>(t.gotT<t.needT&&c.t==='treasure')||(t.gotA<t.needA&&c.t==='action'));
         const s=await chooseCards(elig,{min:0,max:(t.needT-t.gotT)+(t.needA-t.gotA),why:t.kind,title:t.n,
@@ -719,7 +810,7 @@ function applyAttack(t){
     case 'grow':
       if(t.kind==='once_hybrid') t.needCoin=Math.ceil(t.needCoin*(1+a.pct/100));
       else t.need=Math.ceil(t.need*(1+a.pct/100));
-      log(`${t.n} now wants ${t.kind==='once_hybrid'?t.needCoin:t.need}.`,'bad'); break;
+      log(`${t.n} now wants ${fmt(t.kind==='once_hybrid'?t.needCoin:t.need)}.`,'bad'); break;
     case 'discard':
       for(let i=0;i<n;i++){ const pool=G.hand.filter(c=>!a.filter||c.t===a.filter); if(!pool.length)break;
         const c=pick(pool); pull(G.hand,c); G.discard.push(c);
@@ -797,9 +888,10 @@ function playTreasure(c){
   if(hasMod(c,'twin')) v*=2;
   G.treasuresPlayed++;
   if(c.key==='nestegg') c.grow=(c.grow||0)+(hasJ('goose')?2:1);
-  C(v); log(`${cname(c)} adds ${v} to your purse.`);
+  C(v); log(`${cname(c)} adds ${fmt(v)} to your purse.`);
   G.acting=(G.acting||0)+1;
   try{ for(let i=hasMod(c,'twin')?2:1;i>0;i--) spliceFx(c); } finally{ G.acting--; }
+  resolved(c);
   afterPlay(c);
 }
 
@@ -807,6 +899,7 @@ async function runAction(c){
   G.actionsPlayed++;
   if(hasJ('momentum')&&G.actionsPlayed>1){ C(G.actionsPlayed-1); log(`Momentum: +${G.actionsPlayed-1} Coin.`,'hl'); }
   await acting(async()=>{ spliceFx(c); await DB[c.key].fx(c,c.lv); });
+  resolved(c);
 }
 
 async function playCard(c){
@@ -823,7 +916,7 @@ async function playCard(c){
       G.actions-=actCost(c); pull(G.hand,c); G.inPlay.push(c);
       log(`You play ${cname(c)}.`,'hl');
       const times=((hasJ('echo')&&!G.echoUsed)?2:1)*(hasMod(c,'twin')?2:1); G.echoUsed=true;
-      for(let i=0;i<times;i++){ if(i) log('It resolves again.','hl'); await runAction(c); render(); }
+      for(let i=0;i<times&&!c.gone;i++){ if(i) log('It resolves again.','hl'); await runAction(c); render(); }
       afterPlay(c);
     }
     await settle();
@@ -847,7 +940,7 @@ function buyCard(i){
   const wasT=(c.t==='treasure');
   G.market[i]=null;
   G.deck.push(c);
-  log(`You buy ${cname(c)} for ${price}. It waits at the bottom of your deck.`,'hl');
+  log(`You buy ${cname(c)} for ${fmt(price)}. It waits at the bottom of your deck.`,'hl');
   refillSlot(i,wasT);
   render();
 }
@@ -861,8 +954,9 @@ function startTurn(){
   G.actions=Math.max(0,TUNE.energy+n.actions+(hasJ('wind')?1:0));
   G.buys=Math.max(0,1+n.buys+(hasJ('seal')?1:0));
   G.coin=Math.max(0,n.coin+G.later.coin);
-  if(G.later.coin) log(`${merge()?'Your savings pay':'The orchard pays'} out ${G.later.coin} coin.`,'good');
+  if(G.later.coin) log(`${merge()?'Your savings pay':'The orchard pays'} out ${fmt(G.later.coin)} coin.`,'good');
   G.later={coin:0,cards:0};
+  if(merge()){ G.fromVault=0; interest(); if(hasJ('ossuary')) G.coin+=Math.floor(G.trash.length/2); }
   if(hasJ('hoarder')) G.coin+=Math.floor(deckSize()/4);
   if(hasJ('trophy'))  G.coin+=Math.floor(G.runCleared/2);
   G.discount=hasJ('seal')?1:0;
@@ -882,6 +976,7 @@ async function endTurn(){
     const kept=G.hand.filter(c=>hasMod(c,'retain')||DB[c.key].stays), wards=kept.filter(c=>DB[c.key].stays).length;
     for(const c of G.hand.splice(0)){ c.frozen=false; if(!kept.includes(c)) G.discard.push(c); }
     G.hand.push(...kept);
+    if(merge()&&G.coin>0){ G.vault=fin(G.vault+G.coin); log(`🏦 ${fmt(G.coin)} coin goes into the Vault (${fmt(G.vault)} saved).`); }
     G.coin=0; G.actions=0; G.buys=0;
     G.next={actions:0,buys:0,coin:carry};
 
@@ -910,7 +1005,7 @@ async function endTurn(){
 
     cycleMarket(); render(); await sleep(200);
 
-    const due=G.turnInWave%TUNE.spawnEvery(G.wave)===0 || G.slots.every(s=>!s);
+    const due=G.turnInWave%spawnEvery()===0 || G.slots.every(s=>!s);
     if(due&&G.queue.length){ if(!spawnThreat()) return; await sleep(220); }
     startTurn();
   } finally { if(G.phase==='attack') G.phase='turn'; busy=false; render(); }
@@ -927,10 +1022,10 @@ function lose(title,text){
    simulator's --log. entries are [message, class] pairs.
    ========================================================== */
 function logText(entries,when){
-  const deck={}; allCards().forEach(c=>{ const n=cname(c)+(c.mods.length?` [${c.mods.map(m=>SPLICES[m].n).join(', ')}]`:''); deck[n]=(deck[n]||0)+1; });
+  const deck={}; allCards().forEach(c=>{ const n=cname(c)+(c.mods.length?` [${c.mods.map(m=>SPLICES[m].n).join(', ')}]`:'')+(c.grow?` (+${fmt(c.grow)})`:''); deck[n]=(deck[n]||0)+1; });
   const head=[
     `Coinkeep — ${{splice:'Splice',merge:'Merge',classic:'Classic'}[G.mode]} mode${when?' — '+when:''}`,
-    `${G.over?'Run over':'In progress'}: wave ${G.wave}, turn ${G.turnInWave} (${G.turn} in all), ${plural(G.runCleared,'threat')} cleared`+(fused()?`, ${plural(Math.max(0,G.hearts),'heart')} left`:''),
+    `${G.over?'Run over':'In progress'}: wave ${G.wave}, turn ${G.turnInWave} (${G.turn} in all), ${plural(G.runCleared,'threat')} cleared`+(fused()?`, ${plural(Math.max(0,G.hearts),'heart')} left`:'')+(merge()?`, ${fmt(G.vault||0)} coin in the Vault`:''),
     `Charms: ${G.jokers.map(j=>JOKERS[j.key].n).join(', ')||'none'}`,
     `Deck (${deckSize()}): ${Object.entries(deck).sort().map(([n,k])=>k>1?`${k}× ${n}`:n).join(', ')}`,
   ];
