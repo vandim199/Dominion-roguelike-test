@@ -331,7 +331,7 @@ async function innService(o){
    so two copies of one can still be merged by an Anvil, which
    raises every part a level.
    ========================================================== */
-const fusable = c => !isJunk(c) && DB[c.key].merge && !DB[c.key].noMerge && !DB[c.key].stays;
+const fusable = c => !isJunk(c) && DB[c.key].merge && !DB[c.key].noMerge && !DB[c.key].noFuse && !DB[c.key].stays;
 const partsOf = c => DB[c.key].fused ? DB[c.key].fused.map(p=>({key:p.key,lv:p.lv+c.lv})) : [{key:c.key,lv:c.lv}];
 // Effects add up; multipliers multiply, replays take the larger, strikes cap at 100%.
 function combineEff(es){
@@ -384,7 +384,7 @@ async function fuseService(deck){
    ========================================================== */
 const twins = (a,b) => a.key===b.key && a.lv===b.lv;
 const nextName = c => cname({key:c.key,lv:c.lv+1});
-// One card per mergeable pair (four Coppers offer two), frozen cards, junk and Anvils left out.
+// One card per mergeable pair (four Coppers offer two), frozen cards and junk left out. Anvils merge only with Anvils.
 function pairsIn(cards){
   const free=cards.filter(c=>DB[c.key].merge&&!DB[c.key].noMerge&&!isFrozen(c)), out=[], used=new Set();
   for(const c of free){
@@ -418,11 +418,11 @@ async function mergeAnywhere(n,title){
   }
 }
 
-// Merge mode: a cleared threat leaves spoils — pick one of a few free cards.
+// Merge mode: a cleared threat leaves spoils — pick one of a few free cards, always level one however strong you are.
 async function claimSpoils(p){
   const left=stocked(), keys=[];
   while(left.length&&keys.length<TUNE.spoils+(p.elite?1:0)){ const k=stockPick(left); keys.push(k); pull(left,k); }
-  const offers=keys.map(k=>mk(k));
+  const offers=keys.map(k=>mk(k,0));
   const s=await chooseCards(offers,{min:0,max:1,why:'spoils',title:`${p.from} cleared — take a card`,sub:'It goes to your discard pile.'});
   if(s[0]){ G.discard.push(s[0]); log(`You take ${cname(s[0])}.`,'good'); }
 }
