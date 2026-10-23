@@ -61,6 +61,9 @@ const mean = a => a.length ? a.reduce((s,x)=>s+x,0)/a.length : 0;
 const quant = (a,q) => { if(!a.length) return 0; const s=a.slice().sort((x,y)=>x-y); return s[Math.min(s.length-1,Math.floor(q*s.length))]; };
 const pct = (n,d) => d ? Math.round(100*n/d)+'%' : '—';
 const f1 = x => (Math.round(x*10)/10).toFixed(1);
+// 12.3K, 4.5M, 6.7B, 8.9T, then 1.2e15 — as the game shows them.
+const big = x => { if(!isFinite(x)) return String(x); if(x>=1e15) return x.toExponential(1);
+  for(const [d,u] of [[1e12,'T'],[1e9,'B'],[1e6,'M'],[1e3,'K']]) if(x>=d) return (x/d).toFixed(1)+u; return String(Math.round(x)); };
 function table(head,rows){
   const all=[head,...rows].map(r=>r.map(String)), w=head.map((_,i)=>Math.max(...all.map(r=>r[i].length)));
   return all.map((r,j)=>r.map((c,i)=>i===0?c.padEnd(w[i]):c.padStart(w[i])).join('  ')+(j===0?'\n'+w.map(n=>'─'.repeat(n)).join('  '):'')).join('\n');
@@ -70,6 +73,9 @@ function report(bot,{runs,names},o){
   const out=[], N=runs.length, cl=runs.map(r=>r.cleared);
   out.push(`\n████ ${bot.toUpperCase()} — ${N} runs, ${o.mode} mode, seeds ${o.seed}–${o.seed+N-1}, cap ${o.waves} waves`);
   out.push(`Waves cleared: mean ${f1(mean(cl))} · median ${quant(cl,.5)} · p10 ${quant(cl,.1)} · p90 ${quant(cl,.9)} · best ${Math.max(...cl)}`);
+  out.push(`Cleared 20+ waves: ${pct(cl.filter(c=>c>=20).length,N)} of runs`);
+  const pk=runs.map(r=>r.peak||0);
+  out.push(`Peak single-turn coin: median ${big(quant(pk,.5))} · p90 ${big(quant(pk,.9))} · max ${big(Math.max(...pk))}`);
   const ends={}; runs.forEach(r=>ends[r.result]=(ends[r.result]||0)+1);
   out.push('Ends: '+Object.entries(ends).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`${k} ${pct(n,N)}`).join(' · '));
   const kill={}; runs.forEach(r=>{ if(r.killer) kill[r.killer]=(kill[r.killer]||0)+1; });
@@ -132,7 +138,8 @@ function report(bot,{runs,names},o){
   }
   if(o.bots.length>1){
     console.log('\n████ SUMMARY');
-    console.log(table(['bot','runs','mean waves','median','p90'],o.bots.map(b=>{ const c=all[b].map(r=>r.cleared); return [b,c.length,f1(mean(c)),quant(c,.5),quant(c,.9)]; })));
+    console.log(table(['bot','runs','mean waves','median','p10','p90','best','20+','peak med','peak p90','peak max'],o.bots.map(b=>{ const c=all[b].map(r=>r.cleared), pk=all[b].map(r=>r.peak||0);
+      return [b,c.length,f1(mean(c)),quant(c,.5),quant(c,.1),quant(c,.9),Math.max(...c),pct(c.filter(x=>x>=20).length,c.length),big(quant(pk,.5)),big(quant(pk,.9)),big(Math.max(...pk))]; })));
   }
   if(o.json){ for(const b in all) all[b].forEach(r=>{ delete r.log; }); fs.writeFileSync(o.json,JSON.stringify({options:o,runs:all},null,1)); console.log(`\nRaw runs saved to ${o.json}`); }
   console.log(`\n${o.bots.length*o.runs} runs in ${((Date.now()-t0)/1000).toFixed(1)}s`);

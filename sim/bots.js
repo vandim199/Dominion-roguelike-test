@@ -390,6 +390,7 @@ function recordTurn(){
   if(G.hand.some(c=>c.t==='action'&&!isFrozen(c)&&actCost(c)>G.actions)) w.stuck++;
   w.merges=G.merges-w.merges0; w.topLv=Math.max(w.topLv,...allCards().map(c=>c.lv));
   R.income = R.turns++ ? R.income*.7+G.coin*.3 : G.coin;
+  R.peak = Math.max(R.peak,G.coin);
 }
 function noteBuy(c){ const k=c.key; SIM.run.bought[k]=(SIM.run.bought[k]||0)+1; SIM.run.buyTiers.push(c.lv); }
 
@@ -406,7 +407,7 @@ async function simRun(o){
   seedRandom(o.seed); SIM.dens=null;
   SIM.keepLog=!!o.keepLog;
   SIM.bot = o.bot==='random' ? randomBot() : heuristic(POLICY[(o.mode==='merge'?'merge_':'')+o.bot]);
-  SIM.run={ seed:o.seed, bot:o.bot, mode:o.mode, waves:{}, threats:{}, bought:{}, buyTiers:[], income:0, turns:0, lastWave:0 };
+  SIM.run={ seed:o.seed, bot:o.bot, mode:o.mode, waves:{}, threats:{}, bought:{}, buyTiers:[], income:0, turns:0, lastWave:0, peak:0 };
   newRun(o.mode);
   let steps=0;
   while(!G.over&&G.wave<=o.waves&&steps++<o.maxTurns&&deckSize()<=o.deckCap){ noteWave(); await SIM.bot.turn(); }
@@ -417,7 +418,7 @@ async function simRun(o){
     cleared: G.over ? G.wave-1 : Math.min(G.wave-1,o.waves),
     result: G.over ? (/lost heart/.test(over)?'hearts':'board full') : G.wave>o.waves ? 'survived' : deckSize()>o.deckCap ? 'runaway deck' : 'stalled',
     killer: killer ? killer.replace(/^Elite /,'') : null,
-    turns:G.turn, hearts:G.hearts, deckSize:deckSize(), cleared_threats:G.runCleared,
+    turns:G.turn, peak:R.peak, hearts:G.hearts, deckSize:deckSize(), cleared_threats:G.runCleared,
     deck: allCards().map(c=>c.key+(c.lv?'+'+c.lv:'')),
     charms: G.jokers.map(j=>j.key), splices: allCards().flatMap(c=>c.mods),
     bought:R.bought, buyTiers:R.buyTiers, threats:R.threats, waves:Object.values(R.waves),
