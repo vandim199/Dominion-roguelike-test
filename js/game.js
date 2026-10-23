@@ -8,6 +8,15 @@
    ========================================================== */
 
 let G=null, busy=false, tid=0, uid=0;
+// Seeded randomness: its state lives in G.rng and is saved with the run, so a reload plays on exactly as
+// it would have — reloading can't reroll a shuffle, a draw or an offer. Without a run, the browser's own.
+const nativeRandom=Math.random;
+Math.random=()=>{
+  if(!G||G.rng==null) return nativeRandom();
+  let t=G.rng=(G.rng+0x6D2B79F5)>>>0;
+  t=Math.imul(t^(t>>>15),t|1); t^=t+Math.imul(t^(t>>>7),t|61);
+  return ((t^(t>>>14))>>>0)/4294967296;
+};
 function mk(key,lv=0){ return {uid:++uid,key,lv:DB[key].noLv?0:lv,t:DB[key].t,mods:[]}; }
 function pull(a,c){const i=a.indexOf(c);if(i>=0)a.splice(i,1);return i>=0;}
 const hasJ  = k => !!G && G.jokers.some(j=>j.key===k);
@@ -65,7 +74,7 @@ function jokerStatus(j){
 
 function newRun(mode){
   // G.actions is the play resource: Actions in classic and splice mode, ⚡ Energy in merge mode.
-  G={ mode:mode||(G&&G.mode)||'merge', hearts:TUNE.hearts, pending:[], deck:[],hand:[],discard:[],inPlay:[],trash:[],
+  G={ rng:(nativeRandom()*4294967296)>>>0, mode:mode||(G&&G.mode)||'merge', hearts:TUNE.hearts, pending:[], deck:[],hand:[],discard:[],inPlay:[],trash:[],
       coin:0,actions:0,buys:0,actionsPlayed:0,treasuresPlayed:0,discount:0,echoUsed:false,wallUsed:false,
       market:[], slots:new Array(TUNE.slots).fill(null), queue:[],
       wave:0, turn:0, turnInWave:0, waveTotal:0, runCleared:0, unlock:{}, merges:0,
@@ -226,10 +235,17 @@ async function endWave(){
   saveBest(G.wave);
   G.jokers.forEach(j=>j.age++);
   gatherDeck(); G.coin=0; G.actions=0; G.buys=0; render();
+  G.camp={step:'draft',offers:rollJokers(G.wave%TUNE.eliteEvery===0?4:3)};
+  saveNow();
   await sleep(350);
-  await jokerDraft(G.wave%TUNE.eliteEvery===0?4:3);
+  await campFlow();
+}
+// Between waves: the charm draft, then the Inn. Saved before each, so a reload resumes at the same step
+// with the same offers.
+async function campFlow(){
+  if(G.camp.step==='draft'){ await jokerDraft(G.camp.offers); G.camp.step='inn'; saveNow(); }
   await campService();
-  G.phase='turn';
+  G.camp=null; G.phase='turn';
   startWave(G.wave+1);
 }
 
@@ -242,8 +258,8 @@ function rollJokers(n){
   return out;
 }
 
-async function jokerDraft(n){
-  const offers=rollJokers(n); if(!offers.length) return;
+async function jokerDraft(offers){
+  if(!offers.length) return;
   const full=G.jokers.length>=TUNE.jokerSlots;
   const k=await chooseJoker(offers,`Wave ${G.wave} cleared — choose a charm`,
     full?`Your ${TUNE.jokerSlots} charm slots are full. Taking one means giving another away.`
@@ -329,7 +345,15 @@ function combineEff(es){
 }
 function fusionOf(a,b){
   const parts=[...partsOf(a),...partsOf(b)].sort((x,y)=>(x.key+x.lv).localeCompare(y.key+y.lv));
-  const pc=Math.ceil((actCost(a)+actCost(b))/2), k='fz:'+parts.map(p=>p.key+'.'+p.lv).join('+')+':'+pc;
+  return mk(defFusion(parts,Math.ceil((actCost(a)+actCost(b))/2)));
+}
+// A saved run's fusions are rebuilt from their keys: fz:<key>.<level>+…:<⚡ cost>.
+function ensureFusion(k){
+  const m=/^fz:(.+):(\d+)$/.exec(k); if(!m) return;
+  defFusion(m[1].split('+').map(s=>{ const i=s.lastIndexOf('.'); return {key:s.slice(0,i),lv:+s.slice(i+1)}; }),+m[2]);
+}
+function defFusion(parts,pc){
+  const k='fz:'+parts.map(p=>p.key+'.'+p.lv).join('+')+':'+pc;
   if(!DB[k]){
     const ds=parts.map(p=>DB[p.key]);
     def(k,{n:'Fusion',merge:true,fused:parts,noMarket:true,c:ds.reduce((s,d)=>s+d.c,0),step:0,cost:pc,pc:()=>pc,fx:mergeFx,
@@ -337,7 +361,7 @@ function fusionOf(a,b){
       art:parts.map(p=>cart({key:p.key,lv:p.lv})).join(''),
       eff:l=>combineEff(parts.map(p=>DB[p.key].eff(p.lv+l)))});
   }
-  return mk(k);
+  return k;
 }
 async function fuseService(deck){
   const pool=deck.filter(fusable);
@@ -890,7 +914,7 @@ async function endTurn(){
 }
 
 function lose(title,text){
-  G.over=true;
+  G.over=true; deleteSave();                                  // no going back to before the fall
   const cleared=G.wave-1; saveBest(cleared); fx('lose');
   showGameOver(`${title}. ${text} You survived ${plural(cleared,'wave')} and cleared ${plural(G.runCleared,'threat')} with a deck of ${deckSize()} cards. Best run: ${plural(loadBest(),'wave')} cleared.`);
 }

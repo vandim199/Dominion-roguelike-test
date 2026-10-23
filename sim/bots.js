@@ -33,6 +33,8 @@ function chooseOption(title,sub,options){
 // Called a second time, with {skip}, to ask which charm to give away when the slots are full.
 function chooseJoker(keys,title,sub,o){ return Promise.resolve(o?SIM.bot.giveAway(keys):SIM.bot.charm(keys)); }
 function confirmCard(){ return Promise.resolve(true); }
+function saveNow(){}
+function deleteSave(){}
 function chooseSplice(keys){ const k=SIM.bot.spliceKey(keys); SIM.splice=k; return Promise.resolve(k); }
 
 /* ---------- seeded randomness: the same seed plays the same run ---------- */

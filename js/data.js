@@ -257,6 +257,7 @@ function effText(e){
   if(e.rummage) s.push(`Discard up to ${plural(e.rummage,'card')}, then draw one more than you discarded.`);
   if(e.mult)    s.push(`Multiply your Coin by ${e.mult}.`);
   if(e.ward)    s.push(`In your discard pile: threats lose ${pctTxt(e.ward)} of what they want each turn. Stays in hand at end of turn (draw 1 fewer).`);
+  if(p.length&&s.length>1) s[0]+='.';                            // "+2 ⚡. Strike a threat…"
   return s.join(' ');
 }
 async function mergeFx(s,l){

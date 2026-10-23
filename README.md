@@ -8,6 +8,8 @@ Open `index.html` in a browser, or serve the folder (e.g. GitHub Pages, or `pyth
 
 Works on desktop, tablets and phones in either orientation. Use **⚙ Settings** to change the UI size (or `+` / `−` on a keyboard). On touch screens, tap a card to read it before playing or buying it, and press and hold a card in a picker to read it.
 
+**Saving is automatic.** The run is saved in the browser (localStorage) whenever the game is waiting for you, and between waves before the charm draft and the Inn. **Continue** on the title screen picks it up, log included. Randomness is seeded and saved with the run, so reloading can't reroll a draw, a shuffle or an offer. The save is deleted when the town falls. Starting a new run while one is saved asks first. The Classic version keeps its own save.
+
 **📜 Log → ⬇ Save** (also in Settings and on the game-over screen) downloads the whole run's log as a text file, not just the last 200 lines on screen.
 
 ## Modes
@@ -38,6 +40,7 @@ The report shows, per bot: waves cleared; how runs end and which threat ended th
 - `js/data.js` — tuning, cards, charms and threats
 - `js/game.js` — rules: waves, turns, threats, attacks, the Inn
 - `js/ui.js` — rendering, modals, inspector, effects, layout and scaling, settings
+- `js/save.js` — automatic saving and loading
 - `manifest.webmanifest`, `icon.svg` — install-to-home-screen metadata
 - `classic/` — the 22 October 2026 version, frozen, behind the Classic mode button
 - `sim/sim.js` — the simulator: options, sandbox, report

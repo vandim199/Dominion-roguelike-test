@@ -516,6 +516,7 @@ function render(){
   }
   hw.classList.toggle('slide',slide);
   hw.scrollLeft=slide?keep:0;
+  scheduleSave();
 }
 
 /* ==========================================================
@@ -558,7 +559,22 @@ $('pDisc').onclick=()=>viewPile('Discard pile',G.discard);
 $('tabThreats').onclick=()=>setTab('threats');
 $('tabMarket').onclick=()=>setTab('market');
 $('overBtn').onclick=()=>newRun(G.mode);
-const startMode=mode=>{ $('title').classList.remove('on'); newRun(mode); };
+// A saved run waits on the title screen: Continue resumes it; starting a new run replaces it, after asking.
+async function startMode(mode){
+  $('title').classList.remove('on');
+  if(readSave()){
+    const k=await chooseOption('Start a new run?',`Your saved run (${saveSummary()}) will be lost.`,[['y','Start a new run'],['n','Back']]);
+    if(k!=='y'){ $('title').classList.add('on'); return; }
+  }
+  SAVE.armed=true; newRun(mode);
+}
+async function continueRun(){
+  if(!loadGame()){ refreshTitle(); return; }
+  $('title').classList.remove('on'); SAVE.armed=true; render();
+  if(G.camp){ busy=true; try{ await campFlow(); } finally{ busy=false; render(); } }   // saved between waves
+}
+function refreshTitle(){ const s=saveSummary(); $('tContinue').hidden=!s; $('tContinue').textContent=s?`Continue · ${s}`:''; }
+$('tContinue').onclick=continueRun;
 $('tPlay').onclick=()=>startMode('merge');
 // Classic is a frozen copy of the game from 22 October 2026, in classic/.
 $('tClassic').onclick=()=>{ location.href='classic/index.html'; };
@@ -601,4 +617,5 @@ if(mqCoarse.addEventListener) mqCoarse.addEventListener('change',relayout);
 loadPrefs();
 applyLayout();
 newRun();
+refreshTitle();
 { const b=loadBest(); $('tBest').textContent=b?`Best run: ${plural(b,'wave')} cleared`:'No runs yet — good luck, steward!'; }
