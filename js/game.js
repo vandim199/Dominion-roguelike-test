@@ -1,943 +1,352 @@
 "use strict";
 /* ==========================================================
-   Coinkeep — rules: state, waves, threats, turn flow.
-   Rendering and modals live in ui.js.
-   Every chooseCards call carries a why (the card key, Inn
-   service or threat kind) so the simulator's bots know what
-   they are choosing for; the UI ignores it.
+   Coinkeep: Forays. The rules, with no DOM.
+   P is the permanent profile. T is the trip, with T.F the current fight.
+   Both are plain JSON. The UI and the sim call the same functions.
    ========================================================== */
 
-let G=null, busy=false, tid=0, uid=0;
-// Seeded randomness: its state lives in G.rng and is saved with the run, so a reload plays on exactly as
-// it would have — reloading can't reroll a shuffle, a draw or an offer. Without a run, the browser's own.
-const nativeRandom=Math.random;
-Math.random=()=>{
-  if(!G||G.rng==null) return nativeRandom();
-  let t=G.rng=(G.rng+0x6D2B79F5)>>>0;
-  t=Math.imul(t^(t>>>15),t|1); t^=t+Math.imul(t^(t>>>7),t|61);
-  return ((t^(t>>>14))>>>0)/4294967296;
-};
-function mk(key,lv=0){ return {uid:++uid,key,lv:DB[key].noLv?0:lv,t:DB[key].t,mods:[]}; }
-function pull(a,c){const i=a.indexOf(c);if(i>=0)a.splice(i,1);return i>=0;}
-const hasJ  = k => !!G && G.jokers.some(j=>j.key===k);
-// Merge cards count levels in Roman numerals (Spark, Spark II…); Coins have names (Copper, Silver…).
-const cname = c => { const d=DB[c.key];
-  if(!d.merge) return d.n+plus(c.lv);
-  if(d.fused) return partsOf(c).map(p=>cname(p)).join('-');
-  if(d.names) return c.lv<d.names.length ? d.names[c.lv] : `${d.names.at(-1)} ${roman(c.lv-d.names.length+2)}`;
-  return c.lv ? `${d.n} ${roman(c.lv+1)}` : d.n; };
-const cart = c => { const d=DB[c.key]; return d.arts ? d.arts[Math.min(c.lv,d.arts.length-1)] : d.art; };
-const ctext = c => { const d=DB[c.key];
-  if(d.merge){ const t=effText(d.eff(c.lv)); return d.react ? t+(t.endsWith('.')?' ':'. ')+d.react : t; }
-  if(merge()&&d.mtx) return d.mtx;
-  if(typeof d.tx==='function') return d.tx(c.lv,c);
-  if(d.tx) return d.tx;
-  return `+${d.v*tierMult(c.lv)} Coin`; };
-// Prices climb on the same curve as power: base + base×(tier bonus) + a small step per tier.
-// A merge card's price climbs with its level: base × level, plus 1 a level for the merging you skipped.
-const baseCost = c => { const d=DB[c.key];
-  if(d.merge) return d.c*(1+c.lv)+c.lv;
-  return d.c + (d.c||2)*(tierMult(c.lv)-1) + d.step*c.lv; };
-const costOf   = c => Math.max(0, baseCost(c)-(G?G.discount:0));
-const allCards = () => [...G.deck,...G.hand,...G.discard,...G.inPlay];
-const deckSize = () => allCards().length;
-const handSize = () => TUNE.handSize+(hasJ('greedy')?1:0);
-const waveCleared = () => !G.queue.length && G.slots.every(s=>!s);
-const splice = () => !!G && G.mode==='splice';
-const merge  = () => !!G && G.mode==='merge';
-// Splice and merge mode share the fuse: a threat detonates once, costs hearts and leaves.
-const fused  = () => splice()||merge();
-const hasMod = (c,k) => c.mods.includes(k);
-const modCount = (c,k) => c.mods.filter(m=>m===k).length;
-const slotsUsed = c => c.mods.filter(m=>!SPLICES[m].scar).length;
-// Actions (⚡) a card costs to play: Nimble makes an Action free, Heavy adds one (even to a Treasure).
-// Merge cards say what they cost.
-const actCost = c => (DB[c.key].merge ? DB[c.key].pc(c.lv) : c.t==='action'&&!hasMod(c,'free')?1:0)+(hasMod(c,'heavy')?1:0);
-// Frozen for the turn (Frostbite), or sealed in an Ice Coffin for as long as its threat stands.
-const iced = c => !!c.ice && G.slots.some(t=>t&&t.id===c.ice);
-const isFrozen = c => !!c.frozen || iced(c);
-// How much a card is worth to you: what a threat would most like to take away.
-const cardWorth = c => isJunk(c) ? -1 : (c.t==='treasure'?tval(c):baseCost(c)) + 4*slotsUsed(c);
+/* ---------- profile ---------- */
+function newProfile(seed){
+  const P={v:1,seed:seed|0,coin:0,deepest:-1,wheel:1,hearth:0,mag:0,ledger:0,slots:2,energy:TUNE.energyBase,hand:TUNE.handBase,extraSock:0,
+    nid:1,cards:[],layout:[],caravans:{},bosses:{},rewards:[],trips:0,defeats:0,retreats:0,secs:0,bestRate:0,nemesis:null,last:null,bursts:0};
+  for(const k of ['fork','fork','fork','helm','helm','scoop','keg','errand']) addCard(P,k,0,true);
+  P.layout=[addCard(P,'cannon',0,true).id,addCard(P,'stake',0,true).id];
+  return P;
+}
+function addCard(P,key,lvl,packed){ const c={id:P.nid++,key,lvl:lvl||0,sock:[],packed:!!packed}; P.cards.push(c); return c; }
+function grantSlot(P){ P.slots++; addCard(P,'deed',0,packedCount(P)<TUNE.deckMax); }
+const cardOf=(P,id)=>{ for(const c of P.cards) if(c.id===id) return c; return RUBBLE; };
+const RUBBLE={id:-1,key:'rubble',lvl:0,sock:[]};
+const has=(c,k)=>c.sock.includes(k);
+const isPiece=c=>!!CARDS[c.key].piece;
+function deedsPacked(P){ let n=0; for(const c of P.cards) if(c.key==='deed'&&c.packed) n++; return n; }
+function slotsOpen(P){ return TUNE.junk==='none'?P.slots:Math.min(P.slots,2+deedsPacked(P)); }
+const onBoard=(P,id)=>P.layout.indexOf(id)>=0&&P.layout.indexOf(id)<slotsOpen(P);
+function packList(P){ return P.cards.filter(c=>c.packed&&!onBoard(P,c.id)); }
+function packedCount(P){ return packList(P).length; }
 
-// The published site serves every wild/* branch under v/<branch>/ (see .github/workflows/pages.yml). They share one
-// browser storage, so each keeps its own save and best run under its own slot. Main (and the simulator) has none.
-const SLOT = (typeof location!=='undefined'&&(/\/v\/([\w-]+)\//.exec(location.pathname)||[])[1]) || '';
-const slotKey = k => SLOT ? `${k}.${SLOT}` : k;
-function loadBest(){ try{ return +localStorage.getItem(slotKey('dcrisis.best'))||0; }catch(e){ return 0; } }
-function saveBest(n){ try{ if(n>loadBest()) localStorage.setItem(slotKey('dcrisis.best'),String(n)); }catch(e){} }
+/* ---------- values ---------- */
+const valMult=c=>Math.pow(TUNE.valG,c.lvl)*Math.pow(TUNE.mileX,Math.floor(c.lvl/TUNE.mileEvery))*(has(c,'keen')?3:1);
+const defMult=c=>Math.pow(TUNE.defG,c.lvl)*(has(c,'keen')?2:1);
+function fxAmount(c,kind,base){
+  if(kind==='dmg'||kind==='poison') return base*valMult(c);
+  if(kind==='block') return base*defMult(c);
+  if(kind==='coin') return base*(1+.04*c.lvl)*(has(c,'keen')?2:1);
+  return base;
+}
+const pieceHp=c=>CARDS[c.key].hp*defMult(c)*(has(c,'bulwark')?8:1);
+const pieceNeed=c=>Math.max(1,CARDS[c.key].need-(has(c,'light')?1:0));
+const cardCost=c=>Math.max(0,CARDS[c.key].cost-(!isPiece(c)&&has(c,'light')?1:0));
+const stokeOf=c=>{ const d=CARDS[c.key]; return (d.stoke==null?(TUNE.burnFlat?1:d.cost+1):d.stoke)+(has(c,'fuel')?2:0); };
+const maxHpOf=P=>TUNE.baseHp*Math.pow(TUNE.defG,P.hearth);
+function socketsOpen(P,c){ let n=0; for(const a of TUNE.sockAt) if(c.lvl>=a) n++; if(P.extraSock&&c.lvl>=60) n++; return n; }
+function describe(c){
+  let s=CARDS[c.key].text;
+  for(const [k,b] of CARDS[c.key].fx) s=s.replace('{'+k+'}',k==='coin'?Math.round(fxAmount(c,k,b)*100)+'%':fmt(fxAmount(c,k,b)));
+  return s;
+}
 
-function jokerStatus(j){
-  switch(j.key){
-    case 'minimal': return deckSize()<=15 ? 'active' : `${deckSize()}/15`;
-    case 'vintage': return `+${j.age}`;
-    case 'hoarder': return `+${Math.floor(deckSize()/4)}`;
-    case 'trophy':  return `+${Math.floor(G.runCleared/2)}`;
+/* ---------- enemy curve ---------- */
+const isBossF=f=>f%TUNE.bossEvery===TUNE.bossEvery-1;
+const isCaravanF=f=>f>0&&f%TUNE.caravanEvery===0;
+function enemyKey(P,f){
+  if(isBossF(f)) return BOSS_ORDER[Math.floor(f/TUNE.bossEvery)%BOSS_ORDER.length];
+  const pool=ENEMY_POOL.filter(k=>ENEMIES[k].min<=f);
+  return pool[Math.floor(hash01(P.seed,f)*pool.length)];
+}
+const baseHpAt=f=>TUNE.hp0*Math.pow(TUNE.hpG,f);
+const enemyHp=(P,f)=>baseHpAt(f)*ENEMIES[enemyKey(P,f)].hp*(isBossF(f)?TUNE.bossHp:1);
+const enemyAtk=f=>TUNE.atk0*Math.pow(TUNE.atkG,f);
+const coinMult=P=>Math.pow(TUNE.ledgerX,P.ledger);
+const bounty=(P,f)=>TUNE.coin0*Math.pow(TUNE.coinG,f)*(isBossF(f)?TUNE.bossCoin:1)*coinMult(P);
+
+/* Power estimate: damage over three turns if the Powder falls as expected. R = this / enemy health. */
+function estPower(P){
+  const deck=packList(P); const hf=Math.min(1,P.hand/Math.max(1,deck.length));
+  const opts=[]; let stokeSum=0,stokeN=0;
+  for(const c of deck){ const d=CARDS[c.key]; if(d.piece||d.junk) { stokeSum+=stokeOf(c); stokeN++; continue; }
+    let dmg=0; for(const [k,b] of d.fx) if(k==='dmg') dmg+=fxAmount(c,k,b); else if(k==='poison') dmg+=fxAmount(c,k,b)*1.5;
+    if(has(c,'echo')) dmg*=2; opts.push({dmg,cost:cardCost(c)}); stokeSum+=stokeOf(c); stokeN++; }
+  opts.sort((a,b)=>b.dmg/Math.max(.5,b.cost)-a.dmg/Math.max(.5,a.cost));
+  let E=P.energy,hand=0,plays=0;
+  for(const o of opts){ if(E<=0) break; const fr=o.cost?Math.min(hf,E/o.cost):hf; hand+=o.dmg*fr; E-=o.cost*fr; plays+=fr; }
+  const avgStoke=stokeN?stokeSum/stokeN:1;
+  let rem=P.wheel+(TUNE.feed==='stoke'?Math.max(0,P.hand-plays)*avgStoke*.8:TUNE.feed==='wheel'?3:0), board=0;
+  for(const id of P.layout.slice(0,slotsOpen(P))){ if(!id) continue; const c=cardOf(P,id), d=CARDS[c.key]; if(!d) continue;
+    const need=pieceNeed(c), max=has(c,'twin')?2:1, r=Math.min(max,rem/need); rem-=need*r;
+    for(const [k,b] of d.fx) if(k==='dmg') board+=fxAmount(c,k,b)*r; else if(k==='poison') board+=fxAmount(c,k,b)*1.5*r;
+    if(has(c,'relay')) rem+=r;
   }
-  return '';
+  return num(3*(hand+board));
 }
+const ratioAt=(P,f)=>estPower(P)/enemyHp(P,f);
+// The deepest fight a march reaches right now, for the home screen's preview.
+function marchReach(P){ const p=estPower(P); let f=0; while(f<400&&p/enemyHp(P,f)>=TUNE.marchR&&(!isBossF(f)||P.bosses[f])&&(!isCaravanF(f)||P.caravans[f])) f++; return f; }
 
-function newRun(mode){
-  // G.actions is the play resource: Actions in classic and splice mode, ⚡ Energy in merge mode.
-  G={ rng:(nativeRandom()*4294967296)>>>0, mode:mode||(G&&G.mode)||'merge', hearts:TUNE.hearts, pending:[], deck:[],hand:[],discard:[],inPlay:[],trash:[],
-      coin:0,actions:0,buys:0,actionsPlayed:0,treasuresPlayed:0,discount:0,echoUsed:false,wallUsed:false,
-      market:[], slots:new Array(TUNE.slots).fill(null), queue:[],
-      wave:0, turn:0, turnInWave:0, waveTotal:0, runCleared:0, unlock:{}, merges:0,
-      jokers:[], next:{actions:0,buys:0,coin:0}, later:{coin:0,cards:0}, phase:'turn', over:false };
-  if(merge()){
-    for(let i=0;i<7;i++)G.deck.push(mk('coin'));
-    for(let i=0;i<2;i++)G.deck.push(mk('shack'));
-    G.deck.push(mk('anvil'));
-  } else {
-    for(let i=0;i<7;i++)G.deck.push(mk('copper'));
-    for(let i=0;i<3;i++)G.deck.push(mk('shack'));
-  }
-  resetUI();
-  log('The bells of Coinkeep ring out: trouble is coming, wave after wave. Your deck is yours for the whole run — build it with care.','hl');
-  if(splice()) log('Splice mode: clear threats before their fuse runs out to graft keywords onto your cards.','hl');
-  if(merge()) log('Merge two identical cards with an Anvil to make one a level higher. Clear threats before their fuse runs out.','hl');
-  startWave(1);
+/* ---------- trip ---------- */
+function startTrip(P){
+  P.trips++;
+  const maxHp=maxHpOf(P);
+  const T={f:0,hp:maxHp,maxHp,coin:0,board:[],phase:'prefight',F:null,ev:[],stat:{turns:0,fights:0,marched:0,dmgHand:0,dmgBoard:0,taken:0,waste:0,blocked:0,lost:0,start:P.secs},marchList:[],rngSeed:(P.seed*31+P.trips*7919)|0};
+  for(const id of P.layout.slice(0,slotsOpen(P))){ if(!id) continue; T.board.push(newPiece(P,id)); }
+  tripAdvance(P,T);
+  return T;
 }
-
-function newThreat(key,w,elite){
-  const T=merge()?{...TUNE,...TUNE.merge}:TUNE;
-  const d=THREATS[key], cs=T.coinScale(w), ks=T.countScale(w), em=elite?1.8:1, steps=Math.floor((w-1)/3);
-  const as=T.actScale(w), bs=T.buyScale(w), r=x=>Math.max(1,Math.round(x));
-  const t={key,...d,atk:{...d.atk},prog:0,id:++tid,elite:!!elite,age:0};
-  if(merge()) t.label=t.label.replace(/Actions$/,'Energy');
-  switch(d.kind){
-    case 'prog_coin': case 'once_coin': t.need=r(d.need*cs*em); break;
-    case 'prog_action': t.need=r(d.need*as*em); break;
-    case 'prog_buy':    t.need=r(d.need*bs*em); break;
-    case 'prog_discard': case 'leech': t.need=r(d.need*ks*em); break;
-    case 'sacrifice':   t.need=Math.round((d.need+steps)*em); break;
-    case 'panic':       t.curses=Math.round((d.curses+steps)*em); break;
-    case 'once_hybrid': t.needCoin=r(d.needCoin*cs*em); t.needAct=r(d.needAct*as*em); break;
-    case 'upgrade':     t.needT=t.needA=Math.round((1+Math.floor((w-1)/4))*em); t.gotT=t.gotA=0; break;
-    case 'scavenge':    t.need=Math.round((d.need+2*steps)*em); break;
-    case 'banish':      t.need=Math.round((d.need+steps)*em); break;
-  }
-  t.full={need:t.need,needCoin:t.needCoin,curses:t.curses,needT:t.needT,needA:t.needA};   // what it first wanted, for Wards
-  if(t.atk.n) t.atk.n+=Math.floor((w-1)/5);
-  if(elite){ t.n='Elite '+d.n; t.atk.every=Math.max(1,d.atk.every-1); t.fuse=(d.fuse||4)+1;
-    if(w>=TUNE.coffinFrom) t.coffin=(t.coffin||0)+1; }
-  t.cd=fused()?fuseOf(t):effEvery(t);
-  return t;
-}
-function fuseOf(t){ return Math.max(1,(t.fuse||4)-(hasJ('glass')?1:0)+(hasJ('hourglass')?1:0)); }
-function effEvery(t){
-  if(t.age>=TUNE.enrageAfter) return 1;
-  return Math.max(1, t.atk.every-(hasJ('glass')?1:0)+(hasJ('hourglass')?1:0));
-}
-
-/* ---------- market ---------- */
-function rollTier(){ const m=TUNE.maxTier(G.wave); return Math.max(0,wpick([[m,44],[m-1,30],[m-2,13],[m+1,9],[m+2,4]])); }
-// Merge mode: the cards on sale this wave — the costlier to play, the later they arrive.
-const stocked = () => MERGE_POOL.filter(k=>!DB[k].noMarket&&G.wave>=TUNE.energyFrom[Math.min(3,DB[k].cost)]);
-// Each is stocked up to TUNE.marketLag levels below the best you have merged it to.
-function rollLevel(k){ const m=Math.max(0,(G.unlock[k]||0)-TUNE.marketLag); return Math.max(0,wpick([[m,50],[m-1,30],[m-2,20]])); }
-function randomTreasure(){
-  if(merge()) return mk('coin',rollLevel('coin'));
-  const w=G.wave;
-  return mk(wpick([['copper',Math.max(6,40-w*6)],['silver',40],['gold',12+w*4]]),rollTier());
-}
-// Rare cards (the Anvil) turn up a quarter as often as the rest.
-const stockPick = ks => wpick(ks.map(k=>[k,DB[k].rare?TUNE.rareWeight:1]));
-function marketCard(){
-  if(merge()){ const k=stockPick(stocked().filter(k=>k!=='coin')); return mk(k,rollLevel(k)); }
-  return mk(pick(splice()?CORE:KINGDOM),rollTier());
-}
-function ensureCoin(){ if(!G.market.some(c=>c&&c.t==='treasure')) G.market[G.market.length-1]=randomTreasure(); }
-function newMarket(){
-  G.market=[]; for(let i=0;i<TUNE.marketSize-1;i++) G.market.push(marketCard());
-  G.market.splice(rnd(TUNE.marketSize),0,randomTreasure());
-}
-function cycleMarket(){
-  const gone=G.market.splice(0,2);
-  G.market.push(marketCard(),marketCard()); ensureCoin();
-  log(`Market rotates: ${gone.map(cname).join(' and ')} leave the stalls.`);
-}
-function refillSlot(i,wasT){ G.market[i]= wasT?randomTreasure():marketCard(); ensureCoin(); }
-
-/* ---------- deck ---------- */
-function popDeck(){
-  if(!G.deck.length){ if(!G.discard.length)return null;
-    G.deck=shuffle(G.discard.slice()); G.discard=[]; log('You shuffle your discard pile back into your deck.'); }
-  return G.deck.shift()||null;
-}
-function draw(n){
-  let g=0, eaten=0, worm=null;
-  for(let i=0;i<n;i++){
-    worm=G.acting>0&&G.slots.find(t=>t&&t.kind==='leech');
-    if(worm){ worm.prog++; eaten++; fx('hit',worm); if(isDone(worm)){ log(`${worm.n} eats ${plural(eaten,'draw')} and is full.`,'hl'); eaten=0; completeThreat(worm); } continue; }
-    const c=popDeck(); if(!c)break; G.hand.push(c); g++;
-  }
-  if(eaten&&worm) log(`${worm.n} eats ${plural(eaten,'draw')} (${worm.prog}/${worm.need}).`,'bad');
-  return g;
-}
-// Card effects (Actions, splices) draw through here, so the Bookworm can tell them from your hand.
-async function acting(fn){ G.acting=(G.acting||0)+1; try{ return await fn(); } finally{ G.acting--; } }
-function gatherDeck(){
-  G.deck=shuffle([...G.deck,...G.hand,...G.discard,...G.inPlay]);
-  G.hand=[]; G.discard=[]; G.inPlay=[];
-  G.deck.forEach(c=>{ c.frozen=false; c.ice=0; });
-}
-function trashCard(c,quiet){
-  G.trash.push(c);
-  const scrap=hasJ('scrapper'); if(scrap) C(2);
-  if(!quiet||scrap) log(`${cname(c)} is trashed${scrap?' (+2 Scrapper)':''}.`);
-}
-// Jinxes and Rubble arriving from threats — a Night Watch in hand turns them away.
-const junkName = (key,n) => key==='jinx' ? plural(n,'Jinx','Jinxes') : plural(n,DB[key].n);
-function gainJunk(key,n,where='discard'){
-  if(n<=0) return;
-  if(G.hand.some(c=>c.key==='nightwatch')){
-    for(let i=0;i<n;i++) trashCard(mk(key),true);
-    log(`Night Watch turns away ${junkName(key,n)}.`,'good'); return;
-  }
-  for(let i=0;i<n;i++){ const c=mk(key);
-    if(where==='deck') G.deck.splice(rnd(G.deck.length+1),0,c); else G.discard.push(c); }
-  log(`${junkName(key,n)} land${n===1?'s':''} in your ${where==='deck'?'draw pile':'discard pile'}.`,'bad');
-}
-
-function tval(c){
-  let v = c.key==='treasury'
-    ? tierMult(c.lv)*(G.inPlay.filter(x=>x.t==='treasure'&&x!==c).length+1)
-    : DB[c.key].merge ? DB[c.key].eff(c.lv).coin
-    : DB[c.key].v*tierMult(c.lv)+(c.grow||0);
-  v=Math.max(0,v+(modCount(c,'coin')-modCount(c,'rust'))*tierMult(c.lv));
-  if(hasJ('midas')) v+=1;
-  if(hasJ('gilded')&&cname(c)==='Copper') v+=2;
-  const vin=G.jokers.find(j=>j.key==='vintage'); if(vin) v+=vin.age;
-  if(hasJ('golden')) v*=2;
-  if(hasJ('glass')) v*=3;
-  if(hasJ('minimal')&&deckSize()<=15) v*=2;
-  return v;
-}
-
-/* ==========================================================
-   WAVES
-   ========================================================== */
-function startWave(w){
-  G.wave=w; G.turnInWave=0; G.wallUsed=false;
-  gatherDeck();
-  const n=TUNE.threatsInWave(w), elite=w%TUNE.eliteEvery===0;
-  const pool=THREAT_KEYS.filter(k=>w>=3||!THREATS[k].late);
-  G.queue=[]; for(let i=0;i<n;i++) G.queue.push(newThreat(pick(pool),w,elite&&i===n-1));
-  G.waveTotal=n;
-  const prevTier=w>1?TUNE.maxTier(w-1):0;
-  newMarket();
-  log(`Wave ${w}`,'wave'); fx('wave',w);
-  log(`${plural(n,'threat')} approach${elite?', led by an Elite':''}.`,'hl');
-  if(!merge()&&TUNE.maxTier(w)>prevTier) log(`The market now stocks ${tierName(TUNE.maxTier(w))} tier cards.`,'good');
-  spawnThreat();
-  G.next={actions:0,buys:0,coin:0};
-  draw(handSize());
-  startTurn();
-}
-
-async function endWave(){
-  G.phase='camp';
-  log(`Wave ${G.wave} cleared!`,'good');
-  saveBest(G.wave);
-  G.jokers.forEach(j=>j.age++);
-  gatherDeck(); G.coin=0; G.actions=0; G.buys=0; render();
-  G.camp={step:'draft',offers:rollJokers(G.wave%TUNE.eliteEvery===0?4:3)};
-  saveNow();
-  await sleep(350);
-  await campFlow();
-}
-// Between waves: the charm draft, then the Inn. Saved before each, so a reload resumes at the same step
-// with the same offers.
-async function campFlow(){
-  if(G.camp.step==='draft'){ await jokerDraft(G.camp.offers); G.camp.step='inn'; saveNow(); }
-  await campService();
-  G.camp=null; G.phase='turn';
-  startWave(G.wave+1);
-}
-
-function rollJokers(n){
-  const cand=Object.keys(JOKERS).filter(k=>!hasJ(k)&&JOKERS[k].off!==G.mode&&(!JOKERS[k].only||JOKERS[k].only===G.mode)), out=[];
-  while(out.length<n&&cand.length){
-    const k=wpick(cand.map(k=>[k,RARITY[JOKERS[k].r]]));
-    out.push(k); pull(cand,k);
-  }
-  return out;
-}
-
-async function jokerDraft(offers){
-  if(!offers.length) return;
-  const full=G.jokers.length>=TUNE.jokerSlots;
-  const k=await chooseJoker(offers,`Wave ${G.wave} cleared — choose a charm`,
-    full?`Your ${TUNE.jokerSlots} charm slots are full. Taking one means giving another away.`
-        :`Charm slots ${G.jokers.length}/${TUNE.jokerSlots}.${G.wave%TUNE.eliteEvery===0?' The Elite fell: an extra charm is on offer.':''}`);
-  if(!k) return;
-  if(full){
-    const out=await chooseJoker(G.jokers.map(j=>j.key),`Give up a charm for ${JOKERS[k].n}?`,'Pick the charm to let go.',{skip:'Keep my charms'});
-    if(!out){ log(`You pass on ${JOKERS[k].n}.`); return; }
-    G.jokers=G.jokers.filter(j=>j.key!==out);
-    log(`${JOKERS[out].n} is given away.`);
-  }
-  G.jokers.push({key:k,age:0});
-  log(`${JOKERS[k].art} ${JOKERS[k].n} joins your charms.`,'good');
-  render();
-}
-
-function deckSummary(){
-  const all=allCards(), by=t=>all.filter(c=>c.t===t).length;
-  const junk=all.filter(c=>DB[c.key].noLv).length;
-  return `${all.length} cards — ${by('treasure')} Treasures, ${by('action')} Actions, ${junk} junk`;
-}
-
-// Every service has a Back button: backing out of one returns to the Inn to pick another.
-async function campService(){
+function newPiece(P,id){ const c=cardOf(P,id); const hp=pieceHp(c); return {id,hp,maxHp:hp,fill:0,fires:0,sealed:false}; }
+// March past what you already outclass, stopping at an unseen caravan, an unbeaten boss, or the first real fight.
+function tripAdvance(P,T){
+  const p=estPower(P); T.marchList=[];
   for(;;){
-    const heal=['heal',`❤ Rest — recover 2 hearts (${G.hearts}/${TUNE.hearts})`];
-    const o=await chooseOption('🍺 The Inn',`${deckSummary()}. Choose one service before wave ${G.wave+1}.`,[
-      ['purge','🔥 Clear out — trash up to 2 cards'],
-      ...(merge()?[['fuse','🧬 Merge — combine two different cards into one that does both'],
-                   ['copy',`📜 Copyist — copy a card up to level ${TUNE.copyMax+1}`],heal]
-                :[['temper','⚒ Blacksmith — upgrade a card one tier'],['copy','📜 Copyist — copy a card']]),
-      ...(splice()?[['mend','🩹 Mender — remove the scars from a card'],heal]:[]),
-      ['rest','Move on']]);
-    if(await innService(o)!==false) return;
+    if(isCaravanF(T.f)&&!P.caravans[T.f]){ T.phase='caravan'; T.offer=caravanOffer(P,T.f); return; }
+    const boss=isBossF(T.f);
+    if(boss&&!P.bosses[T.f]) break;
+    if(p/enemyHp(P,T.f)<TUNE.marchR) break;
+    const b=bounty(P,T.f), hp=enemyHp(P,T.f);
+    T.coin=num(T.coin+b); T.marchList.push({f:T.f,key:enemyKey(P,T.f),hp,over:p/3/hp,coin:b}); T.stat.marched++;
+    if(T.f>P.deepest) P.deepest=T.f;
+    T.f++;
   }
+  T.phase='prefight';
 }
-// False when the player backed out.
-async function innService(o){
-  const sorted=()=>G.deck.slice().sort((a,b)=>cname(a).localeCompare(cname(b)));
-  const pick=async(pool,o)=>{ const s=await chooseCards(pool,{min:1,max:1,back:'Back',...o}); return s&&s[0]; };
-  if(o==='fuse') return fuseService(sorted());
-  if(o==='purge'){
-    const s=await chooseCards(sorted(),{min:1,max:2,back:'Back',why:'purge',title:'Clear out',sub:'Trash up to 2 cards from your deck for good.'});
-    if(!s) return false;
-    s.forEach(c=>{pull(G.deck,c);trashCard(c);});
-  } else if(o==='temper'){
-    const c=await pick(sorted().filter(c=>!DB[c.key].noLv),{why:'temper',title:'Blacksmith',sub:'Upgrade one card a tier.',badge:c=>DB[c.key].n+plus(c.lv+1)});
-    if(!c) return false;
-    const was=cname(c); c.lv++; log(`${was} is tempered into ${cname(c)}.`,'good');
-  } else if(o==='copy'){
-    const c=await pick(sorted().filter(c=>!isJunk(c)&&(!merge()||c.lv<=TUNE.copyMax)),{why:'copy',title:'Copyist',sub:'Add a copy of one card to your deck.'});
-    if(!c) return false;
-    G.deck.push(clone(c)); log(`You copy ${cname(c)}.`,'good');
-  } else if(o==='mend'){
-    const c=await pick(sorted().filter(c=>c.mods.some(m=>SPLICES[m].scar)),{why:'mend',title:'Mender',sub:'Remove every scar from one card.'});
-    if(!c) return false;
-    c.mods=c.mods.filter(m=>!SPLICES[m].scar); log(`${cname(c)} is mended.`,'good');
-  } else if(o==='heal'){
-    G.hearts=Math.min(TUNE.hearts,G.hearts+2); log(`You rest. The town has ${plural(G.hearts,'heart')}.`,'good');
-  }
+/* Caravan: three cards, level set by how far you have come, so the shop scales with you. One chance, one purchase. */
+function caravanOffer(P,f){
+  const lvl=caravanLevel(P), pool=SHOP_POOL.slice(), out=[];
+  for(let i=0;i<3;i++){ const j=Math.floor(hash01(P.seed+i*97,f)*pool.length); out.push({key:pool.splice(j,1)[0],lvl}); }
+  return {f,items:out,price:TUNE.caravanPrice*bounty(P,f-1)};
 }
+function caravanLevel(P){ const ls=P.cards.filter(c=>c.key!=='deed').map(c=>c.lvl).sort((a,b)=>b-a).slice(0,6); return Math.max(0,Math.floor(ls.reduce((a,b)=>a+b,0)/Math.max(1,ls.length))-2); }
+function caravanBuy(P,T,i){
+  const o=T.offer; if(!o||i<0||i>=o.items.length) return false;
+  const have=T.coin+P.coin; if(have<o.price) return false;
+  const fromTrip=Math.min(T.coin,o.price); T.coin-=fromTrip; P.coin-=o.price-fromTrip;
+  const it=o.items[i]; addCard(P,it.key,it.lvl,false);
+  P.caravans[T.f]=1; T.offer=null; P.bursts++; tripAdvance(P,T); return true;
+}
+function caravanLeave(P,T){ P.caravans[T.f]=1; T.offer=null; tripAdvance(P,T); }
 
-/* ==========================================================
-   FUSING — merge mode, at the Inn: two different cards become
-   one that does both and costs their average ⚡, rounded up.
-   Each fusion is a card of its own (its key names its parts),
-   so two copies of one can still be merged by an Anvil, which
-   raises every part a level.
-   ========================================================== */
-const fusable = c => !isJunk(c) && DB[c.key].merge && !DB[c.key].noMerge && !DB[c.key].noFuse && !DB[c.key].stays;
-const partsOf = c => DB[c.key].fused ? DB[c.key].fused.map(p=>({key:p.key,lv:p.lv+c.lv})) : [{key:c.key,lv:c.lv}];
-// Effects add up; multipliers multiply, replays take the larger, strikes cap at 100%.
-function combineEff(es){
-  const o={};
-  for(const e of es) for(const [k,v] of Object.entries(e)){
-    if(o[k]==null) o[k]=v;
-    else if(k==='mult')   o[k]=Math.round(o[k]*v*100)/100;
-    else if(k==='replay') o[k]=Math.max(o[k],v);
-    else if(k==='strike') o[k]=Math.min(100,o[k]+v);
-    else o[k]+=v;
+function beginFight(P,T,ov){
+  const f=T.f, key=ov?ov.key:enemyKey(P,f), def=ENEMIES[key], hp0=ov?ov.hp:enemyHp(P,f);
+  const deck=packList(P).filter(c=>!T.board.some(b=>b.id===c.id)).map(c=>c.id);
+  const F={key,f,enemy:{hp:hp0,maxHp:hp0,poison:0,hex:0,wardUp:0,atk:ov?ov.atk:enemyAtk(f)},turn:0,energy:0,block:0,mag:0,aim:0,whet:0,queue:0,pumping:false,
+    draw:deck,hand:[],disc:[],boost:{},over:null,intent:[],rng:(T.rngSeed+f*131+T.stat.fights*17)|0,fightStart:T.stat.turns};
+  T.F=F; T.phase='fight'; T.stat.fights++;
+  shuffle(F,F.draw);
+  for(const b of T.board){ b.fires=0; b.sealed=false; b.fill=has(cardOf(P,b.id),'primed')?pieceNeed(cardOf(P,b.id))-1:b.fill; }
+  startTurn(P,T);
+}
+function shuffle(F,a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(rng32(F,'rng')*(i+1)); const t=a[i];a[i]=a[j];a[j]=t; } }
+function drawCards(F,n,reshuffle){
+  while(n>0){
+    if(!F.draw.length){ if(!reshuffle||!F.disc.length) return; F.draw=F.disc.filter(id=>id!==-1); F.disc=[]; shuffle(F,F.draw); if(!F.draw.length) return; }
+    F.hand.push(F.draw.pop()); n--;
   }
-  return o;
 }
-function fusionOf(a,b){
-  const parts=[...partsOf(a),...partsOf(b)].sort((x,y)=>(x.key+x.lv).localeCompare(y.key+y.lv));
-  return mk(defFusion(parts,Math.ceil((actCost(a)+actCost(b))/2)));
+function startTurn(P,T){
+  const F=T.F, def=ENEMIES[F.key];
+  F.turn++; F.energy=P.energy; F.block=0; F.whet=0; F.aim=0; T.stat.turns++;
+  F.enemy.wardUp=def.ward||0;
+  for(const b of T.board){ b.fires=0; b.sealed=false; }
+  const kept=F.hand.length; drawCards(F,Math.max(0,P.hand-kept),true);
+  F.intent=def.intent(F.turn);
+  for(const a of F.intent) if(a.seal&&T.board.length) T.board[0].sealed=true;
+  const m=F.mag; F.mag=0; addPowder(P,T,m+P.wheel+(TUNE.feed==='wheel'?3:0),'wheel');
 }
-// A saved run's fusions are rebuilt from their keys: fz:<key>.<level>+…:<⚡ cost>.
-function ensureFusion(k){
-  const m=/^fz:(.+):(\d+)$/.exec(k); if(!m) return;
-  defFusion(m[1].split('+').map(s=>{ const i=s.lastIndexOf('.'); return {key:s.slice(0,i),lv:+s.slice(i+1)}; }),+m[2]);
+function feedTarget(P,T){
+  const F=T.F, ok=b=>!b.sealed&&b.fires<(has(cardOf(P,b.id),'twin')?2:1);
+  if(F.aim>0){ for(let i=T.board.length-1;i>=0;i--) if(ok(T.board[i])){ F.aim--; return T.board[i]; } }
+  for(const b of T.board) if(ok(b)) return b;
+  return null;
 }
-function defFusion(parts,pc){
-  const k='fz:'+parts.map(p=>p.key+'.'+p.lv).join('+')+':'+pc;
-  if(!DB[k]){
-    const ds=parts.map(p=>DB[p.key]);
-    def(k,{n:'Fusion',merge:true,fused:parts,noMarket:true,c:ds.reduce((s,d)=>s+d.c,0),step:0,cost:pc,pc:()=>pc,fx:mergeFx,
-      t:ds.some(d=>d.t==='action')?'action':'treasure', r:ds.some(d=>d.r), react:(ds.find(d=>d.react)||{}).react,
-      art:parts.map(p=>cart({key:p.key,lv:p.lv})).join(''),
-      eff:l=>combineEff(parts.map(p=>DB[p.key].eff(p.lv+l)))});
+function addPowder(P,T,n,src){
+  const F=T.F; F.queue+=n; if(F.pumping) return; F.pumping=true;
+  while(F.queue>0){
+    F.queue--; if(F.over) continue;
+    const b=feedTarget(P,T);
+    if(!b){ if(F.mag<TUNE.magBase+P.mag) F.mag++; else { T.stat.waste++; if(T.ev) T.ev.push({t:'waste'}); } continue; }
+    b.fill++; if(T.ev) T.ev.push({t:'feed',id:b.id});
+    if(b.fill>=pieceNeed(cardOf(P,b.id))){ b.fill=0; b.fires++; firePiece(P,T,b); }
   }
-  return k;
+  F.pumping=false;
 }
-async function fuseService(deck){
-  const pool=deck.filter(fusable);
-  const sub='The new card does what both did and costs their average ⚡, rounded up.';
-  const a=(await chooseCards(pool,{min:1,max:1,back:'Back',why:'fuse',title:'Merge — pick the first card',sub}) || [])[0];
-  if(!a) return false;
-  const b=(await chooseCards(pool.filter(c=>c!==a),{min:1,max:1,back:'Back',why:'fuse2',title:`Merge ${cname(a)} with…`,sub,
-    badge:c=>`⚡ ${Math.ceil((actCost(a)+actCost(c))/2)}`}) || [])[0];
-  if(!b) return false;
-  const f=fusionOf(a,b);
-  if(!await confirmCard(f,'Merge these two?',`${cname(a)} + ${cname(b)} become this card. It costs ${actN(actCost(f))} to play.`,'Merge','Back')) return false;
-  pull(G.deck,a); pull(G.deck,b); G.deck.push(f);
-  log(`🧬 ${cname(a)} and ${cname(b)} are merged into ${cname(f)}.`,'good');
+function firePiece(P,T,b){
+  const F=T.F, c=cardOf(P,b.id), d=CARDS[c.key]; let mul=F.whet||1; F.whet=0;
+  if(TUNE.junk==='hold') for(const id of F.hand) if(cardOf(P,id).key==='deed') mul*=1.5;
+  if(T.ev) T.ev.push({t:'fire',id:b.id});
+  for(const [k,a] of d.fx) applyFx(P,T,k,a,c,mul,'board',b);
+  if(has(c,'relay')) addPowder(P,T,1,'relay');
 }
-
-/* ==========================================================
-   MERGING — two identical cards become one a level higher.
-   ========================================================== */
-const twins = (a,b) => a.key===b.key && a.lv===b.lv;
-const nextName = c => cname({key:c.key,lv:c.lv+1});
-// One card per mergeable pair (four Coppers offer two), frozen cards and junk left out. Anvils merge only with Anvils.
-function pairsIn(cards){
-  const free=cards.filter(c=>DB[c.key].merge&&!DB[c.key].noMerge&&!isFrozen(c)), out=[], used=new Set();
-  for(const c of free){
-    if(used.has(c)) continue;
-    const t=free.find(x=>x!==c&&!used.has(x)&&twins(x,c));
-    if(t){ used.add(c); used.add(t); out.push(c); }
+function applyFx(P,T,kind,base,c,mul,src,b){
+  const F=T.F; if(F.over) return;
+  const amt=fxAmount(c,kind,base)*(mul||1);
+  switch(kind){
+    case 'dmg': hitEnemy(P,T,amt,src,c); break;
+    case 'block': F.block=num(F.block+amt); if(T.ev) T.ev.push({t:'block',n:amt}); break;
+    case 'poison': F.enemy.poison=num(F.enemy.poison+amt); if(T.ev) T.ev.push({t:'poison',n:amt}); break;
+    case 'hex': F.enemy.hex+=amt/(mul||1); break;
+    case 'coin': { const g=bounty(P,F.f)*amt; T.coin=num(T.coin+g); if(T.ev) T.ev.push({t:'coin',n:g}); break; }
+    case 'powder': addPowder(P,T,amt/(mul||1),src); break;
+    case 'draw': drawCards(F,amt/(mul||1),false); break;
+    case 'energy': F.energy+=amt/(mul||1); break;
+    case 'repair': for(const x of T.board) x.hp=Math.min(x.maxHp,x.hp+x.maxHp*base); break;
+    case 'selfrepair': b.hp=Math.min(b.maxHp,b.hp+b.maxHp*base); break;
+    case 'whet': F.whet=3; break;
+    case 'aim': F.aim+=base; break;
+    case 'trigger': { const x=T.board.find(y=>!y.sealed&&y.fires<(has(cardOf(P,y.id),'twin')?2:1)); if(x){ x.fires++; firePiece(P,T,x); } break; }
+    case 'rotate': if(T.board.length>1) T.board.push(T.board.shift()); break;
+    case 'anvil': { let top=null,tv=0; for(const id of F.hand){ const o=cardOf(P,id); if(o.id===c.id||CARDS[o.key].junk||CARDS[o.key].piece) continue; const v=CARDS[o.key].fx.reduce((s,[k,x])=>s+((k==='dmg'||k==='block'||k==='poison')?fxAmount(o,k,x):0),0); if(v>tv){tv=v;top=o;} } if(top) F.boost[top.id]=(F.boost[top.id]||1)*3; break; }
   }
+}
+function hitEnemy(P,T,amt,src,c){
+  const F=T.F, e=F.enemy;
+  if(e.wardUp>0){ e.wardUp--; if(T.ev) T.ev.push({t:'warded'}); return; }
+  e.hp=num(e.hp-amt);
+  if(src==='board') T.stat.dmgBoard=num(T.stat.dmgBoard+amt); else T.stat.dmgHand=num(T.stat.dmgHand+amt);
+  if(T.ev) T.ev.push({t:'dmg',n:amt,src,over:e.hp<=0?amt/Math.max(1,e.maxHp):0});
+  checkWin(P,T);
+}
+function checkWin(P,T){
+  const F=T.F; if(F.over||F.enemy.hp>0) return;
+  F.over='win'; const b=bounty(P,F.f); T.coin=num(T.coin+b); F.reward=b;
+  const boss=isBossF(F.f), first=boss&&!P.bosses[F.f];
+  if(F.f>P.deepest) P.deepest=F.f;
+  if(boss) P.bosses[F.f]=1;
+  T.hp=Math.min(T.maxHp,T.hp+T.maxHp*TUNE.healAfter);
+  for(const b2 of T.board){ b2.hp=Math.min(b2.maxHp,b2.hp+b2.maxHp*TUNE.repairAfter); }
+  T.f++; T.phase=first?'bossreward':'postfight';
+  if(first){ T.offer={rewards:rewardOffer(P,F.f)}; P.bursts++; }
+  if(P.nemesis&&P.nemesis.f===F.f) T.nemesisFell=true;
+}
+function rewardOffer(P,f){
+  const ok=Object.keys(REWARDS).filter(k=>!P.rewards.includes(k)&&(!REWARDS[k].after||P.rewards.includes(REWARDS[k].after)));
+  const out=[],pool=ok.slice();
+  if(pool.includes('slot1')&&!P.rewards.length){ out.push('slot1'); pool.splice(pool.indexOf('slot1'),1); }
+  for(let i=0;out.length<3&&pool.length;i++){ const j=Math.floor(hash01(P.seed+i*53,f)*pool.length); out.push(pool.splice(j,1)[0]); }
   return out;
 }
-// The new card keeps no splices; the market starts stocking its level.
-function mergePair(a,b,to){
-  if(!a||!b) return null;
-  for(const c of [a,b]) [G.discard,G.inPlay,G.deck,G.hand].some(p=>pull(p,c));
-  const m=mk(a.key,a.lv+1); to.push(m);
-  G.merges++;
-  const was=G.unlock[a.key]||0;
-  if(m.lv>was&&!DB[m.key].noMarket){ G.unlock[a.key]=m.lv;
-    if(m.lv-TUNE.marketLag>Math.max(0,was-TUNE.marketLag)) log(`The market now stocks ${cname({key:m.key,lv:m.lv-TUNE.marketLag})}.`,'good'); }
-  log(`🔨 ${cname(a)} + ${cname(b)} → ${cname(m)}.`,'good');
-  return m;
-}
-// The Anvil merges from anywhere: copies in the discard pile and in play go first, then the draw pile, then the hand.
-async function mergeAnywhere(n,title){
-  const piles=[G.discard,G.inPlay,G.deck,G.hand], pool=pairsIn(piles.flat());
-  if(!pool.length){ log('Nothing to merge: you have no two identical cards.'); return; }
-  const ch=await chooseCards(pool,{min:0,max:n,why:'merge',title,badge:c=>'→ '+nextName(c),
-    sub:`Pick ${n===1?'a pair':`up to ${n} pairs`} to merge. Copies in your discard pile and cards you've played are used first, then your draw pile, then your hand. The new card goes to your discard pile.`});
-  for(const a of ch){
-    const [x,y]=piles.flat().filter(c=>twins(c,a)&&!isFrozen(c));
-    mergePair(x,y,G.discard);
-  }
-}
+function takeReward(P,T,key){ P.rewards.push(key); REWARDS[key].on(P); T.offer=null; T.phase='postfight'; }
 
-// Merge mode: a cleared threat leaves spoils — pick one of a few free cards, always level one however strong you are.
-async function claimSpoils(p){
-  const left=stocked(), keys=[];
-  while(left.length&&keys.length<TUNE.spoils+(p.elite?1:0)){ const k=stockPick(left); keys.push(k); pull(left,k); }
-  const offers=keys.map(k=>mk(k,0));
-  const s=await chooseCards(offers,{min:0,max:1,why:'spoils',title:`${p.from} cleared — take a card`,sub:'It goes to your discard pile.'});
-  if(s[0]){ G.discard.push(s[0]); log(`You take ${cname(s[0])}.`,'good'); }
-}
-
-/* ==========================================================
-   THREAT FLOW
-   ========================================================== */
-function spawnThreat(){
-  if(!G.queue.length) return true;
-  const idx=G.slots.findIndex(s=>s===null);
-  if(idx<0){
-    const t=G.queue[0];
-    lose(`${t.n} arrives with nowhere to stand`,
-         `All ${TUNE.slots} slots were still occupied when the next threat came due.`);
-    return false;
-  }
-  const t=G.queue.shift();
-  t.fresh=true; t.age=0; t.cd=fused()?fuseOf(t):effEvery(t);
-  G.slots[idx]=t;
-  log(`${t.art} ${t.n} takes slot ${idx+1}.`,'bad');
-  if(t.coffin) entomb(t,t.coffin);
+/* ---------- player actions: {a:'play',i,at} {a:'burn',i} {a:'swap',i} {a:'end'} ---------- */
+function canPlay(P,T,i){
+  const F=T.F, c=cardOf(P,F.hand[i]), d=CARDS[c.key];
+  if(d.junk||F.energy<cardCost(c)) return false;
+  if(d.piece&&T.board.length>=slotsOpen(P)) return false;
   return true;
 }
-
-// Ice Coffin: seal your most valuable cards, wherever they are, until this threat leaves.
-function entomb(t,n){
-  for(let i=0;i<n;i++){
-    const c=allCards().filter(c=>!isJunk(c)&&!iced(c)).sort((a,b)=>cardWorth(b)-cardWorth(a))[0];
-    if(!c) return;
-    c.ice=t.id;
-    log(`🧊 ${t.n} seals your ${cname(c)} in an Ice Coffin until it leaves.`,'bad');
-  }
+function canBurn(P,T,i){ return TUNE.feed==='stoke'||CARDS[cardOf(P,T.F.hand[i]).key].junk; }
+function doAction(P,T,m){
+  const F=T.F; if(!F||F.over) return false;
+  if(m.a==='play'){
+    if(!canPlay(P,T,m.i)) return false;
+    const id=F.hand[m.i], c=cardOf(P,id), d=CARDS[c.key]; F.energy-=cardCost(c); F.hand.splice(m.i,1);
+    if(d.piece){ const at=m.at==null?T.board.length:clamp(m.at,0,T.board.length); T.board.splice(at,0,newPiece(P,id)); if(T.ev) T.ev.push({t:'deploy',id}); return true; }
+    const mul=F.boost[id]||1, reps=has(c,'echo')?2:1;
+    for(let r=0;r<reps;r++) for(const [k,a] of d.fx) applyFx(P,T,k,a,c,mul,'hand');
+    if(has(c,'swift')) drawCards(F,1,false);
+    if(!d.temp) F.disc.push(id);
+  } else if(m.a==='burn'){
+    if(!canBurn(P,T,m.i)) return false;
+    const id=F.hand[m.i], c=cardOf(P,id), d=CARDS[c.key]; F.hand.splice(m.i,1);
+    if(!d.temp) F.disc.push(id);
+    const n=stokeOf(c); if(n) addPowder(P,T,n,'burn');
+    if(T.ev) T.ev.push({t:'burn',n});
+  } else if(m.a==='swap'){
+    if(F.energy<TUNE.swapCost||m.i<0||m.i+1>=T.board.length) return false;
+    F.energy-=TUNE.swapCost; const b=T.board; const t=b[m.i]; b[m.i]=b[m.i+1]; b[m.i+1]=t;
+  } else if(m.a==='end'){ endTurn(P,T); }
+  return true;
 }
-function thaw(t){
-  const sealed=allCards().filter(c=>c.ice===t.id);
-  sealed.forEach(c=>{ c.ice=0; });
-  if(sealed.length) log(`The ice cracks: ${sealed.map(cname).join(', ')} ${sealed.length===1?'is':'are'} free.`,'good');
+function endTurn(P,T){
+  const F=T.F, def=ENEMIES[F.key], e=F.enemy;
+  // Hand goes to the discard, except what stays (Wards) and what vanishes (Rubble stays too: it clogs until burned).
+  const keep=[]; for(const id of F.hand){ const c=cardOf(P,id), d=CARDS[c.key]; if(d.stays||d.temp) keep.push(id); else F.disc.push(id); }
+  F.hand=keep;
+  // Blight, then wards in the discard.
+  if(e.poison>0){ const n=e.poison; e.hp=num(e.hp-n); T.stat.dmgBoard=num(T.stat.dmgBoard+n); if(T.ev) T.ev.push({t:'dmg',n,src:'poison'}); e.poison=e.poison<1?0:e.poison/2; checkWin(P,T); if(F.over) return; }
+  let wards=0; for(const id of F.disc) if(cardOf(P,id).key==='ward') wards++;
+  if(wards){ e.hp=num(e.hp-e.maxHp*wards*(def.boss?.01:.03)); checkWin(P,T); if(F.over) return; }
+  // Enemy acts.
+  enemyActs(P,T);
+  if(F.over) return;
+  if(def.flee&&F.turn>=def.flee){ T.coin=T.coin*.9; F.over='fled'; T.f++; T.phase='postfight'; if(T.ev) T.ev.push({t:'fled'}); return; }
+  startTurn(P,T);
 }
-
-function completeThreat(t){
-  const i=G.slots.indexOf(t); if(i<0) return;
-  G.slots[i]=null; thaw(t);
-  G.runCleared++;
-  log(`${t.n} cleared.`,'good'); fx('clear',t);
-  gainJunk('rubble',1);
-  if(hasJ('bounty')){ draw(1); A(1); C(2); log(`Bounty Hunter pays out: +1 Card, +${actN(1)}, +2 Coin.`,'good'); }
-  if(fused()) G.pending.push({from:t.n, swift:t.age<=1, elite:t.elite});
-}
-
-/* ==========================================================
-   SPLICING
-   ========================================================== */
-function canSplice(c,k){
-  const S=SPLICES[k];
-  if(isJunk(c)) return false;
-  if(S.only&&c.t!==S.only) return false;
-  if(S.once&&hasMod(c,k)) return false;
-  return S.scar || slotsUsed(c)<TUNE.spliceSlots(c);
-}
-function rollSplices(n,elite){
-  const cand=Object.keys(SPLICES).filter(k=>!SPLICES[k].scar), out=[];
-  while(out.length<n&&cand.length){ const k=wpick(cand.map(k=>[k,RARITY[SPLICES[k].r]])); out.push(k); pull(cand,k); }
-  if(elite&&!out.some(k=>SPLICES[k].r==='rare')) out[out.length-1]=pick(cand.filter(k=>SPLICES[k].r==='rare'));
-  return out;
-}
-async function claimSplice(p){
-  const k=await chooseSplice(rollSplices(p.swift?4:3,p.elite),`${p.from} cleared — choose a splice`,
-    (p.swift?'Swift clear: an extra option. ':'')+(p.elite?'Elite: a rare one is guaranteed. ':'')+'Pick a keyword, then a card to graft it onto.');
-  if(!k) return;
-  const S=SPLICES[k];
-  const elig=allCards().filter(c=>canSplice(c,k)).sort((a,b)=>cname(a).localeCompare(cname(b)));
-  if(!elig.length){ log(`No card can take ${S.n}.`); return; }
-  const s=await chooseCards(elig,{min:0,max:1,why:'splice',title:`Splice ${S.art} ${S.n}`,sub:`${spliceText(k)}. Cards hold ${TUNE.spliceSlots({lv:0})} splices (more when upgraded).`,
-    badge:c=>`${slotsUsed(c)}/${TUNE.spliceSlots(c)}`});
-  if(s[0]){ s[0].mods.push(k); log(`${S.art} ${cname(s[0])} is now ${S.n}.`,'good'); }
-}
-function scarCard(t){
-  const k=t.scar||wpick([['rust',50],['heavy',30],['brittle',20]]);
-  const cand=allCards().filter(c=>canSplice(c,k));
-  if(!cand.length) return;
-  const c=t.scarBest ? cand.sort((a,b)=>cardWorth(b)-cardWorth(a))[0] : pick(cand); c.mods.push(k);
-  log(`${t.n} scars your ${cname(c)}: ${SPLICES[k].art} ${SPLICES[k].n} (${spliceText(k)}).`,'bad');
-}
-// Resolve rewards earned mid-action, then end the wave if the board is clear. True if the wave ended.
-async function settle(){
-  while(G.pending.length&&!G.over){ const p=G.pending.shift(); await (merge()?claimSpoils(p):claimSplice(p)); render(); }
-  if(!G.over&&G.phase==='turn'&&waveCleared()){ await endWave(); return true; }
-  return false;
-}
-// A fuse runs out: the threat attacks once, costs hearts and leaves (and in splice mode scars a card).
-async function detonate(t){
-  log(`💥 ${t.art} ${t.n} detonates!`,'bad');
-  t.detonating=true;
-  const safe=await resolveAttack(t);
-  const i=G.slots.indexOf(t); if(i>=0){ G.slots[i]=null; thaw(t); }
-  if(safe) return;
-  if(splice()) scarCard(t);
-  const dmg=t.elite?2:1; G.hearts-=dmg; fx('hurt');
-  log(`The town loses ${plural(dmg,'heart')} (${Math.max(0,G.hearts)} left).`,'bad');
-  if(G.hearts<=0) lose('The town has lost heart',`${t.n} was the last straw.`);
-}
-const urgent = () => G.slots.filter(Boolean).sort((a,b)=>a.cd-b.cd)[0];
-// Splice effects that fire each time a card resolves. Coin and Rusty on Treasures live in tval().
-function spliceFx(c){
-  for(const k of c.mods) switch(k){
-    case 'quick':  A(1); break;
-    case 'draw':   draw(1); break;
-    case 'trade':  B(1); break;
-    case 'coin':   if(c.t!=='treasure') C(1); break;
-    case 'rust':   if(c.t!=='treasure'){ if(G.phase==='attack') G.next.coin--; else G.coin=Math.max(0,G.coin-1); } break;
-    case 'grow':   if(c.t!=='treasure') C(c.grow||0); c.grow=(c.grow||0)+1; break;
-    case 'strike': { const t=urgent(); if(t){ log(`${cname(c)}'s barbs strike ${t.n}.`); strike(t,.15); } break; }
-  }
-}
-function afterPlay(c){
-  if(hasMod(c,'brittle')&&pull(G.inPlay,c)){ trashCard(c,true); log(`${cname(c)} crumbles to dust.`,'bad'); }
-}
-
-function isDone(t){
-  switch(t.kind){
-    case 'once_coin':   return t.need<=0;
-    case 'once_hybrid': return t.needCoin<=0&&t.needAct<=0;
-    case 'panic':       return t.curses<=0;
-    case 'upgrade':     return t.gotT>=t.needT&&t.gotA>=t.needA;
-  }
-  return t.prog>=t.need;
-}
-
-// Cards, reactions and charms "strike" a threat: knock a fraction off what it demands.
-function strike(t,frac){
-  if(!G.slots.includes(t)) return;
-  if(hasJ('eagle')) frac+=.15;
-  fx('hit',t);
-  const hit=x=>Math.max(1,Math.ceil(x*frac));
-  switch(t.kind){
-    case 'once_coin':   { const d=hit(t.need); t.need=Math.max(0,t.need-d); log(`${t.n}'s fee drops by ${d}.`,'good'); break; }
-    case 'once_hybrid': { const d=hit(t.needCoin); t.needCoin=Math.max(0,t.needCoin-d);
-                          if(t.needCoin<=0) t.needAct=0; log(`${t.n}'s price drops by ${d} coin.`,'good'); break; }
-    case 'panic':       { const d=hit(t.curses); t.curses=Math.max(0,t.curses-d); log(`${t.n} drops ${junkName('jinx',d)} from its terms.`,'good'); break; }
-    case 'upgrade':     { if(t.gotT<t.needT) t.gotT++; else t.gotA++; log(`${t.n} collapses a little.`,'good'); break; }
-    default:            { const d=hit(t.need-t.prog); t.prog=Math.min(t.need,t.prog+d); log(`${t.n} takes ${d} progress.`,'good'); }
-  }
-  if(isDone(t)) completeThreat(t);
-}
-
-// Merge mode: every Ward in the discard pile wears each threat down by a share of all it wants.
-// Fractions build up on the threat, so a small demand still goes down eventually.
-function wardTick(){
-  const wards=G.discard.filter(c=>DB[c.key].stays&&DB[c.key].eff(c.lv).ward), live=G.slots.filter(Boolean);
-  if(!wards.length||!live.length) return;
-  const frac=wards.reduce((s,c)=>s+DB[c.key].eff(c.lv).ward,0);
-  log(`🧿 ${wards.length>1?`${wards.length} Wards wear`:'Your Ward wears'} the threats down by ${pctTxt(frac)}.`,'good');
-  for(const t of live){
-    const f=t.full, total=t.kind==='once_coin'?f.need:t.kind==='once_hybrid'?f.needCoin:t.kind==='panic'?f.curses
-      :t.kind==='upgrade'?f.needT+f.needA:t.need;
-    t.worn=(t.worn||0)+frac*total; const d=Math.floor(t.worn); t.worn-=d;
-    if(!d) continue;
-    switch(t.kind){
-      case 'once_coin':   t.need=Math.max(0,t.need-d); break;
-      case 'once_hybrid': t.needCoin=Math.max(0,t.needCoin-d); if(!t.needCoin) t.needAct=0; break;
-      case 'panic':       t.curses=Math.max(0,t.curses-d); break;
-      case 'upgrade':     for(let i=0;i<d;i++){ if(t.gotT<t.needT) t.gotT++; else if(t.gotA<t.needA) t.gotA++; } break;
-      default:            t.prog=Math.min(t.need,t.prog+d);
+function enrage(F,def){ let m=1; if(F.turn>TUNE.enrageAfter) m*=Math.pow(TUNE.enrageX,F.turn-TUNE.enrageAfter); if(def.grow) m*=Math.pow(def.grow,F.turn-1); return m; }
+function intentHit(F,a){ return F.enemy.atk*a.hit*enrage(F,ENEMIES[F.key]); }
+function enemyActs(P,T){
+  const F=T.F, def=ENEMIES[F.key];
+  for(const a of F.intent){
+    if(a.drain){ if(T.board.length) T.board[0].fill=0; F.mag=0; if(T.ev) T.ev.push({t:'drain'}); }
+    if(a.rubble) for(let i=0;i<a.rubble;i++) F.hand.push(-1);
+    if(a.hit){
+      if(a.at==='all'){ for(const b of T.board.slice()) strike(P,T,intentHit(F,a),'one',b); strikeYou(P,T,intentHit(F,a)*.5); }
+      else strike(P,T,intentHit(F,a),a.at);
     }
-    fx('hit',t);
-    if(isDone(t)) completeThreat(t);
+    if(T.hp<=0){ T.hp=0; F.over='loss'; T.phase='defeat'; if(T.ev) T.ev.push({t:'dead'}); return; }
   }
 }
-
-// Ask the player to aim at a threat; with only one on the board, it is chosen for them.
-async function chooseThreat(title,sub){
-  const live=G.slots.filter(Boolean);
-  if(live.length<=1) return live[0]||null;
-  const k=await chooseOption(title,sub,live.map(t=>[t.id,`${t.art} ${t.n} — ${threatProgress(t).left}`]));
-  return live.find(t=>t.id===k)||null;
-}
-
-const coinMult = () => hasJ('interest')?2:1;
-const unitMult = () => hasJ('clerk')?2:1;
-const coinFor  = need => Math.ceil(need/coinMult());
-const unitsFor = need => Math.ceil(need/unitMult());
-
-function threatReady(t){
-  switch(t.kind){
-    case 'prog_coin':     return G.coin>0;
-    case 'once_coin':     return G.coin>=coinFor(t.need);
-    case 'prog_action':   return G.actions>0;
-    case 'prog_buy':      return G.buys>0;
-    case 'prog_discard':  return G.hand.length>0;
-    case 'sacrifice':     return G.hand.some(c=>c.key!=='rubble');
-    case 'scavenge':      return G.hand.length>0;
-    case 'banish':        return G.actionsPlayed>=t.need-t.prog;
-    case 'leech':         return false;
-    case 'panic':         return true;
-    case 'once_hybrid':   return G.coin>=coinFor(t.needCoin) && G.actions>=unitsFor(t.needAct);
-    case 'upgrade':       return G.hand.some(c=>(t.gotT<t.needT&&c.t==='treasure')||(t.gotA<t.needA&&c.t==='action'));
+function absorb(T,F,amt){ if(F.enemy.hex>0){ F.enemy.hex--; amt/=2; } const b=Math.min(F.block,amt); F.block-=b; T.stat.blocked=num(T.stat.blocked+b); return amt-b; }
+function strike(P,T,amt,at,only){
+  const F=T.F; let left=absorb(T,F,amt);
+  while(left>0){
+    let tgt=only||null;
+    if(!only){
+      if(at==='you'||!T.board.length) return strikeYou(P,T,left);
+      if(at==='left'){ tgt=T.board.find(b=>CARDS[cardOf(P,b.id).key].taunt)||T.board[0]; }
+      if(at==='right') tgt=T.board[T.board.length-1];
+    } else if(!T.board.includes(only)) return;
+    const hit=Math.min(left,tgt.hp); tgt.hp-=hit; left-=hit; if(T.ev) T.ev.push({t:'hurt',id:tgt.id,n:hit});
+    if(tgt.hp<=0){ T.board.splice(T.board.indexOf(tgt),1); F.disc.push(tgt.id); T.stat.lost++; if(T.ev) T.ev.push({t:'lost',id:tgt.id}); }
+    if(only) return;
   }
-  return false;
+}
+function strikeYou(P,T,amt){ const F=T.F; T.hp=num(T.hp-amt); T.stat.taken=num(T.stat.taken+amt); if(T.ev) T.ev.push({t:'you',n:amt}); if(T.hp<=0){ T.hp=0; if(!F.over){ F.over='loss'; T.phase='defeat'; } } }
+
+/* End of trip. Retreat keeps everything; defeat keeps 70%. Nothing else is ever lost. */
+function endTrip(P,T,how){
+  const rate=how==='defeat'?TUNE.defeatKeep:1, got=num(T.coin*rate);
+  P.coin=num(P.coin+got); P.last={how,got,lost:T.coin-got,f:T.f,fights:T.stat.fights,marched:T.stat.marched,turns:T.stat.turns,lostPieces:T.stat.lost};
+  if(how==='defeat'){ P.defeats++; const F=T.F, key=F?F.key:enemyKey(P,T.f); P.nemesis={f:T.f,key,left:F?F.enemy.hp/F.enemy.maxHp:1}; P.last.needed=F?Math.max(1,enemyHp(P,T.f)/Math.max(1,estPower(P)/3)):1; }
+  else P.retreats++;
+  P.lastSeen=P.secs;
+  return P.last;
 }
 
-async function clickThreat(t){
-  if(busy||G.over||G.phase!=='turn'||!threatReady(t)) return;
-  busy=true;
-  try{
-    const rem=t.need-t.prog;
-    switch(t.kind){
-      case 'prog_coin':{
-        const amt=Math.min(G.coin,coinFor(rem));
-        G.coin-=amt; t.prog=Math.min(t.need,t.prog+amt*coinMult());
-        log(`You pour ${amt} coin into ${t.n} (${t.prog}/${t.need}).`,'hl'); break; }
-      case 'once_coin':{
-        const amt=coinFor(t.need); G.coin-=amt; t.need=0;
-        log(`You pay ${amt} coin to ${t.n} in one stroke.`,'hl'); break; }
-      case 'prog_action':{
-        const amt=Math.min(G.actions,unitsFor(rem));
-        G.actions-=amt; t.prog=Math.min(t.need,t.prog+amt*unitMult());
-        log(`You burn ${actN(amt)} on ${t.n} (${t.prog}/${t.need}).`,'hl'); break; }
-      case 'prog_buy':{
-        const amt=Math.min(G.buys,unitsFor(rem));
-        G.buys-=amt; t.prog=Math.min(t.need,t.prog+amt*unitMult());
-        log(`You trade away ${plural(amt,'Buy')} to ${t.n} (${t.prog}/${t.need}).`,'hl'); break; }
-      case 'prog_discard':{
-        const s=await chooseCards(G.hand,{min:0,max:rem,why:t.kind,title:t.n,sub:`Discard cards into it. ${rem} still wanted.`});
-        s.forEach(c=>{pull(G.hand,c);G.discard.push(c);});
-        t.prog+=s.length;
-        if(s.length) log(`You feed ${plural(s.length,'card')} to ${t.n} (${t.prog}/${t.need}).`,'hl'); break; }
-      case 'sacrifice':{
-        const s=await chooseCards(G.hand.filter(c=>c.key!=='rubble'),{min:0,max:rem,why:t.kind,title:t.n,
-          sub:`Trash cards into the idol. ${rem} still wanted. Rubble is refused.`});
-        s.forEach(c=>{pull(G.hand,c);trashCard(c);});
-        t.prog+=s.length;
-        if(s.length) log(`You sacrifice ${plural(s.length,'card')} to ${t.n} (${t.prog}/${t.need}).`,'hl'); break; }
-      case 'scavenge':{
-        const s=await chooseCards(G.hand,{min:0,max:99,why:t.kind,title:t.n,
-          sub:`Trash cards into the nest. ${rem} still wanted — junk counts double.`,badge:c=>isJunk(c)?'×2':''});
-        const got=s.reduce((n,c)=>n+(isJunk(c)?2:1),0);
-        s.forEach(c=>{pull(G.hand,c);trashCard(c,true);});
-        t.prog=Math.min(t.need,t.prog+got);
-        if(s.length) log(`The rats drag ${plural(s.length,'card')} into the nest (${t.prog}/${t.need}).`,'hl'); break; }
-      case 'banish':{
-        t.prog=t.need; log(`With a flurry of activity, you banish the ${t.n}.`,'hl'); break; }
-      case 'panic':{
-        const ok=await chooseOption(t.n,`Shake on it? It clears at once and ${junkName('jinx',t.curses)} go into your discard pile.`,
-          [['y','Shake on it'],['n','Step back']]);
-        if(ok!=='y') break;
-        log(`You shake hands with the ${t.n}.`,'bad');
-        gainJunk('jinx',t.curses); t.curses=0; break; }
-      case 'once_hybrid':{
-        const c=coinFor(t.needCoin), a=unitsFor(t.needAct);
-        G.coin-=c; G.actions-=a; t.needCoin=0; t.needAct=0;
-        log(`You hand ${t.n} ${c} coin and ${actN(a)} at once.`,'hl'); break; }
-      case 'upgrade':{
-        const elig=G.hand.filter(c=>(t.gotT<t.needT&&c.t==='treasure')||(t.gotA<t.needA&&c.t==='action'));
-        const s=await chooseCards(elig,{min:0,max:(t.needT-t.gotT)+(t.needA-t.gotA),why:t.kind,title:t.n,
-          sub:`Still needed: ${plural(t.needT-t.gotT,'Treasure')} and ${plural(t.needA-t.gotA,'Action')}.`});
-        for(const c of s){
-          if(c.t==='treasure'&&t.gotT<t.needT) t.gotT++;
-          else if(c.t==='action'&&t.gotA<t.needA) t.gotA++;
-          else continue;
-          pull(G.hand,c); trashCard(c,true);
-          log(`${cname(c)} is swallowed by ${t.n}.`,'hl');
-        } break; }
-    }
-    if(isDone(t)) completeThreat(t);
-    await settle();
-  } finally { busy=false; render(); }
+/* ---------- home purchases ---------- */
+function levelCost(c){ const rare=CARDS[c.key].piece?1.5:1; return TUNE.cost0*rare*Math.pow(TUNE.costG,c.lvl); }
+const hearthCost=P=>TUNE.hearthCost*Math.pow(TUNE.hearthG,P.hearth);
+const wheelCost=P=>TUNE.wheelCost*Math.pow(TUNE.wheelG,P.wheelBuys||0);
+const magCost=P=>TUNE.magCost*Math.pow(TUNE.magG,P.magBuys||0);
+const ledgerCost=P=>TUNE.ledgerCost*Math.pow(TUNE.ledgerG,P.ledger);
+function buyLevel(P,id){ const c=cardOf(P,id), k=levelCost(c); if(P.coin<k||c.key==='deed'||c.key==='ward') return false; P.coin-=k; c.lvl++; return true; }
+function buyKeep(P,what){
+  const k={hearth:hearthCost,wheel:wheelCost,mag:magCost,ledger:ledgerCost}[what](P);
+  if(P.coin<k) return false; P.coin-=k;
+  if(what==='hearth') P.hearth++; else if(what==='wheel'){ P.wheel++; P.wheelBuys=(P.wheelBuys||0)+1; }
+  else if(what==='mag'){ P.mag++; P.magBuys=(P.magBuys||0)+1; } else P.ledger++;
+  return true;
 }
+function setSocket(P,id,idx,perk){ const c=cardOf(P,id); if(idx>=socketsOpen(P,c)) return false; if(perk&&c.sock.includes(perk)) return false;
+  if(perk&&!perkFits(perk,c)) return false; if(perk) c.sock[idx]=perk; else c.sock.splice(idx,1); c.sock=c.sock.filter(Boolean); return true; }
+function perkFits(perk,c){ const f=PERKS[perk].for; return f==='both'||(f==='piece')===isPiece(c); }
+function togglePack(P,id){ const c=cardOf(P,id); if(onBoard(P,id)) return false;
+  const cnt=packedCount(P);
+  if(c.packed){ if(cnt<=TUNE.deckMin) return false; c.packed=false; } else { if(cnt>=TUNE.deckMax) return false; c.packed=true; }
+  return true; }
+// Board layout: move to a slot, or take off the board.
+function placePiece(P,id,slot){ const i=P.layout.indexOf(id); if(i>=0) P.layout.splice(i,1); if(slot!=null){ P.layout.splice(clamp(slot,0,P.layout.length),0,id); cardOf(P,id).packed=true; } return true; }
 
-/* ---------- attacks ---------- */
-function atkText(t){
-  const a=t.atk, n=a.n, what=`random ${{treasure:'Treasure',action:'Action'}[a.filter]||'card'}`;
-  switch(a.k){
-    case 'grow':    return `its demand grows ${a.pct}%`;
-    case 'discard': return `discard ${plural(n,what)} from your hand`;
-    case 'trash':   return `trash ${plural(n,what)} from your hand`;
-    case 'bulk':    return `${n} Rubble into your discard pile`;
-    case 'curse':   return `${junkName('jinx',n)} into your discard pile`;
-    case 'nobuy':   return `−${plural(n,'Buy')} next turn`;
-    case 'price':   return `the bargain demands ${plural(n,'more Jinx','more Jinxes')}`;
-    case 'warp':    return `${n} Rubble shuffled into your draw pile`;
-    case 'pickpocket': return `−${n} Coin next turn`;
-    case 'freeze':  return `freeze your ${n===1?'best card':n+' best cards'} in hand for a turn`;
-    case 'entomb':  return `seal ${n===1?'your finest card':`your ${n} finest cards`} in ice while it stands`;
-  }
-  return '';
+/* ---------- the simple policy: the Auto button and the sim's fixed bot ---------- */
+function fixedMove(P,T){
+  const F=T.F, hand=F.hand; if(F.over) return null;
+  let best=-1,bv=-1;
+  for(let i=0;i<hand.length;i++){ if(!canPlay(P,T,i)) continue; const c=cardOf(P,hand[i]),d=CARDS[c.key];
+    let v=d.piece?1e308:0; for(const [k,x] of d.fx){ if(k==='dmg') v+=4; if(k==='poison') v+=3; if(k==='powder') v+=2; if(k==='draw'||k==='energy') v+=2.5; if(k==='block') v+=1; }
+    v+=.1*(i===0); if(v>bv&&v>0){ bv=v; best=i; } }
+  if(best>=0) return {a:'play',i:best};
+  for(let i=0;i<hand.length;i++) if(canBurn(P,T,i)&&(stokeOf(cardOf(P,hand[i]))>0||CARDS[cardOf(P,hand[i]).key].temp)) return {a:'burn',i};
+  return {a:'end'};
 }
+function fixedTurn(P,T){ const F=T.F, turn=F.turn; let n=0; while(T.F===F&&!F.over&&F.turn===turn&&n++<60){ const m=fixedMove(P,T); if(!m) break; doAction(P,T,m); if(m.a==='end') break; } }
 
-function applyAttack(t){
-  const a=t.atk, n=a.n;
-  if(t.detonating&&a.k==='grow'){ fx('hurt'); return; }
-  if(t.detonating&&a.k==='price'){ gainJunk('jinx',t.curses); fx('hurt'); return; }
-  if(t.detonating&&a.k==='entomb'){ fx('hurt'); return; }      // it's leaving: the coffin would thaw at once
-  switch(a.k){
-    case 'grow':
-      if(t.kind==='once_hybrid') t.needCoin=Math.ceil(t.needCoin*(1+a.pct/100));
-      else t.need=Math.ceil(t.need*(1+a.pct/100));
-      log(`${t.n} now wants ${t.kind==='once_hybrid'?t.needCoin:t.need}.`,'bad'); break;
-    case 'discard':
-      for(let i=0;i<n;i++){ const pool=G.hand.filter(c=>!a.filter||c.t===a.filter); if(!pool.length)break;
-        const c=pick(pool); pull(G.hand,c); G.discard.push(c);
-        log(`${cname(c)} is knocked from your hand.`,'bad'); } break;
-    case 'trash':
-      for(let i=0;i<n;i++){ const pool=G.hand.filter(c=>!a.filter||c.t===a.filter); if(!pool.length)break;
-        const c=pick(pool); pull(G.hand,c); trashCard(c,true); log(`${t.n} destroys your ${cname(c)}.`,'bad'); } break;
-    case 'bulk':  gainJunk('rubble',n); break;
-    case 'curse': gainJunk('jinx',n); break;
-    case 'nobuy': G.next.buys-=n; log(`You will have ${plural(n,'Buy')} fewer next turn.`,'bad'); break;
-    case 'price': t.curses+=n; log(`${t.n} now costs ${junkName('jinx',t.curses)}.`,'bad'); break;
-    case 'warp':  gainJunk('rubble',n,'deck'); break;
-    case 'pickpocket': G.next.coin-=n; log(`Light fingers: ${n} Coin fewer next turn.`,'bad'); break;
-    case 'freeze':
-      if(hasJ('mittens')){ log('Warm Mittens keep your cards thawed.','good'); break; }
-      for(let i=0;i<n;i++){ const c=G.hand.filter(c=>!isFrozen(c)&&!isJunk(c)).sort((a,b)=>cardWorth(b)-cardWorth(a))[0]; if(!c)break;
-        c.frozen=true; log(`${cname(c)} freezes solid.`,'bad'); } break;
-    case 'entomb': entomb(t,n); break;
-  }
-  fx('hurt');
-}
-
-function blocked(t){
-  if(t.detonating) log(`${t.n} fizzles out and leaves.`,'good');
-  if(hasJ('thorns')&&G.slots.includes(t)){ log('Thorns bite back.','good'); strike(t,.2); }
-}
-
-// Returns true when the attack was blocked or the threat destroyed.
-async function resolveAttack(t){
-  const a=t.atk, txt=atkText(t);
-  log(`${t.art} ${t.n} — ${a.name}: ${txt}.`,'bad');
-  if(hasJ('wall')&&!G.wallUsed){ G.wallUsed=true; log('Iron Wall absorbs the blow.','good'); blocked(t); return true; }
-  const best=f=>G.hand.filter(f).sort((x,y)=>y.lv-x.lv)[0];
-  const moat =best(c=>c.key==='guarddog');
-  const dog  =best(c=>!!DB[c.key].react);                       // Guard Dogs, and fusions with one in them
-  const rip  =best(c=>c.key==='riposte');
-  const snare=best(c=>c.key==='snare'&&(!t.elite||c.lv>=1));
-  const grd  =best(c=>hasMod(c,'guard'));
-  const opts=[];
-  if(grd)   opts.push(['guard',`🛡 Discard ${cname(grd)} — block`]);
-  if(moat)  opts.push(['moat', `🐕 Reveal ${cname(moat)} — block`]);
-  if(dog)   opts.push(['dog',  `🐕 Discard ${cname(dog)} — block`]);
-  if(rip)   opts.push(['rip',  `🤺 Discard ${cname(rip)} — block & strike ${ripPct(rip.lv)}%`]);
-  if(snare) opts.push(['snare',`🪤 Trash ${cname(snare)} — destroy it`]);
-  if(opts.length){
-    opts.push(['take','Take the hit']);
-    const ch=await chooseOption(`${t.art} ${t.n} ${t.detonating?'detonates':'attacks'}!`,
-      `${a.name}: ${txt}.${t.detonating?` It will also ${splice()?'scar a card and ':''}cost the town a heart.`:''}`,opts);
-    if(ch==='guard'){ pull(G.hand,grd); G.discard.push(grd); log(`${cname(grd)} takes the blow.`,'good'); blocked(t); return true; }
-    if(ch==='moat'){ log(`${cname(moat)} barks the attack away.`,'good'); blocked(t); return true; }
-    if(ch==='dog'){ pull(G.hand,dog); G.discard.push(dog); log(`${cname(dog)} barks the attack away.`,'good'); blocked(t); return true; }
-    if(ch==='rip'){ pull(G.hand,rip); G.discard.push(rip);
-      log(`${cname(rip)} parries and strikes back!`,'good'); blocked(t); strike(t,ripPct(rip.lv)/100); return true; }
-    if(ch==='snare'){ pull(G.hand,snare); trashCard(snare,true);
-      log(`${cname(snare)} springs shut on ${t.n}!`,'good'); completeThreat(t); return true; }
-  }
-  applyAttack(t);
-  return false;
-}
-
-/* ==========================================================
-   CARD PLAY / BUY
-   ========================================================== */
-function canPlay(c){
-  if(G.over||G.phase!=='turn'||isFrozen(c)) return false;
-  if(c.key==='rubble') return G.actions>0||hasJ('tidy');
-  if(c.t==='treasure'||c.t==='action') return G.actions>=actCost(c);
-  return false;                      // Shack, Jinx
-}
-
-function playTreasure(c){
-  pull(G.hand,c); G.inPlay.push(c); G.actions-=actCost(c);
-  let v=tval(c);
-  if(hasJ('mirror')&&G.treasuresPlayed===0){ v*=2; log('Mirror doubles it.','hl'); }
-  if(hasMod(c,'twin')) v*=2;
-  G.treasuresPlayed++;
-  if(c.key==='nestegg') c.grow=(c.grow||0)+(hasJ('goose')?2:1);
-  C(v); log(`${cname(c)} adds ${v} to your purse.`);
-  G.acting=(G.acting||0)+1;
-  try{ for(let i=hasMod(c,'twin')?2:1;i>0;i--) spliceFx(c); } finally{ G.acting--; }
-  afterPlay(c);
-}
-
-async function runAction(c){
-  G.actionsPlayed++;
-  if(hasJ('momentum')&&G.actionsPlayed>1){ C(G.actionsPlayed-1); log(`Momentum: +${G.actionsPlayed-1} Coin.`,'hl'); }
-  await acting(async()=>{ spliceFx(c); await DB[c.key].fx(c,c.lv); });
-}
-
-async function playCard(c){
-  if(busy||!canPlay(c)||!G.hand.includes(c)) return;
-  busy=true;
-  try{
-    if(c.t==='treasure') playTreasure(c);
-    else if(c.key==='rubble'){
-      if(!hasJ('tidy')) G.actions--;
-      pull(G.hand,c); trashCard(c,true);
-      log('You haul the Rubble away. It is gone from your deck for good.','good');
-      if(hasJ('tidy')) draw(1);
-    } else {
-      G.actions-=actCost(c); pull(G.hand,c); G.inPlay.push(c);
-      log(`You play ${cname(c)}.`,'hl');
-      const times=((hasJ('echo')&&!G.echoUsed)?2:1)*(hasMod(c,'twin')?2:1); G.echoUsed=true;
-      for(let i=0;i<times;i++){ if(i) log('It resolves again.','hl'); await runAction(c); render(); }
-      afterPlay(c);
-    }
-    await settle();
-  } finally { busy=false; render(); }
-}
-
-async function playAllTreasures(){
-  if(busy||G.over||G.phase!=='turn') return;
-  const tr=G.hand.filter(c=>c.t==='treasure'&&!isFrozen(c)&&!actCost(c)).sort((a,b)=>(a.key==='treasury')-(b.key==='treasury'));
-  if(!tr.length) return;
-  busy=true;
-  try{ tr.forEach(playTreasure); await settle(); } finally { busy=false; render(); }
-}
-
-function buyCard(i){
-  if(busy||G.over||G.phase!=='turn') return;
-  const c=G.market[i]; if(!c) return;
-  const price=costOf(c);
-  if(G.buys<1||G.coin<price) return;
-  G.buys--; G.coin-=price;
-  const wasT=(c.t==='treasure');
-  G.market[i]=null;
-  G.deck.push(c);
-  log(`You buy ${cname(c)} for ${price}. It waits at the bottom of your deck.`,'hl');
-  refillSlot(i,wasT);
-  render();
-}
-
-/* ==========================================================
-   TURN FLOW
-   ========================================================== */
-function startTurn(){
-  G.turn++; G.turnInWave++;
-  const n=G.next;
-  G.actions=Math.max(0,TUNE.energy+n.actions+(hasJ('wind')?1:0));
-  G.buys=Math.max(0,1+n.buys+(hasJ('seal')?1:0));
-  G.coin=Math.max(0,n.coin+G.later.coin);
-  if(G.later.coin) log(`${merge()?'Your savings pay':'The orchard pays'} out ${G.later.coin} coin.`,'good');
-  G.later={coin:0,cards:0};
-  if(hasJ('hoarder')) G.coin+=Math.floor(deckSize()/4);
-  if(hasJ('trophy'))  G.coin+=Math.floor(G.runCleared/2);
-  G.discount=hasJ('seal')?1:0;
-  G.actionsPlayed=0; G.treasuresPlayed=0; G.echoUsed=false;
-  G.next={actions:0,buys:0,coin:0};
-  G.slots.forEach(t=>{ if(t) t.fresh=false; });
-  log(`— Wave ${G.wave} · Turn ${G.turnInWave} —`,'turn');
-  render();
-}
-
-async function endTurn(){
-  if(busy||G.over||G.phase!=='turn') return; busy=true;
-  try{
-    const carry=hasJ('piggy')?Math.floor(G.coin/2):0;
-    if(carry) log(`Piggy Bank keeps ${carry} coin for next turn.`);
-    for(const c of G.inPlay.splice(0)) G.discard.push(c);
-    const kept=G.hand.filter(c=>hasMod(c,'retain')||DB[c.key].stays), wards=kept.filter(c=>DB[c.key].stays).length;
-    for(const c of G.hand.splice(0)){ c.frozen=false; if(!kept.includes(c)) G.discard.push(c); }
-    G.hand.push(...kept);
-    G.coin=0; G.actions=0; G.buys=0;
-    G.next={actions:0,buys:0,coin:carry};
-
-    wardTick();
-    draw(Math.max(0,handSize()+G.later.cards-wards));        // Almanac adds, a Ward kept in hand takes one
-    render(); await sleep(180);
-
-    // threats strike at the hand you just drew — reactions in it can answer
-    G.phase='attack'; if(!fused()) G.wallUsed=false;            // with fuses, Iron Wall holds once a wave
-    for(const t of G.slots.slice()){
-      if(!t||!G.slots.includes(t)) continue;
-      t.age++; t.cd--;
-      if(t.cd<=0&&fused()){
-        render(); await detonate(t); render();
-        if(G.over) return;
-        await sleep(160);
-      } else if(t.cd<=0){
-        t.cd=effEvery(t); render();
-        await resolveAttack(t); render();
-        if(G.over) return;
-        await sleep(160);
-      }
-    }
-    G.phase='turn';
-    if(await settle()) return;
-
-    cycleMarket(); render(); await sleep(200);
-
-    const due=G.turnInWave%TUNE.spawnEvery(G.wave)===0 || G.slots.every(s=>!s);
-    if(due&&G.queue.length){ if(!spawnThreat()) return; await sleep(220); }
-    startTurn();
-  } finally { if(G.phase==='attack') G.phase='turn'; busy=false; render(); }
-}
-
-function lose(title,text){
-  G.over=true; deleteSave();                                  // no going back to before the fall
-  const cleared=G.wave-1; saveBest(cleared); fx('lose');
-  showGameOver(`${title}. ${text} You survived ${plural(cleared,'wave')} and cleared ${plural(G.runCleared,'threat')} with a deck of ${deckSize()} cards. Best run: ${plural(loadBest(),'wave')} cleared.`);
-}
-
-/* ==========================================================
-   THE WHOLE LOG as plain text — Save log in the game, and the
-   simulator's --log. entries are [message, class] pairs.
-   ========================================================== */
-function logText(entries,when){
-  const deck={}; allCards().forEach(c=>{ const n=cname(c)+(c.mods.length?` [${c.mods.map(m=>SPLICES[m].n).join(', ')}]`:''); deck[n]=(deck[n]||0)+1; });
-  const head=[
-    `Coinkeep — ${{splice:'Splice',merge:'Merge',classic:'Classic'}[G.mode]} mode${when?' — '+when:''}`,
-    `${G.over?'Run over':'In progress'}: wave ${G.wave}, turn ${G.turnInWave} (${G.turn} in all), ${plural(G.runCleared,'threat')} cleared`+(fused()?`, ${plural(Math.max(0,G.hearts),'heart')} left`:''),
-    `Charms: ${G.jokers.map(j=>JOKERS[j.key].n).join(', ')||'none'}`,
-    `Deck (${deckSize()}): ${Object.entries(deck).sort().map(([n,k])=>k>1?`${k}× ${n}`:n).join(', ')}`,
-  ];
-  const body=entries.map(([m,cls])=> cls==='wave'?`\n=== ${m} ===`: cls==='turn'?`\n${m}`: `  ${m}`);
-  return head.join('\n')+'\n'+body.join('\n')+'\n';
-}
+/* Scan any object for a non-finite number: the sim's guard, and the save's validator. */
+function allFinite(o){ if(typeof o==='number') return Number.isFinite(o); if(o&&typeof o==='object'){ for(const k in o) if(!allFinite(o[k])) return false; } return true; }

@@ -1,430 +1,118 @@
 "use strict";
 /* ==========================================================
-   Coinkeep — static data: tuning, cards, charms, threats.
+   Coinkeep: Forays. Static data, tuning and small helpers.
+   Runs in the browser and, through sim/load.js, in Node.
    ========================================================== */
 
-const rnd  = n => Math.floor(Math.random()*n);
-const pick = a => a[rnd(a.length)];
-function shuffle(a){for(let i=a.length-1;i>0;i--){const j=rnd(i+1);[a[i],a[j]]=[a[j],a[i]];}return a;}
-function wpick(pairs){ const tot=pairs.reduce((s,p)=>s+p[1],0); let r=Math.random()*tot;
-  for(const [k,w] of pairs){ if(r<w) return k; r-=w; } return pairs[pairs.length-1][0]; }
-const $ = id => document.getElementById(id);
-const sleep = ms => new Promise(r=>setTimeout(r,ms));
+// Published versions share one browser storage, so each keeps its own save (js/versions.js lists them).
+const SLOT = (typeof location!=='undefined'&&(/\/v\/([\w-]+)\//.exec(location.pathname)||[])[1]) || '';
+const slotKey = k => SLOT ? `${k}.${SLOT}` : k;
+
 const clamp = (x,a,b) => Math.max(a,Math.min(b,x));
-const plural = (n,w,p) => `${n} ${n===1?w:(p||w+'s')}`;
+// A finite number or a loud failure in the sim; in the game NaN becomes 0 and Infinity 1e300.
+const num = x => Number.isFinite(x) ? x : x>0 ? 1e300 : 0;
+function fmt(n){ n=+n||0; const a=Math.abs(n), s=n<0?'-':'';
+  if(a<1e4) return s+(a<10&&a%1>.04?a.toFixed(1):Math.round(a));
+  if(a>=1e15) return s+a.toExponential(1).replace('e+','e');
+  for(const [d,u] of [[1e3,'K'],[1e6,'M'],[1e9,'B'],[1e12,'T']]){ const x=a/d; if(x<999.95) return s+(x<100?x.toFixed(1):Math.round(x))+u; }
+  return s+a.toExponential(1).replace('e+','e'); }
+// Seeded randomness: the state is a plain number, so it saves and clones with the fight.
+function rng32(o,k){ o[k]=(o[k]+0x6D2B79F5)|0; let t=o[k]; t=Math.imul(t^(t>>>15),t|1); t^=t+Math.imul(t^(t>>>7),t|61); return ((t^(t>>>14))>>>0)/4294967296; }
+function hash01(a,b){ const o={s:(Math.imul(a|0,2654435761)^Math.imul(b|0,40503))|0}; rng32(o,'s'); return rng32(o,'s'); }
 
 const TUNE = {
-  slots:3, handSize:5, jokerSlots:5, marketSize:6, rareWeight:.25,
-  threatsInWave: w => Math.min(8, 2+Math.floor(w/2)),
-  spawnEvery:    w => w<9 ? 3 : 2,          // a queued threat arrives every Nth turn of a wave
-  eliteEvery:3,                             // every Nth wave ends with an Elite
-  enrageAfter:8,                            // threats standing this many turns attack every turn
-  coinScale:  w => Math.pow(1.4, w-1),      // coin demands grow exponentially
-  actScale:   w => Math.pow(1.2, w-1),      // action demands too, a little slower
-  buyScale:   w => Math.pow(1.15, w-1),     // and buy demands slower still
-  countScale: w => 1 + 0.22*(w-1),          // card counts (discards, draws) grow linearly: hands don't
-  maxTier:    w => Math.floor(0.8*(w-1)),   // market tier climbs ~4 tiers every 5 waves
-  forgeCap:   w => Math.floor(0.8*(w-1))+1, // Forge can't push a Treasure past market tier +1
-  coffinFrom: 5,                            // from this wave on, Elites seal your finest card in ice
-  energy: 1,                                // ⚡ (Actions) at the start of every turn
-  spoils: 3,                                // merge mode: free cards offered when a threat is cleared (+1 for Elites)
-  copyMax: 1,                               // merge mode: the Inn's Copyist copies cards up to this level (0 = level one)
-  marketLag: 1,                             // merge mode: the market stocks a card this many levels below your best merge of it
-  energyFrom: [1,1,3,5],                    // merge mode: the wave a card first goes on sale, by its ⚡ cost (0, 1, 2, 3+)
-  // Merge mode's own threat curves: its economy grows slower than the old tiers, and ⚡ and draws are scarce.
-  merge:{ coinScale:  w => 0.6*Math.pow(1.3,w-1),
-          actScale:   w => 0.6*Math.pow(1.15,w-1),
-          buyScale:   w => 0.6*Math.pow(1.15,w-1),
-          countScale: w => 0.6*(1+0.15*(w-1)) },
-  hearts:5,                                 // splice mode: detonations cost hearts; lose at 0
-  spliceSlots: c => 2+Math.floor(c.lv/2),   // keywords a card can hold (scars ignore the limit)
+  hp0:20, hpG:1.30,  atk0:9, atkG:1.235,  coin0:9, coinG:1.30,   // enemy per fight
+  bossEvery:12, bossHp:2.6, bossCoin:4, caravanEvery:7, caravanPrice:2,
+  valG:1.40, mileX:3, mileEvery:10, defG:1.42,                   // value of a card or bastion per level
+  cost0:6, costG:1.60, hearthCost:10, hearthG:1.60, baseHp:40,
+  wheelCost:30, wheelG:9, magCost:60, magG:5, ledgerCost:150, ledgerG:3, ledgerX:1.3,
+  marchR:4, defeatKeep:.7, enrageAfter:6, enrageX:1.4, healAfter:.2, repairAfter:.25,
+  magBase:2, swapCost:1, handBase:5, energyBase:3, deckMin:8, deckMax:12, finalFight:118,
+  sockAt:[5,20,40],
+  feed:'stoke',      // 'stoke' any card burns for Powder; 'powdercards' only Powder cards feed; 'wheel' only the wheel feeds
+  junk:'deed',       // 'deed' a Title Deed in the pack opens each slot past two; 'none' slots are free; 'hold' deeds also boost while held
 };
 
-/* ==========================================================
-   CARDS — every card has tiers. Tea House, Tea House+, Tea House++…
-   fx(self, lv) runs the card at its tier. tx(lv, card) is its text.
-   ========================================================== */
-const DB={};
-function def(k,o){ DB[k]=Object.assign({key:k,step:3},o); }
-const plus = lv => lv<=0 ? '' : lv<=3 ? '+'.repeat(lv) : `+${lv}`;
-// How hard a card hits at a tier: linear at first, then x1.5 a tier: 1,2,3,4,5,8,11,17,26,38...
-// Prices follow the same curve, so a Tea House that gives 20 Actions costs what it should.
-const tierMult = lv => Math.max(1+lv, Math.round(Math.pow(1.5,lv)));
-const tierName = lv => lv<=0 ? 'base' : plus(lv);
-
-def('copper',{n:'Copper',c:0,step:2,t:'treasure',v:1,art:'🟤'});
-def('silver',{n:'Silver',c:3,step:4,t:'treasure',v:2,art:'⚪'});
-def('gold',  {n:'Gold',  c:6,step:5,t:'treasure',v:3,art:'🟡'});
-def('treasury',{n:'Treasury',c:7,step:4,t:'treasure',kingdom:true,art:'🏦',
-  tx:l=>`+${tierMult(l)} Coin for each Treasure you have in play, counting this.`});
-def('nestegg',{n:'Nest Egg',c:4,step:3,t:'treasure',v:1,kingdom:true,art:'🥚',
-  tx:(l,c)=>`+${tierMult(l)+((c&&c.grow)||0)} Coin. Worth 1 more, for good, every time you play it.`});
-
-def('shack', {n:'Shack', c:2,t:'victory',noLv:true,art:'🛖',tx:'Dead weight. Trash it or feed it to a threat.'});
-def('jinx',  {n:'Jinx',  c:0,t:'curse',  noLv:true,art:'🐈‍⬛',tx:'Bad luck. Cannot be played.'});
-def('rubble',{n:'Rubble',c:0,t:'junk',   noLv:true,art:'🧱',tx:'Left behind by a threat. Spend 1 Action to haul it away for good.',
-  mtx:'Left behind by a threat. Spend 1 ⚡ to haul it away for good.'});
-const isJunk = c => !!DB[c.key].noLv;
-
-const A = n => { if(G.phase==='attack') G.next.actions+=n; else G.actions+=n; };
-const B = n => { if(G.phase==='attack') G.next.buys+=n;    else G.buys+=n; };
-const C = n => { if(G.phase==='attack') G.next.coin+=n;    else G.coin+=n; };
-
-/* --- draw & actions --- */
-def('teahouse',{n:'Tea House',c:3,art:'🍵',t:'action',
-  tx:l=>`+${plural(1+l,'Card')}, +${2*tierMult(l)} Actions.`,
-  fx:async(s,l)=>{ draw(1+l); A(2*tierMult(l)); }});
-def('maproom',{n:'Map Room',c:4,art:'🗺',t:'action',
-  tx:l=>`+${3+2*l} Cards.`,
-  fx:async(s,l)=>{ draw(3+2*l); }});
-def('inventor',{n:'Inventor',c:5,art:'💡',t:'action',
-  tx:l=>`+${2+l} Cards, +1 Action.`,
-  fx:async(s,l)=>{ draw(2+l); A(1); }});
-def('parade',{n:'Parade',c:5,art:'🎉',t:'action',
-  tx:l=>`+${1+tierMult(l)} Actions, +${plural(1+Math.floor(l/2),'Buy')}, +${2*tierMult(l)} Coin.`,
-  fx:async(s,l)=>{ A(1+tierMult(l)); B(1+Math.floor(l/2)); C(2*tierMult(l)); }});
-
-/* --- deck control --- */
-def('springclean',{n:'Spring Clean',c:2,step:2,art:'🧺',t:'action',
-  tx:l=>`+1 Action. Discard any number of cards, then draw that many${l?` +${l}`:''}.`,
-  fx:async(s,l)=>{ A(1);
-    const ch=await chooseCards(G.hand,{min:0,max:99,why:s.key,title:cname(s),sub:`Discard any number, then draw that many${l?` plus ${l}`:''}.`});
-    ch.forEach(c=>{pull(G.hand,c);G.discard.push(c);}); draw(ch.length+l); }});
-def('bonfire',{n:'Bonfire',c:2,step:2,art:'🔥',t:'action',
-  tx:l=>`Trash up to ${4+2*l} cards from your hand.`,
-  fx:async(s,l)=>{ const ch=await chooseCards(G.hand,{min:0,max:4+2*l,why:s.key,title:cname(s),sub:`Burn up to ${4+2*l} cards.`});
-    ch.forEach(c=>{pull(G.hand,c);trashCard(c);}); }});
-def('strategist',{n:'Strategist',c:2,art:'♟',t:'action',
-  tx:l=>`+${3+l} Cards. Put a card from your hand on top of your deck.`,
-  fx:async(s,l)=>{ draw(3+l);
-    const ch=await chooseCards(G.hand,{min:1,max:1,why:s.key,title:cname(s),sub:'Put one card back on top of your deck.'});
-    if(ch[0]){pull(G.hand,ch[0]);G.deck.unshift(ch[0]);} }});
-def('encore',{n:'Encore',c:4,step:4,art:'🎭',t:'action',
-  tx:l=>`Play an Action from your hand ${['twice','three times','four times'][l]||(2+l)+' times'}.`,
-  fx:async(s,l)=>{ const cand=G.hand.filter(c=>c.t==='action'&&!isFrozen(c));
-    if(!cand.length){log('No Action to encore.');return;}
-    const n=2+l+(hasJ('ovation')?1:0);
-    const ch=await chooseCards(cand,{min:1,max:1,why:s.key,title:cname(s),sub:`Play this Action ${n} times.`});
-    const c=ch[0]; if(!c)return; pull(G.hand,c); G.inPlay.push(c);
-    for(let i=0;i<n;i++){ await runAction(c); render(); } }});
-def('dowser',{n:'Dowser',c:4,art:'🪄',t:'action',
-  tx:l=>`Reveal cards from your deck until you find ${plural(2+l,'Treasure')}. Put them in your hand, discard the rest.`,
-  fx:async(s,l)=>{ const found=[], rest=[]; let g=0;
-    while(found.length<2+l&&g++<80){ const c=popDeck(); if(!c)break; (c.t==='treasure'?found:rest).push(c); }
-    G.hand.push(...found); G.discard.push(...rest);
-    log(`${cname(s)} finds ${found.length?found.map(cname).join(', '):'nothing'}.`,'hl'); }});
-
-/* --- economy --- */
-def('crucible',{n:'Crucible',c:4,step:4,art:'⚗',t:'action',
-  tx:l=>`Trash up to ${plural(1+l,'Treasure')} from your hand. +Coin equal to triple each one's value.`,
-  fx:async(s,l)=>{ const tr=G.hand.filter(c=>c.t==='treasure'&&!isFrozen(c));
-    if(!tr.length){log('Nothing to melt.');return;}
-    const ex=hasJ('stone')?6:3;
-    const ch=await chooseCards(tr,{min:0,max:1+l,why:s.key,title:cname(s),
-      sub:`Melt up to ${1+l}. Each pays ${ex}× its value.`,badge:c=>'→ '+tval(c)*ex});
-    for(const c of ch){ const v=tval(c), g=v*ex;
-      pull(G.hand,c); trashCard(c,true); C(g);
-      log(`${cname(s)} melts ${cname(c)} (${v}) into ${g} coin!`,'big'); } }});
-def('forge',{n:'Forge',c:5,step:4,art:'⚒',t:'action',
-  tx:l=>`Trash a Treasure from your hand. Gain one ${plural(1+l,'step')} better into your hand (Copper → Silver → Gold → Gold+), up to tier ${G?tierName(TUNE.forgeCap(G.wave)):'market +1'}.`,
-  fx:async(s,l)=>{ const cap=TUNE.forgeCap(G.wave);
-    const up=c=>{ let [k,v]=[c.key,c.lv]; for(let i=0;i<=l;i++){ const n=upTreasure(k,v); if(n[1]>Math.max(cap,c.lv)) break; [k,v]=n; } return [k,v]; };
-    const tr=G.hand.filter(c=>c.t==='treasure'&&!isFrozen(c)&&up(c).join()!==[c.key,c.lv].join());
-    if(!tr.length){log(`No Treasure to forge. The anvil can't go past tier ${tierName(cap)} this wave.`);return;}
-    const ch=await chooseCards(tr,{min:1,max:1,why:s.key,title:cname(s),sub:`Upgrade it ${plural(1+l,'step')}.`,
-      badge:c=>{ const [k,v]=up(c); return DB[k].n+plus(v); }});
-    const c=ch[0]; if(!c)return;
-    const [k,v]=up(c);
-    pull(G.hand,c); trashCard(c,true);
-    const g=mk(k,v); g.mods=c.mods.slice(); if(c.grow) g.grow=c.grow;
-    G.hand.push(g); log(`${cname(s)} turns ${cname(c)} into ${cname(g)}.`,'hl'); }});
-def('coinpress',{n:'Coin Press',c:5,step:4,art:'🏭',t:'action',
-  tx:l=>`Choose a Treasure in your hand. Gain ${l?`${1+l} plain copies`:'a plain copy'} of it (no splices) into your discard pile.`,
-  fx:async(s,l)=>{ const tr=G.hand.filter(c=>c.t==='treasure'&&!isFrozen(c));
-    if(!tr.length){log('No Treasure to press.');return;}
-    const ch=await chooseCards(tr,{min:1,max:1,why:s.key,title:cname(s),sub:`Gain ${l?`${1+l} copies`:'a copy'} of it.`});
-    const c=ch[0]; if(!c)return;
-    for(let i=0;i<1+l;i++) G.discard.push(mk(c.key,c.lv));
-    log(`${cname(s)} strikes ${plural(1+l,'new '+cname(c),'new '+cname(c)+'s')}.`,'hl'); }});
-def('bargain',{n:'Bargain Day',c:4,art:'🏷',t:'action',
-  tx:l=>`+${plural(1+l,'Buy')}, +${tierMult(l)} Coin. Market cards cost ${2*tierMult(l)} less this turn.`,
-  fx:async(s,l)=>{ B(1+l); C(tierMult(l)); G.discount+=2*tierMult(l); }});
-def('ringleader',{n:'Ringleader',c:4,art:'🎩',t:'action',
-  tx:l=>`+${2*tierMult(l)} Coin. If you've played 3+ Actions this turn: +1 Card, +1 Action.`,
-  fx:async(s,l)=>{ C(2*tierMult(l)); if(G.actionsPlayed>=3){draw(1);A(1);} }});
-def('orchard',{n:'Orchard',c:4,art:'🍎',t:'action',
-  tx:l=>`+1 Coin. At the start of your next turn, +${3*tierMult(l)} Coin.`,
-  fx:async(s,l)=>{ C(1); G.later.coin+=3*tierMult(l); }});
-def('pawnshop',{n:'Pawnshop',c:3,art:'💍',t:'action',
-  tx:l=>`Trash a card from your hand. +Coin equal to its cost${l?` +${1+l}`:' +1'}.`,
-  fx:async(s,l)=>{ if(!G.hand.length) return;
-    const ch=await chooseCards(G.hand,{min:0,max:1,why:s.key,title:cname(s),sub:'Pawn one card for good.',badge:c=>'→ '+(baseCost(c)+1+l)});
-    const c=ch[0]; if(!c) return; const g=baseCost(c)+1+l;
-    pull(G.hand,c); trashCard(c,true); C(g); log(`${cname(s)} pays ${g} for ${cname(c)}.`,'hl'); }});
-def('ragpicker',{n:'Ragpicker',c:2,step:2,art:'🦝',t:'action',
-  tx:l=>`+1 Action. Trash any number of junk cards (Shack, Jinx, Rubble) from your hand. +${2+l} Coin each.`,
-  fx:async(s,l)=>{ A(1); const j=G.hand.filter(isJunk); if(!j.length){log('No junk to pick.');return;}
-    const ch=await chooseCards(j,{min:0,max:99,why:s.key,title:cname(s),sub:`Each one trashed pays ${2+l} Coin.`});
-    ch.forEach(c=>{pull(G.hand,c);trashCard(c,true);}); C(ch.length*(2+l));
-    if(ch.length) log(`${cname(s)} hauls off ${plural(ch.length,'piece')} of junk for ${ch.length*(2+l)} coin.`,'hl'); }});
-
-/* --- threat-fighters: act on the board directly --- */
-const strikePct = (base,l) => base+(base>=50?15:10)*l;
-def('archer',{n:'Archer',c:4,art:'🏹',t:'action',
-  tx:l=>`+1 Action. Strike a threat for ${strikePct(30,l)}% of what it still wants.`,
-  fx:async(s,l)=>{ A(1); const t=await chooseThreat(cname(s),`Strike for ${strikePct(30,l)}%.`);
-    if(t){ log(`${cname(s)} looses an arrow at ${t.n}.`,'hl'); strike(t,strikePct(30,l)/100); } }});
-def('powderkeg',{n:'Powder Keg',c:4,art:'💣',t:'action',
-  tx:l=>`Trash this. Strike a threat for ${strikePct(60,l)}% of what it still wants.`,
-  fx:async(s,l)=>{ if(pull(G.inPlay,s)) trashCard(s,true);
-    const t=await chooseThreat(cname(s),`Blast for ${strikePct(60,l)}%.`);
-    if(t){ log(`BOOM! ${cname(s)} rocks ${t.n}.`,'big'); fx('shake'); strike(t,strikePct(60,l)/100); } }});
-def('lullaby',{n:'Lullaby',c:3,art:'🎶',t:'action',
-  tx:l=>`+1 Card, +1 Action. Every threat attacks ${plural(1+l,'turn')} later.`,
-  fx:async(s,l)=>{ draw(1); A(1); G.slots.forEach(t=>{ if(t) t.cd+=1+l; });
-    if(G.slots.some(Boolean)) log('The threats yawn and nod off.','good'); }});
-def('tollgate',{n:'Toll Gate',c:4,art:'🚧',t:'action',
-  tx:l=>`+${2*tierMult(l)} Coin for each threat in play.`,
-  fx:async(s,l)=>{ C(2*tierMult(l)*G.slots.filter(Boolean).length); }});
-
-/* --- reactions: answer a threat's attack from your hand --- */
-const ripPct = l => 25+10*l;
-def('guarddog',{n:'Guard Dog',c:2,step:2,art:'🐕',t:'action',r:true,
-  tx:l=>`+${2+l} Cards. ⛨ When a threat attacks, reveal this to block it.`,
-  fx:async(s,l)=>{ draw(2+l); }});
-def('riposte',{n:'Riposte',c:3,art:'🤺',t:'action',r:true,
-  tx:l=>`+${2*tierMult(l)} Coin. ⛨ When a threat attacks, discard this to block it and strike it for ${ripPct(l)}%.`,
-  fx:async(s,l)=>{ C(2*tierMult(l)); }});
-def('snare',{n:'Snare',c:4,art:'🪤',t:'action',r:true,
-  tx:l=>`+${plural(1+l,'Card')}, +1 Action. ⛨ When a threat attacks, trash this to destroy it${l?'':' (not Elites)'}.`,
-  fx:async(s,l)=>{ draw(1+l); A(1); }});
-def('nightwatch',{n:'Night Watch',c:3,art:'🏮',t:'action',r:true,
-  tx:l=>`Draw until you have ${6+l} cards. ⛨ While in hand, Jinxes and Rubble you'd gain are turned away.`,
-  fx:async(s,l)=>{ draw(Math.max(0,6+l-G.hand.length)); }});
-
-const KINGDOM=Object.keys(DB).filter(k=>DB[k].t==='action'||DB[k].kingdom);
-// Splice mode keeps the market small: depth comes from splicing keywords onto these.
-const CORE=['teahouse','maproom','inventor','encore','bonfire','springclean','forge','coinpress','archer','guarddog'];
-
-/* ==========================================================
-   MERGE MODE — a card set of its own. Cards are played with
-   ⚡ Energy. Two identical cards (same card, same level) merge
-   into one of the next level: it costs the same to play and
-   its effect goes up by one. X = the card's level (1, 2, 3…).
-   eff(X) is what a card does, pc what it costs to play, in ⚡.
-   ========================================================== */
-const roman = n => { let s=''; for(const [v,r] of [[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']]) while(n>=v){ s+=r; n-=v; } return s; };
-// noMarket: never sold. stays: kept in hand at end of turn. Higher-⚡ cards reach the market later (TUNE.energyFrom).
-function mdef(k,o){ const pc=o.pc||0; def(k,Object.assign({merge:true,t:'action',fx:mergeFx},o,{pc:()=>pc,cost:pc,eff:l=>o.eff(l+1)})); }
-
-mdef('coin',     {n:'Copper',c:2,t:'treasure',v:1,names:['Copper','Silver','Gold','Platinum','Diamond'],arts:['🟤','⚪','🟡','💠','💎'],
-  eff:X=>({coin:X})});
-mdef('spark',    {n:'Spark',c:2,art:'⚡',         eff:X=>({energy:X})});
-mdef('scout',    {n:'Scout',c:2,art:'🔭',pc:1,    eff:X=>({cards:X})});
-mdef('anvil',    {n:'Anvil',c:3,art:'🔨',rare:true,noFuse:true, eff:X=>({merges:X+(hasJ('hammers')?1:0)})});
-mdef('kindling', {n:'Bonfire',c:2,art:'🔥',pc:1,  eff:X=>({trash:X})});
-mdef('bazaar',   {n:'Trader',c:3,art:'🏪',pc:1,   eff:X=>({buys:X,coin:X})});
-mdef('bowman',   {n:'Archer',c:3,art:'🏹',pc:1,   eff:X=>({strike:Math.min(100,20*X)})});
-mdef('watchdog', {n:'Guard Dog',c:3,art:'🐕',r:true,pc:1,eff:X=>({coin:X}),react:'⛨ When a threat attacks, discard this from your hand to block it.'});
-mdef('strongbox',{n:'Strongbox',c:3,art:'🧰',pc:1,eff:X=>({bank:X})});
-mdef('almanac',  {n:'Almanac',c:4,art:'📅',pc:2,  eff:X=>({later:1+X})});
-mdef('seer',     {n:'Seer',c:2,art:'🔮',          eff:X=>({peek:X})});
-mdef('reprise',  {n:'Encore',c:5,art:'🎭',pc:3,   eff:X=>({replay:1+X})});
-mdef('peddler',  {n:'Peddler',c:3,art:'🧹',pc:1,   eff:X=>({restock:1,cards:X-1})});
-mdef('patron',   {n:'Patron',c:4,art:'👑',pc:3,   eff:X=>({upmarket:X})});
-mdef('rummage',  {n:'Rummage',c:3,art:'🧺',       eff:X=>({rummage:X})});
-mdef('alchemist',{n:'Alchemist',c:5,art:'⚗',pc:2, eff:X=>({mult:1+X*.5})});
-mdef('ward',     {n:'Ward',c:4,t:'ward',art:'🧿',stays:true,eff:X=>({ward:5*X/(100+5*X)})});
-const MERGE_POOL=['coin','spark','scout','anvil','kindling','bazaar','bowman','watchdog',
-                  'strongbox','almanac','seer','reprise','peddler','patron','rummage','alchemist','ward'];
-
-const pctTxt = f => `${Math.round(f*1000)/10}%`;
-function effText(e){
-  const p=[];
-  if(e.energy) p.push(`+${e.energy} ⚡`);
-  if(e.cards)  p.push(`+${plural(e.cards,'Card')}`);
-  if(e.buys)   p.push(`+${plural(e.buys,'Buy')}`);
-  if(e.coin)   p.push(`+${e.coin} Coin`);
-  const s=p.length?[p.join(', ')]:[];
-  if(e.restock) s.push('Discard the whole market and restock it.');
-  if(e.merges) s.push(`Merge ${e.merges===1?'a pair':`${e.merges} pairs`} of identical cards from anywhere: discard and played cards first, then deck, then hand. The new card goes to your discard.`);
-  if(e.trash)   s.push(`Trash up to ${plural(e.trash,'card')} from your hand.`);
-  if(e.strike)  s.push(`Strike a threat for ${e.strike}% of what it still wants.`);
-  if(e.bank)    s.push(`Discard a Treasure from your hand. Next turn, gain its Coin +${e.bank}.`);
-  if(e.later)   s.push(`Next turn, draw ${plural(e.later,'more card')}.`);
-  if(e.peek)    s.push(e.peek===1?'Look at the top card of your deck. Discard it or leave it there.'
-    :`Look at the top ${e.peek} cards of your deck. Discard any of them; the rest stay.`);
-  if(e.replay)  s.push(`Play a card from your hand ${e.replay===2?'twice':`${e.replay} times`}, for free.`);
-  if(e.upmarket)s.push((e.upmarket===1?'Upgrade a random market card a level.':`Upgrade a random market card a level, ${e.upmarket} times. The same card can be picked again.`));
-  if(e.rummage) s.push(`Discard up to ${plural(e.rummage,'card')}, then draw one more than you discarded.`);
-  if(e.mult)    s.push(`Multiply your Coin by ${e.mult}.`);
-  if(e.ward)    s.push(`In your discard pile: threats lose ${pctTxt(e.ward)} of what they want each turn. Stays in hand at end of turn (draw 1 fewer).`);
-  if(p.length&&s.length>1) s[0]+='.';                            // "+2 ⚡. Strike a threat…"
-  return s.join(' ');
-}
-async function mergeFx(s,l){
-  const e=DB[s.key].eff(l), title=cname(s);
-  if(e.energy) A(e.energy);
-  if(e.cards)  draw(e.cards);
-  if(e.buys)   B(e.buys);
-  if(e.coin)   C(e.coin);
-  if(e.merges) await mergeAnywhere(e.merges,title);
-  if(e.trash){ const ch=await chooseCards(G.hand,{min:0,max:e.trash,why:s.key,title,sub:`Trash up to ${plural(e.trash,'card')} for good.`});
-    ch.forEach(c=>{pull(G.hand,c);trashCard(c);}); }
-  if(e.strike){ const t=await chooseThreat(title,`Strike for ${e.strike}%.`);
-    if(t){ log(`${title} looses an arrow at ${t.n}.`,'hl'); strike(t,e.strike/100); } }
-  if(e.bank){ const tr=G.hand.filter(c=>c.t==='treasure'&&!isFrozen(c));
-    const ch=await chooseCards(tr,{min:0,max:1,why:s.key,title,sub:`Discard a Treasure. Next turn, gain its Coin +${e.bank}.`,badge:c=>'→ '+(tval(c)+e.bank)});
-    if(ch[0]){ const g=tval(ch[0])+e.bank; pull(G.hand,ch[0]); G.discard.push(ch[0]); G.later.coin+=g;
-      log(`${title} locks away ${cname(ch[0])}: ${g} coin next turn.`,'hl'); } }
-  if(e.later){ G.later.cards+=e.later; log(`Next turn you draw ${plural(e.later,'more card')}.`,'hl'); }
-  if(e.peek){ const top=G.deck.slice(0,e.peek);
-    if(!top.length){ log('Your draw pile is empty.'); }
-    else { const ch=await chooseCards(top,{min:0,max:top.length,why:s.key,title,sub:'Pick the cards to discard. The rest stay on top, in order.'});
-      ch.forEach(c=>{pull(G.deck,c);G.discard.push(c);});
-      log(`${title} looks at ${plural(top.length,'card')} and discards ${ch.length}.`); } }
-  if(e.replay){ const cand=G.hand.filter(c=>(c.t==='action'||c.t==='treasure')&&!isFrozen(c));
-    const ch=await chooseCards(cand,{min:0,max:1,why:s.key,title,sub:`Play it ${e.replay===2?'twice':e.replay+' times'}, for free.`});
-    const c=ch[0];
-    if(c){ pull(G.hand,c); G.inPlay.push(c); log(`${title}: ${cname(c)}, ${e.replay} times.`,'hl');
-      for(let i=0;i<e.replay;i++){ if(c.t==='treasure'){ const v=tval(c); C(v); log(`${cname(c)} adds ${v} to your purse.`); } else await runAction(c); render(); }
-      afterPlay(c); } }
-  // Restock comes before upgrades, so a Peddler-Patron upgrades the fresh market.
-  if(e.restock){ newMarket(); log(`${title} sweeps the market clean and restocks it.`,'hl'); }
-  // Each upgrade picks any market card, so one can go up several levels at once.
-  if(e.upmarket){ const pool=G.market.filter(c=>c&&DB[c.key].merge);
-    for(let i=0;i<e.upmarket&&pool.length;i++){ const c=pick(pool), was=cname(c); c.lv++; fx('upgrade',c);
-      log(`${title} upgrades ${was} in the market to ${cname(c)}.`,'good'); } }
-  if(e.rummage){ const ch=await chooseCards(G.hand,{min:0,max:e.rummage,why:s.key,title,sub:'Discard any, then draw one more than you discarded.'});
-    ch.forEach(c=>{pull(G.hand,c);G.discard.push(c);}); draw(ch.length+1); }
-  if(e.mult){ const was=G.coin; G.coin=Math.floor(G.coin*e.mult); log(`${title} turns ${was} coin into ${G.coin}.`,'big'); }
-}
-
-// The resource cards are played with: Actions in classic and splice mode, ⚡ Energy in merge mode.
-const actN = n => merge() ? `${n} ⚡` : plural(n,'Action');
-const actW = () => merge() ? 'Energy' : 'Actions';
-
-/* ==========================================================
-   SPLICES — keywords grafted onto a card in your deck.
-   Clearing a threat in splice mode offers a choice of them;
-   a threat that detonates brands a scar onto a card instead.
-   once: a card can carry it only one time. only: card type.
-   Splices trigger every time the card resolves (Encore, Echo, Twin).
-   ========================================================== */
-const SPLICES={
-  quick: {n:'Quick',   art:'⚡',r:'common',  tx:'+1 Action'},
-  draw:  {n:'Drawing', art:'🃏',r:'common',  tx:'+1 Card'},
-  trade: {n:'Trading', art:'🛒',r:'common',  tx:'+1 Buy'},
-  coin:  {n:'Gilded',  art:'🪙',r:'common',  tx:c=>c?`+${tierMult(c.lv)} Coin`:'+1 Coin (more on upgraded cards)'},
-  strike:{n:'Barbed',  art:'🏹',r:'uncommon',tx:'Strike the most urgent threat for 15%'},
-  grow:  {n:'Sprouting',art:'🌱',r:'uncommon',tx:c=>`+${(c&&c.grow)||0} Coin, 1 more each time it is played`},
-  guard: {n:'Guarded', art:'🛡',r:'uncommon',once:true,tx:'⛨ When a threat attacks, discard this from your hand to block it'},
-  free:  {n:'Nimble',  art:'🍃',r:'rare',once:true,only:'action',tx:'Costs no Action to play'},
-  twin:  {n:'Twin',    art:'👯',r:'rare',once:true,tx:'Resolves twice when played'},
-  retain:{n:'Sticky',  art:'📌',r:'rare',once:true,tx:'Stays in your hand at end of turn'},
-  rust:  {n:'Rusty',   art:'🦠',scar:true,tx:c=>`−${c?tierMult(c.lv):1} Coin when played`},
-  heavy: {n:'Heavy',   art:'🪨',scar:true,once:true,tx:'Costs an extra Action to play'},
-  brittle:{n:'Brittle',art:'💔',scar:true,once:true,tx:'Trashed after you play it'},
+/* Cards. fx entries: [kind, base]. dmg, poison scale by value; block by defence; the rest are flat.
+   stoke: Powder when burned (default 1). piece:true is a bastion: cost is energy to deploy, need is Powder to fire. */
+const CARDS = {
+  fork:   {name:'Pitchfork',     art:'🔱', cost:1, fx:[['dmg',6]],  text:'Deal {dmg}.'},
+  helm:   {name:'Bucket Helm',   art:'🪣', cost:1, fx:[['block',5]], text:'Gain {block} block.'},
+  scoop:  {name:'Powder Scoop',  art:'🥄', cost:1, fx:[['powder',3]], text:'+3 Powder.'},
+  keg:    {name:'Keg Toss',      art:'🛢️', cost:1, fx:[['dmg',4],['powder',1]], text:'Deal {dmg}. +1 Powder.'},
+  errand: {name:'Errand Boy',    art:'🏃', cost:1, fx:[['draw',2]], text:'Draw 2.'},
+  sally:  {name:'Sally Forth',   art:'⚔️', cost:2, fx:[['dmg',16]], text:'Deal {dmg}.'},
+  pavise: {name:'Pavise',        art:'🛡️', cost:2, fx:[['block',15]], text:'Gain {block} block.'},
+  second: {name:'Second Wind',   art:'🌬️', cost:0, stoke:0, fx:[['energy',1]], text:'+1 energy. Burns for nothing.'},
+  mend:   {name:'Masons',        art:'🧱', cost:1, fx:[['repair',.35],['block',2]], text:'Repair every bastion 35%. Gain {block} block.'},
+  whet:   {name:'Whetstone',     art:'🪨', cost:1, fx:[['whet',3]], text:'The next bastion to fire pays triple.'},
+  funnel: {name:'Funnel',        art:'🔻', cost:0, fx:[['aim',3]], text:'The next 3 Powder go to the rightmost bastion that can fire.'},
+  vial:   {name:'Blight Vial',   art:'🧪', cost:1, fx:[['poison',11]], text:'Apply {poison} blight. Blight halves each turn.'},
+  doll:   {name:'Hex Doll',      art:'🎎', cost:1, fx:[['hex',2]], text:'The next 2 enemy hits are halved.'},
+  tithe:  {name:'Tithe Box',     art:'📦', cost:1, fx:[['coin',.3]], text:'Gain coin: {coin} of this bounty.'},
+  rope:   {name:'Bell Rope',     art:'🔔', cost:2, fx:[['trigger',1]], text:'The leftmost bastion that can fire does, for free.'},
+  ram:    {name:'Battering Ram', art:'🪵', cost:3, fx:[['dmg',48]], text:'Deal {dmg}.'},
+  cart:   {name:'Handcart',      art:'🛒', cost:0, fx:[['rotate',1],['draw',1]], text:'Move your leftmost bastion to the far right. Draw 1.'},
+  anvil:  {name:'Field Anvil',   art:'⚒️', cost:1, fx:[['anvil',3]], text:'Your strongest other card in hand pays triple for this fight.'},
+  deed:   {name:'Title Deed',    art:'📜', cost:0, junk:true, fx:[], text:'Cannot be played. While packed it opens one board slot past two. Burn for 1 Powder.'},
+  ward:   {name:'Boundary Ward', art:'🪬', cost:0, junk:true, stays:true, stoke:0, fx:[], text:'Cannot be played, stays in hand. Once burned, the enemy loses 3% of max health each turn while it lies in the discard.'},
+  rubble: {name:'Rubble',        art:'🪨', cost:0, junk:true, stoke:0, temp:true, fx:[], text:'Cannot be played. Burn it to clear it, for no Powder.'},
+  // Bastions
+  cannon: {name:'Cannon',        art:'💣', piece:true, cost:2, need:3, hp:30, fx:[['dmg',14]], text:'Deal {dmg}.'},
+  mortar: {name:'Mortar',        art:'🎯', piece:true, cost:3, need:7, hp:20, fx:[['dmg',46]], text:'Deal {dmg}.'},
+  stake:  {name:'Palisade',      art:'🪓', piece:true, cost:1, need:2, hp:40, fx:[['block',9]], text:'Gain {block} block.'},
+  gate:   {name:'Gatehouse',     art:'🏰', piece:true, cost:2, need:4, hp:90, taunt:true, fx:[['block',6],['selfrepair',.3]], text:'Takes aimed hits first. Gain {block} block and repair 30%.'},
+  apoth:  {name:'Apothecary',    art:'⚗️', piece:true, cost:2, need:3, hp:24, fx:[['poison',18]], text:'Apply {poison} blight.'},
+  hut:    {name:'Witch Hut',     art:'🛖', piece:true, cost:2, need:5, hp:24, fx:[['hex',2],['dmg',8]], text:'Next 2 enemy hits halved. Deal {dmg}.'},
+  mint:   {name:'Mint',          art:'🪙', piece:true, cost:2, need:4, hp:24, fx:[['coin',.4]], text:'Gain coin: {coin} of this bounty.'},
+  post:   {name:'Courier Post',  art:'📯', piece:true, cost:2, need:4, hp:24, fx:[['draw',2]], text:'Draw 2.'},
+  granary:{name:'Granary',       art:'🌾', piece:true, cost:2, need:5, hp:30, fx:[['energy',2]], text:'+2 energy.'},
+  bellows:{name:'Bellows',       art:'🪗', piece:true, cost:1, need:2, hp:20, fx:[['powder',3]], text:'+3 Powder, which runs on down the line.'},
 };
-const SCARS=Object.keys(SPLICES).filter(k=>SPLICES[k].scar);
-const spliceText = (k,c) => { const t=SPLICES[k].tx; return typeof t==='function'?t(c):t; };
+const SHOP_POOL = ['sally','pavise','second','mend','whet','funnel','vial','doll','tithe','rope','ram','cart','anvil','keg','errand','mortar','gate','apoth','hut','mint','post','granary','bellows'];
 
-function clone(c){ const g=mk(c.key,c.lv); g.mods=c.mods.slice(); if(c.grow) g.grow=c.grow; return g; }
-function upTreasure(k,l){ if(k==='copper')return ['silver',l]; if(k==='silver')return ['gold',l]; return [k,l+1]; }
-
-/* ==========================================================
-   CHARMS — rule-benders drafted between waves.
-   (Called "jokers" in code: G.jokers, JOKERS, hasJ.)
-   ========================================================== */
-const JOKERS={
-  greedy:  {n:'Greedy Hands',art:'🖐',r:'common',tx:'+1 card in every hand you draw.'},
-  wind:    {n:'Second Wind',art:'💨',r:'common',tx:'+1 Action at the start of each turn.',mtx:'+1 ⚡ at the start of each turn.'},
-  seal:    {n:"Merchant's Seal",art:'🛒',r:'common',tx:'+1 Buy each turn. Market cards cost 1 less.'},
-  gilded:  {n:'Gilded Copper',art:'🪙',r:'common',tx:'Copper produces +2 Coin.'},
-  piggy:   {n:'Piggy Bank',art:'🐷',r:'common',tx:'Half your unspent Coin carries over to next turn.'},
-  scrapper:{n:'Scrapper',art:'♻',r:'common',tx:'Whenever a card is trashed, +2 Coin.'},
-  bounty:  {n:'Bounty Hunter',art:'🎯',r:'common',tx:'Clearing a threat gives +1 Card, +1 Action and +2 Coin.',mtx:'Clearing a threat gives +1 Card, +1 ⚡ and +2 Coin.'},
-  tidy:    {n:'Tidy Mind',art:'🧹',r:'common',tx:'Hauling Rubble costs no Action and draws a card.',mtx:'Hauling Rubble costs no ⚡ and draws a card.'},
-  eagle:   {n:'Eagle Eye',art:'🦅',r:'common',tx:'Every strike against a threat hits 15% harder.'},
-  momentum:{n:'Momentum',art:'🌀',r:'uncommon',tx:'Each Action you play gives +1 Coin for every Action already played this turn.'},
-  midas:   {n:'Midas Touch',art:'✨',r:'uncommon',tx:'Every Treasure produces +1 Coin.'},
-  echo:    {n:'Echo',art:'🔔',r:'uncommon',tx:'The first Action you play each turn resolves twice.'},
-  minimal: {n:'Minimalist',art:'📏',r:'uncommon',tx:'While your deck is 15 cards or fewer, Treasures produce ×2 Coin.'},
-  hoarder: {n:'Hoarder',art:'🗃',r:'uncommon',tx:'+1 Coin at the start of each turn for every 4 cards in your deck.'},
-  wall:    {n:'Iron Wall',art:'🛡',r:'uncommon',tx:'The first attack each turn is blocked automatically.',ftx:'The first detonation each wave is blocked automatically.'},
-  thorns:  {n:'Thorns',art:'🌵',r:'uncommon',tx:'Whenever you block an attack, strike that threat for 20%.'},
-  clerk:   {n:'Head Clerk',art:'🖋',r:'uncommon',tx:'Actions and Buys spent on threats count double.',mtx:'Energy and Buys spent on threats count double.'},
-  mirror:  {n:'Mirror',art:'🪞',r:'uncommon',tx:'The first Treasure you play each turn produces twice.'},
-  trophy:  {n:'Trophy Wall',art:'🦌',r:'uncommon',tx:'+1 Coin at the start of each turn for every 2 threats cleared this run.'},
-  goose:   {off:'merge',n:'Golden Goose',art:'🪿',r:'uncommon',tx:'Nest Eggs grow by 2 each time you play them, not 1.'},
-  hourglass:{n:'Hourglass',art:'⏳',r:'uncommon',tx:'Threats attack one turn less often.'},
-  hammers: {only:'merge',n:'Twin Hammers',art:'⚒',r:'common',tx:'Anvil can now upgrade 2 pairs at once.'},
-  mittens: {n:'Warm Mittens',art:'🧤',r:'common',tx:'Your cards cannot be frozen (Ice Coffins still hold).'},
-  stone:   {off:'merge',n:"Philosopher's Stone",art:'🔮',r:'rare',tx:'Crucible pays double.'},
-  ovation: {off:'merge',n:'Standing Ovation',art:'👏',r:'rare',tx:'Encores play their Action one extra time.'},
-  golden:  {n:'Golden Ratio',art:'🏅',r:'rare',tx:'All Treasures produce ×2 Coin.'},
-  interest:{n:'Compound Interest',art:'💹',r:'rare',tx:'Coin poured into threats counts double.'},
-  glass:   {n:'Glass Crown',art:'🥂',r:'rare',tx:'Treasures produce ×3 Coin — but every threat attacks one turn sooner.'},
-  vintage: {n:'Vintage',art:'🍷',r:'rare',tx:'Treasures produce +1 Coin for each wave this charm has been held.'},
+// Sockets: three on every card, opened at levels 5, 20 and 40. Free to change at home. No perk twice on one card.
+const PERKS = {
+  keen:   {name:'Keen',   for:'both',  text:'Pays triple.'},
+  light:  {name:'Light',  for:'both',  text:'Card: costs 1 less energy. Bastion: needs 1 less Powder.'},
+  fuel:   {name:'Fuel',   for:'card',  text:'Burns for 2 more Powder.'},
+  echo:   {name:'Echo',   for:'card',  text:'Its effect happens twice.'},
+  swift:  {name:'Swift',  for:'card',  text:'Draw a card when played.'},
+  bulwark:{name:'Bulwark',for:'piece', text:'Eight times the health.'},
+  twin:   {name:'Twin',   for:'piece', text:'Can fire twice a turn.'},
+  relay:  {name:'Relay',  for:'piece', text:'Passes 1 Powder on when it fires.'},
+  primed: {name:'Primed', for:'piece', text:'Starts every fight one Powder short of firing.'},
 };
-// off: a mode the charm makes no sense in; only: the one mode it is offered in.
-// mtx: its text in merge mode; ftx: with fuses (splice and merge).
-const jtx = k => merge()&&JOKERS[k].mtx || fused()&&JOKERS[k].ftx || JOKERS[k].tx;
-const RARITY={common:60,uncommon:30,rare:10};
 
-/* ==========================================================
-   THREATS — each one demands a resource and attacks on a timer.
-   In splice mode the timer is a fuse: when it runs out the threat
-   detonates once (its attack, a scar, a lost heart) and leaves.
-   ========================================================== */
-const THREATS={
-  taxman:{fuse:5,n:'Tax Collector',art:'🧾',kind:'prog_coin',need:18,bar:'cash',label:'Progressive — Coin',
-    desc:()=>'The crown wants its due. Pour in coin across as many turns as you like.',
-    atk:{k:'grow',pct:20,every:3,name:'Late fees'}},
-  ogre:{fuse:3,scar:'brittle',n:'Ogre at the Gate',art:'👹',kind:'once_coin',need:10,bar:'cash',label:'One shot — Coin',late:true,
-    desc:t=>`It will leave for a fee — the whole ${t.need} coin, in a single turn.`,
-    atk:{k:'discard',n:2,every:2,name:'Stomp'}},
-  idol:{fuse:3,scar:'brittle',n:'Hungry Idol',art:'🗿',kind:'sacrifice',need:3,bar:'blood',label:'Sacrifice — Cards',
-    desc:t=>`Feed it ${t.need} cards from your hand. Rubble is refused. The cards are trashed for good.`,
-    atk:{k:'trash',n:1,every:3,name:'Hunger'}},
-  redtape:{fuse:5,scar:'heavy',n:'Red Tape',art:'📜',kind:'prog_action',need:5,bar:'act',label:'Progressive — Actions',
-    desc:()=>`Forms in triplicate, forever. Spend ${actW()} into it across as many turns as you need.`,
-    atk:{k:'bulk',n:2,every:3,name:'Paperwork'}},
-  pirates:{fuse:4,scar:'heavy',n:'Pirate Blockade',art:'🏴‍☠️',kind:'prog_buy',need:4,bar:'buy',label:'Progressive — Buys',
-    desc:()=>'Nothing sails in while they sit in the harbour. Spend Buys into it across turns.',
-    atk:{k:'nobuy',n:1,every:2,name:'Blockade'}},
-  witch:{fuse:3,scar:'rust',n:'Bog Witch',art:'🧙',kind:'prog_discard',need:7,bar:'blood',label:'Progressive — Discards',
-    desc:()=>'She takes whatever you hand over. Discard cards from your hand into her cauldron across turns.',
-    atk:{k:'curse',n:1,every:3,name:'Hex'}},
-  devil:{fuse:3,n:"Devil's Bargain",art:'😈',kind:'panic',curses:2,bar:'blood',label:'Panic button',
-    desc:t=>`Shake on it and it is gone at once — but ${plural(t.curses,'Jinx','Jinxes')} go straight into your discard pile.`,
-    atk:{k:'price',n:1,every:2,name:'Fine print'}},
-  dragon:{fuse:3,scar:'rust',n:'Greedy Dragon',art:'🐉',kind:'once_hybrid',needCoin:14,needAct:2,bar:'cash',label:'One shot — Coin + Actions',late:true,
-    desc:t=>`Buying it off takes ${t.needCoin} coin and ${actN(t.needAct)}, all within a single turn.`,
-    atk:{k:'trash',n:1,filter:'treasure',every:3,name:'Plunder'}},
-  rift:{fuse:4,n:'Magic Rift',art:'🌌',kind:'upgrade',bar:'act',label:'Sacrifice — Treasure + Action',
-    desc:t=>`Trash ${plural(t.needT,'Treasure')} and ${plural(t.needA,'Action')} from your hand into the rift, over any turns.`,
-    atk:{k:'warp',n:1,every:3,name:'Rift'}},
-  bandit:{fuse:4,scar:'rust',n:'Bandit King',art:'🗡',kind:'prog_coin',need:8,bar:'cash',label:'Progressive — Coin',
-    desc:()=>'Wants his cut — and jinxes you every single turn he stays.',
-    atk:{k:'curse',n:1,every:1,name:'Shakedown'}},
-  goblins:{fuse:4,scar:'rust',n:'Goblin Pickpockets',art:'👺',kind:'prog_coin',need:10,bar:'cash',label:'Progressive — Coin',
-    desc:()=>'Small, quick and everywhere. Pay them off before your purse is empty.',
-    atk:{k:'pickpocket',n:2,every:2,name:'Pickpocket'}},
-  blizzard:{fuse:4,scar:'heavy',n:'Blizzard',art:'❄',kind:'prog_action',need:4,bar:'act',label:'Progressive — Actions',
-    desc:()=>`Shovel it out with ${actW()}, across as many turns as you need.`,
-    atk:{k:'freeze',n:1,every:2,name:'Frostbite'}},
-  rats:{fuse:3,n:'Rat King',art:'🐀',kind:'scavenge',need:4,bar:'blood',label:'Scavenge — Cards',
-    desc:t=>`Trash cards from your hand into its nest until it has ${t.need}. Junk counts double.`,
-    atk:{k:'warp',n:1,every:2,name:'Nesting'}},
-  ghost:{fuse:3,scar:'brittle',n:'Restless Ghost',art:'👻',kind:'banish',need:3,bar:'act',label:'Banish — Actions played',late:true,
-    desc:t=>`Play ${plural(t.need-t.prog,'Action')} in a single turn, then banish it.`,
-    atk:{k:'discard',n:1,filter:'action',every:2,name:'Spook'}},
-  queen:{fuse:4,scar:'heavy',scarBest:true,n:'Snow Queen',art:'🧊',kind:'prog_coin',need:12,bar:'cash',label:'Progressive — Coin',late:true,coffin:1,
-    desc:()=>'She covets your finest card and seals it in ice. Nothing in a coffin can be played, forged or copied until she is paid off.',
-    atk:{k:'entomb',n:1,every:3,name:'Ice Coffin'}},
-  bookworm:{fuse:4,scar:'rust',n:'Bookworm',art:'🐛',kind:'leech',need:5,bar:'act',label:'Leech — Draws',
-    desc:t=>`It eats your pages. Until it has had ${t.need}, every card your Actions or splices would draw feeds it instead. It cannot be paid any other way.`,
-    atk:{k:'discard',n:1,every:2,name:'Gnaw'}},
+/* Enemies. intent(turn) gives a list of actions: {hit:mult,at:'left'|'right'|'you'|'all'}, {drain:1}, {seal:1}, {rubble:n}. */
+const ENEMIES = {
+  rat:   {name:'Packrat',       art:'🐀', hp:.9, min:0, intent:t=>[{hit:1,at:'left'}]},
+  raider:{name:'Hedge Raider',  art:'🗡️', hp:1,  min:0, intent:t=>[{hit:.6,at:'left'},{hit:.6,at:'left'}]},
+  archer:{name:'Tower Archer',  art:'🏹', hp:.9, min:3, intent:t=>[{hit:1.1,at:'right'}]},
+  ogre:  {name:'Toll Ogre',     art:'👹', hp:1.2,min:4, intent:t=>t%2?[{hit:.3,at:'you'}]:[{hit:2.5,at:'you'}]},
+  sapper:{name:'Sapper',        art:'⛏️', hp:1,  min:6, intent:t=>[{drain:1},{hit:.6,at:'left'}]},
+  warden:{name:'Shield Warden', art:'🛡️', hp:.9, min:8, ward:1, intent:t=>[{hit:.9,at:'left'}]},
+  cutpurse:{name:'Cutpurse',    art:'🥷', hp:.8, min:5, flee:4, intent:t=>[{hit:.6,at:'you'}]},
+  shaman:{name:'Mire Shaman',   art:'🧙', hp:1,  min:10,intent:t=>[{rubble:1},{hit:.7,at:'left'}]},
+  // Bosses
+  toller:{name:'The Toll Collector', art:'🧛', boss:true, hp:1, intent:t=>[{seal:1},{hit:1.3,at:'left'}]},
+  bishop:{name:'The Iron Bishop',    art:'🗿', boss:true, hp:1, intent:t=>t%3?[{hit:.7,at:'all'}]:[{hit:2.4,at:'you'}]},
+  king:  {name:'The Hollow King',    art:'👑', boss:true, hp:1, grow:1.25, intent:t=>t%2?[{hit:1,at:'left'}]:[{drain:1},{hit:1,at:'you'}]},
 };
-const THREAT_KEYS=Object.keys(THREATS);
+const ENEMY_POOL = ['rat','raider','archer','ogre','sapper','warden','cutpurse','shaman'];
+const BOSS_ORDER = ['toller','bishop','king'];
+
+// Rule changes: a boss offers three of these. Each can be taken once.
+const REWARDS = {
+  slot1:  {name:'Land grant',     text:'One more board slot, and a Title Deed to hold it.', on:P=>grantSlot(P)},
+  slot2:  {name:'Second grant',   text:'One more board slot, and a Title Deed to hold it.', on:P=>grantSlot(P), after:'slot1'},
+  slot3:  {name:'Third grant',    text:'One more board slot, and a Title Deed to hold it.', on:P=>grantSlot(P), after:'slot2'},
+  slot4:  {name:'Royal charter',  text:'One more board slot, and a Title Deed to hold it.', on:P=>grantSlot(P), after:'slot3'},
+  energy1:{name:'Strong tea',     text:'+1 energy every turn.', on:P=>{P.energy++;}},
+  energy2:{name:'Stronger tea',   text:'+1 energy every turn.', on:P=>{P.energy++;}, after:'energy1'},
+  hand1:  {name:'Wide satchel',   text:'+1 card in hand every turn.', on:P=>{P.hand++;}},
+  hand2:  {name:'Wider satchel',  text:'+1 card in hand every turn.', on:P=>{P.hand++;}, after:'hand1'},
+  sluice: {name:'Sluice gate',    text:'The wheel turns 3 Powder faster, free.', on:P=>{P.wheel+=3;}},
+  magz:   {name:'Powder cellar',  text:'The Magazine holds 6 more.', on:P=>{P.mag+=6;}},
+  socket: {name:'Master jeweller',text:'Every card opens a fourth socket at level 60.', on:P=>{P.extraSock=1;}},
+};
