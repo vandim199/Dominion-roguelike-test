@@ -21,11 +21,11 @@ function rng32(o,k){ o[k]=(o[k]+0x6D2B79F5)|0; let t=o[k]; t=Math.imul(t^(t>>>15
 function hash01(a,b){ const o={s:(Math.imul(a|0,2654435761)^Math.imul(b|0,40503))|0}; rng32(o,'s'); return rng32(o,'s'); }
 
 const TUNE = {
-  hp0:20, hpG:1.30,  atk0:9, atkG:1.235,  coin0:9, coinG:1.30,   // enemy per fight
+  hp0:20, hpG:1.30,  atk0:9, atkG:1.235,  coin0:30, coinG:1.30,   // enemy per fight
   bossEvery:12, bossHp:2.6, bossCoin:4, caravanEvery:7, caravanPrice:2,
   valG:1.40, mileX:3, mileEvery:10, defG:1.42,                   // value of a card or bastion per level
-  cost0:6, costG:1.60, hearthCost:10, hearthG:1.60, baseHp:40,
-  wheelCost:30, wheelG:9, magCost:60, magG:5, ledgerCost:150, ledgerG:3, ledgerX:1.3,
+  cost0:4, pieceCostX:2.5, costG:1.62, hearthCost:10, hearthG:1.60, baseHp:40,
+  wheelCost:30, wheelG:9, magCost:60, magG:5, ledgerCost:300, ledgerG:60, ledgerX:1.25,
   marchR:4, defeatKeep:.7, enrageAfter:6, enrageX:1.4, healAfter:.2, repairAfter:.25,
   magBase:2, swapCost:1, handBase:5, energyBase:3, deckMin:8, deckMax:12, finalFight:118,
   sockAt:[5,20,40],
@@ -54,7 +54,7 @@ const CARDS = {
   ram:    {name:'Battering Ram', art:'🪵', cost:3, fx:[['dmg',48]], text:'Deal {dmg}.'},
   cart:   {name:'Handcart',      art:'🛒', cost:0, fx:[['rotate',1],['draw',1]], text:'Move your leftmost bastion to the far right. Draw 1.'},
   anvil:  {name:'Field Anvil',   art:'⚒️', cost:1, fx:[['anvil',3]], text:'Your strongest other card in hand pays triple for this fight.'},
-  deed:   {name:'Title Deed',    art:'📜', cost:0, junk:true, fx:[], text:'Cannot be played. While packed it opens one board slot past two. Burn for 1 Powder.'},
+  deed:   {name:'Title Deed',    art:'📜', cost:0, junk:true, stoke:0, fx:[], text:'Cannot be played and burns for nothing. While packed it opens one board slot past two.'},
   ward:   {name:'Boundary Ward', art:'🪬', cost:0, junk:true, stays:true, stoke:0, fx:[], text:'Cannot be played, stays in hand. Once burned, the enemy loses 3% of max health each turn while it lies in the discard.'},
   rubble: {name:'Rubble',        art:'🪨', cost:0, junk:true, stoke:0, temp:true, fx:[], text:'Cannot be played. Burn it to clear it, for no Powder.'},
   // Bastions

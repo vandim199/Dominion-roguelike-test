@@ -1,628 +1,259 @@
 "use strict";
 /* ==========================================================
-   Coinkeep — UI: layout & scaling, rendering, modals, card
-   inspector, effects, title screen, settings and input wiring.
-
-   Every size in style.css is in rem, so the UI scale is one
-   number: the root font-size. The layout (wide / narrow / short)
-   is picked from the viewport measured in rem *after* scaling,
-   so scaling up on a small screen switches to a compact layout.
+   Coinkeep: Forays. The screens. All rules live in game.js.
    ========================================================== */
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const UI={P:null,T:null,tab:'board',sel:null,timer:null,hint:true};
+function show(id){ for(const s of ['title','home','fight']) $(s).hidden=s!==id; }
+function persist(){ saveGame(UI.P,UI.T); }
+const mmss=s=>Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
 
-const UI = { layout:'wide', side:true, auto:1, scale:1, user:1, tapInspect:null, tab:'threats', touch:false,
-             lastCoin:0, hits:new Set(), ups:new Map() };
-const mqCoarse = matchMedia('(pointer: coarse)');
-
-function loadPrefs(){
-  try{ const p=JSON.parse(localStorage.getItem('dcrisis.ui')||'{}');
-    if(p.user) UI.user=clamp(+p.user,.6,1.6);
-    if(typeof p.tapInspect==='boolean') UI.tapInspect=p.tapInspect;
-  }catch(e){}
+/* ---------- title ---------- */
+function renderTitle(){
+  const s=readSave(); show('title');
+  $('tSummary').textContent=s?`Deepest fight ${s.P.deepest+1} · ${fmt(s.P.coin)} coin · power ${fmt(estPower(s.P))}`:'';
+  $('tPlay').textContent=s?'Continue':'Play'; $('tNew').hidden=!s; $('tNew').textContent='New game'; $('tNew').dataset.arm='';
 }
-function savePrefs(){ try{ localStorage.setItem('dcrisis.ui',JSON.stringify({user:UI.user,tapInspect:UI.tapInspect})); }catch(e){} }
-const inspectOnTap = () => UI.tapInspect ?? UI.touch;
-
-/* ---------- layout & scale ---------- */
-function autoScale(){
-  const W=innerWidth, H=innerHeight;
-  if(H<520&&W>H) return clamp(H/460,.72,.95);              // phone, landscape
-  if(W<700)      return clamp(W/430,.78,1);                // phone, portrait
-  if(H>W*1.15)   return clamp(W/600,1,1.6);                // tablet / tall window, portrait
-  return clamp(Math.min(W/1440,H/880),.85,1.9);            // tablet landscape, laptop, desktop, 4K
-}
-function applyLayout(){
-  UI.touch=mqCoarse.matches;
-  UI.auto=autoScale(); UI.scale=UI.auto*UI.user;
-  const px=16*UI.scale;
-  document.documentElement.style.fontSize=px+'px';
-  const W=innerWidth/px, H=innerHeight/px;                 // viewport in rem
-  UI.layout = (H<34&&W>H) ? 'short' : W<60 ? 'narrow' : 'wide';
-  UI.side = UI.layout==='wide' && W>=78;
-  const b=document.body;
-  b.classList.remove('L-wide','L-narrow','L-short');
-  b.classList.add('L-'+UI.layout);
-  b.classList.toggle('compact',UI.layout!=='wide');
-  b.classList.toggle('has-side',UI.side);
-  b.classList.toggle('tab-market',UI.layout==='short'&&UI.tab==='market');
-  b.classList.toggle('touch',UI.touch);
-  if(UI.side) $('side').classList.remove('open');
-  // cards too small to read drop their rules text (tap / hold to read them instead)
-  const cardPx=v=>parseFloat(getComputedStyle(b).getPropertyValue(v))*px;
-  b.classList.toggle('mini-mk',cardPx('--mk-w')<88);
-  b.classList.toggle('mini-hd',cardPx('--hd-w')<88);
-  syncSettings();
-}
-function setUserScale(v){ UI.user=clamp(Math.round(v*100)/100,.6,1.6); savePrefs(); applyLayout(); render(); }
-
-function syncSettings(){
-  const pct=Math.round(UI.user*100);
-  $('sRange').value=pct; $('sVal').textContent=pct+'%';
-  $('sEff').textContent=`Effective size ${Math.round(UI.scale*100)}% · ${UI.layout} layout`;
-  $('sTap').checked=inspectOnTap();
-}
-
-/* ---------- log & toasts ---------- */
-// The on-screen log keeps the last 200 lines; LEDGER keeps the whole run for Save log.
-const LEDGER=[];
-function log(msg,cls){
-  LEDGER.push([msg,cls||'']);
-  const d=document.createElement('div'); if(cls)d.className=cls; d.textContent=msg;
-  const l=$('log'); l.appendChild(d);
-  while(l.children.length>200) l.removeChild(l.firstChild);
-  l.scrollTop=l.scrollHeight;
-  if(cls==='good'||cls==='bad'||cls==='big') toast(msg,cls);
-}
-function toast(msg,cls){
-  if(UI.side&&cls!=='big') return;                         // the ledger is on screen already
-  const box=$('toasts'), d=document.createElement('div');
-  d.className='toast '+(cls||''); d.textContent=msg; box.appendChild(d);
-  while(box.children.length>3) box.removeChild(box.firstChild);
-  setTimeout(()=>d.remove(),3200);
-}
-
-/* ---------- effects: floating numbers, shakes, banners ---------- */
-const buzz = ms => { try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} };
-function floatText(anchor,text,cls){
-  const r=anchor.getBoundingClientRect(), d=document.createElement('div');
-  d.className='float '+(cls||''); d.textContent=text;
-  d.style.left=(r.left+r.width/2)+'px'; d.style.top=r.top+'px';
-  document.body.appendChild(d); setTimeout(()=>d.remove(),1000);
-}
-function pulseClass(el,cls,ms){ el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); setTimeout(()=>el.classList.remove(cls),ms); }
-function banner(text,sub){
-  const b=$('banner'); b.innerHTML=`<div>${text}</div>${sub?`<small>${sub}</small>`:''}`;
-  pulseClass(b,'on',1500);
-}
-function fx(kind,arg){
-  switch(kind){
-    case 'shake': pulseClass(document.body,'shake',420); buzz(40); break;
-    case 'hurt':  pulseClass(document.body,'hurt',500); buzz(80); break;
-    case 'hit':   UI.hits.add(arg.id); break;
-    case 'upgrade': UI.ups.set(arg,(UI.ups.get(arg)||0)+1); buzz(20);
-      if(UI.layout==='short'){ UI.tab='market'; document.body.classList.add('tab-market'); } break;   // no render: later upgrades still to count
-    case 'clear': floatText($('threats'),`${arg.art} cleared!`,'good'); buzz(25); break;
-    case 'wave':  banner(`Wave ${arg}`,arg%TUNE.eliteEvery===0?'An Elite leads the charge':''); break;
-    case 'lose':  buzz([90,60,180]); break;
-  }
-}
-
-function saveLog(){
-  if(!G) return;
-  const d=new Date(), p=n=>String(n).padStart(2,'0');
-  const stamp=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-  const url=URL.createObjectURL(new Blob([logText(LEDGER,stamp)],{type:'text/plain'}));
-  const a=document.createElement('a'); a.href=url; a.download=`coinkeep-log-${stamp.replace(/[ :]/g,'-')}.txt`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
-}
-
-function resetUI(){
-  LEDGER.length=0;
-  $('log').innerHTML=''; $('toasts').innerHTML='';
-  $('over').classList.remove('on'); closeInspect(); closeMenu();
-  UI.lastCoin=0;
-}
-function showGameOver(text){
-  $('overText').textContent=text;
-  $('over').classList.add('on'); $('overBtn').focus();
-}
-
-/* ==========================================================
-   MODALS
-   ========================================================== */
-function closeVeil(){ $('veil').classList.remove('on'); $('pool').innerHTML=''; $('mOpts').innerHTML=''; $('mBtns').innerHTML=''; }
-function openVeil(title,sub,kind){
-  closeInspect();
-  $('mTitle').textContent=title; $('mSub').textContent=sub;
-  $('pool').innerHTML=''; $('mOpts').innerHTML=''; $('mBtns').innerHTML='';
-  $('pool').className=kind||'';
-  $('veil').classList.add('on'); $('veil').scrollTop=0;
-}
-
-// back: label of a button that leaves the picker without choosing; it resolves to null.
-function chooseCards(pool,{min=0,max=1,title='Choose',sub='',badge=null,back=null}={}){
-  return new Promise(res=>{
-    if((!pool.length||max<=0)&&!back){ res([]); return; }
-    const chosen=new Set();
-    openVeil(title,sub+(UI.touch?' Press and hold a card to read it.':' Right-click a card to read it up close.'));
-    const p=$('pool');
-    const ok=document.createElement('button'); ok.className='mbtn go';
-    const upd=()=>{ ok.textContent=chosen.size?`Confirm ${chosen.size}`:(min===0?'Skip':'Confirm'); ok.disabled=chosen.size<min; };
-    pool.forEach(c=>{
-      const el=cardEl(c,{badge}); el.style.cursor='pointer'; el.tabIndex=0;
-      const tog=()=>{
-        if(chosen.has(c)) chosen.delete(c);
-        else{
-          if(chosen.size>=max){ if(max!==1) return; chosen.clear(); p.querySelectorAll('.selected').forEach(x=>x.classList.remove('selected')); }
-          chosen.add(c);
-        }
-        el.classList.toggle('selected',chosen.has(c)); upd(); };
-      el.onclick=()=>{ if(el._held){ el._held=false; return; } tog(); };
-      el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tog();}};
-      el.oncontextmenu=e=>{e.preventDefault();inspectCard(c);};
-      onLongPress(el,()=>inspectCard(c));
-      p.appendChild(el);
-    });
-    ok.onclick=()=>{closeVeil();res([...chosen]);};
-    if(back){ const b=document.createElement('button'); b.className='mbtn'; b.textContent=back; b.onclick=()=>{closeVeil();res(null);}; $('mBtns').appendChild(b); }
-    if(!pool.length){ p.innerHTML='<p class="hint">No cards to choose from.</p>'; ok.hidden=true; }
-    $('mBtns').appendChild(ok); upd();
-    ok.focus();
-  });
-}
-
-// Show one card large with a yes and a no; resolves true or false.
-function confirmCard(c,title,sub,yes='Confirm',no='Back'){
-  return new Promise(res=>{
-    openVeil(title,sub);
-    const el=cardEl(c); el.classList.add('big'); $('pool').appendChild(el);
-    for(const [label,v,cls] of [[no,false,''],[yes,true,'go']]){
-      const b=document.createElement('button'); b.className='mbtn '+cls; b.textContent=label;
-      b.onclick=()=>{closeVeil();res(v);}; $('mBtns').appendChild(b);
-      if(v) setTimeout(()=>b.focus(),0);
-    }
-  });
-}
-
-function chooseOption(title,sub,options){
-  return new Promise(res=>{
-    openVeil(title,sub);
-    const box=$('mOpts');
-    options.forEach(([k,label],i)=>{
-      const b=document.createElement('button'); b.className='opt'; b.textContent=label;
-      b.onclick=()=>{closeVeil();res(k);};
-      box.appendChild(b); if(i===0) setTimeout(()=>b.focus(),0);
-    });
-  });
-}
-
-function chooseJoker(keys,title,sub,{skip='Skip'}={}){
-  return new Promise(res=>{
-    openVeil(title,sub,'jokers');
-    const p=$('pool');
-    keys.forEach(k=>{
-      const el=jokerCardEl(k); el.tabIndex=0; el.setAttribute('role','button');
-      el.onclick=()=>{closeVeil();res(k);};
-      el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();closeVeil();res(k);}};
-      p.appendChild(el);
-    });
-    const b=document.createElement('button'); b.className='mbtn'; b.textContent=skip;
-    b.onclick=()=>{closeVeil();res(null);};
-    $('mBtns').appendChild(b);
-    setTimeout(()=>{ const f=p.querySelector('.jcard'); if(f) f.focus(); },0);
-  });
-}
-
-function chooseSplice(keys,title,sub){
-  return new Promise(res=>{
-    openVeil(title,sub,'jokers');
-    const p=$('pool');
-    keys.forEach(k=>{
-      const el=spliceCardEl(k); el.tabIndex=0; el.setAttribute('role','button');
-      el.onclick=()=>{closeVeil();res(k);};
-      el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();closeVeil();res(k);}};
-      p.appendChild(el);
-    });
-    const b=document.createElement('button'); b.className='mbtn'; b.textContent='Skip';
-    b.onclick=()=>{closeVeil();res(null);};
-    $('mBtns').appendChild(b);
-    setTimeout(()=>{ const f=p.querySelector('.jcard'); if(f) f.focus(); },0);
-  });
-}
-
-function viewPile(title,pile){
-  const list=pile.slice().sort((a,b)=>cname(a).localeCompare(cname(b)));
-  openVeil(title,plural(pile.length,'card')+' — tap a card to read it.');
-  const p=$('pool');
-  list.forEach(c=>{ const el=cardEl(c); el.tabIndex=0; el.style.cursor='zoom-in';
-    el.onclick=()=>inspectCard(c); el.onkeydown=e=>{if(e.key==='Enter')inspectCard(c);}; p.appendChild(el); });
-  const b=document.createElement('button'); b.className='mbtn'; b.textContent='Close'; b.onclick=closeVeil;
-  $('mBtns').appendChild(b); b.focus();
-}
-
-/* ---------- inspector: a large, readable view of one card / joker / threat ---------- */
-function openInspect(node,info,actions=[]){
-  const body=$('inspectBody'); body.innerHTML=''; body.appendChild(node);
-  $('inspectInfo').textContent=info||'';
-  const btns=$('inspectBtns'); btns.innerHTML='';
-  for(const [label,fn,cls,dis] of actions){
-    const b=document.createElement('button'); b.className='mbtn '+(cls||''); b.textContent=label; b.disabled=!!dis;
-    b.onclick=()=>{ closeInspect(); if(fn) fn(); }; btns.appendChild(b);
-  }
-  const close=document.createElement('button'); close.className='mbtn'; close.textContent='Close'; close.onclick=closeInspect;
-  btns.appendChild(close);
-  $('inspect').classList.add('on');
-  (btns.querySelector('button:not(:disabled)')||close).focus();
-}
-function closeInspect(){ $('inspect').classList.remove('on'); }
-
-function inspectCard(c,act,label){
-  const el=cardEl(c); el.classList.add('big');
-  const info=[];
-  if(c.t==='treasure'&&G) info.push(`Produces ${tval(c)} Coin right now.`);
-  if(G&&iced(c)){ const t=G.slots.find(t=>t&&t.id===c.ice); info.push(`🧊 Sealed in ice until ${t.n} leaves.`); }
-  if(label&&label.startsWith('Buy')) info.push('Bought cards go to the bottom of your draw pile.');
-  openInspect(el,info.join(' '),label?[[label,act,'go',!act]]:[]);
-}
-
-/* touch press-and-hold (iOS has no contextmenu); swallows the click that follows */
-function onLongPress(el,fn){
-  let timer=0, x=0, y=0;
-  const cancel=()=>clearTimeout(timer);
-  el.addEventListener('pointerdown',e=>{
-    if(e.pointerType==='mouse') return;
-    x=e.clientX; y=e.clientY; cancel();
-    timer=setTimeout(()=>{ el._held=true; fn(); },450);
-  });
-  el.addEventListener('pointermove',e=>{ if(Math.hypot(e.clientX-x,e.clientY-y)>10) cancel(); });
-  el.addEventListener('pointerup',cancel);
-  el.addEventListener('pointercancel',cancel);
-}
-
-/* tap/click behaviour shared by hand and market cards */
-function bindCard(el,c,act,label){
-  el.tabIndex=0;
-  el.onclick=()=>{ if(act&&!inspectOnTap()) act(); else inspectCard(c,act,label); };
-  el.oncontextmenu=e=>{ e.preventDefault(); inspectCard(c,act,label); };
-  el.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); act?act():inspectCard(c,act,label); } };
-}
-
-/* ==========================================================
-   RENDER
-   ========================================================== */
-// hand: in merge mode a card in your hand shows only what it costs to play, top left.
-function cardEl(c,{badge,hand}={}){
-  const d=DB[c.key], el=document.createElement('div');
-  el.className=`card t-${d.t}${d.r?' r':''}${c.lv?` lv${Math.min(3,c.lv)}`:''}${G&&iced(c)?' frozen iced':c.frozen?' frozen':''}`;
-  const kind=d.r?'Reaction':({treasure:'Treasure',action:'Action',ward:'Ward',victory:'Junk',junk:'Junk',curse:'Junk'}[d.t]||d.t);
-  const stars=c.lv?(c.lv<=3?'★'.repeat(c.lv):`★${c.lv}`):'';
-  // splices: one chip per keyword with a count (scars in red), empty slots in splice mode,
-  // and one text line per keyword for the big view — so a card with 30 splices still fits
-  let chips='', lines='';
-  if(c.mods.length||(splice()&&!isJunk(c))){
-    const groups=[];
-    for(const k of c.mods){ const g=groups.find(x=>x.k===k); if(g) g.n++; else groups.push({k,n:1}); }
-    chips=groups.map(({k,n})=>`<i class="${SPLICES[k].scar?'scar':''}">${SPLICES[k].art}${n>1?`<b>${n}</b>`:''}</i>`).join('');
-    const open=splice()&&!isJunk(c)?Math.max(0,TUNE.spliceSlots(c)-slotsUsed(c)):0;
-    chips+=open>3?`<i class="open"><b>${open}</b></i>`:'<i class="open"></i>'.repeat(open);
-    lines=groups.map(({k,n})=>`<span class="mline${SPLICES[k].scar?' scar':''}">${SPLICES[k].art} ${spliceText(k,c)}${n>1?` <b>×${n}</b>`:''}</span>`).join('');
-    if(c.mods.length) el.classList.add('spliced');
-  }
-  el.innerHTML=`<div class="banner">${cname(c)}</div>
-    <div class="art"><span>${cart(c)||'✦'}</span>${chips?`<div class="mods">${chips}</div>`:''}</div>
-    <div class="tx"><span>${ctext(c)}</span>${lines}</div>
-    <div class="foot"><span>${kind}</span><span class="stars">${stars}</span></div>`;
-  const handOnly=hand&&merge();
-  if(!handOnly){ const cost=document.createElement('div'); cost.className='cost'; cost.textContent=costOf(c); el.appendChild(cost); }
-  // merge mode: what it costs to play, in ⚡ (Wards are never played)
-  if(d.merge&&(d.t==='action'||handOnly&&d.t==='treasure')){
-    const e=document.createElement('div'); e.className='ecost'+(handOnly?' top':''); e.textContent=actCost(c); el.appendChild(e); }
-  const bt=badge&&badge(c);
-  if(bt){ const b=document.createElement('div'); b.className='badge'; b.textContent=bt; el.appendChild(b); }
-  return el;
-}
-
-function jokerCardEl(k,status){
-  const j=JOKERS[k], el=document.createElement('div');
-  el.className=`jcard ${j.r}`;
-  el.innerHTML=`<div class="jr">${j.r}</div><div class="jart">${j.art}</div><div class="jn">${j.n}</div><div class="jtx">${jtx(k)}</div>${status?`<div class="jst">Now: ${status}</div>`:''}`;
-  return el;
-}
-
-function spliceCardEl(k){
-  const S=SPLICES[k], el=document.createElement('div');
-  el.className=`jcard splice ${S.r}`;
-  el.innerHTML=`<div class="jr">${S.r} splice</div><div class="jart">${S.art}</div><div class="jn">${S.n}</div><div class="jtx">${spliceText(k)}${S.once?'':'<br><small>Stacks.</small>'}${S.only?`<br><small>Actions only.</small>`:''}</div>`;
-  return el;
-}
-
-function threatProgress(t){
-  const cm=coinMult()>1?' (×2)':'', um=unitMult()>1?' (×2)':'';
-  switch(t.kind){
-    case 'prog_coin':    return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} coin`, note:`${t.need-t.prog} owed${cm}`};
-    case 'once_coin':    return {pct:Math.min(1,G.coin/Math.max(1,coinFor(t.need))), left:`${t.need} coin at once${cm}`, note:`you hold ${G.coin}`};
-    case 'prog_action':  return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} ${actW()}`, note:`${t.need-t.prog} owed${um}`};
-    case 'prog_buy':     return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} Buys`, note:`${t.need-t.prog} owed${um}`};
-    case 'prog_discard': return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} cards fed`, note:`${t.need-t.prog} wanted`};
-    case 'sacrifice':    return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} cards trashed`, note:`${t.need-t.prog} wanted`};
-    case 'panic':        return {pct:0, left:'instant', note:`costs ${plural(t.curses,'Curse')}`};
-    case 'once_hybrid':  { const nc=Math.max(1,coinFor(t.needCoin)), na=Math.max(1,unitsFor(t.needAct));
-                           return {pct:Math.min(1,(Math.min(G.coin,nc)/nc*0.75)+(Math.min(G.actions,na)/na*0.25)),
-                                   left:`${t.needCoin} coin + ${actN(t.needAct)}`, note:`you hold ${G.coin} / ${G.actions}`}; }
-    case 'scavenge':     return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} fed`, note:'junk counts ×2'};
-    case 'banish':       { const n=t.need-t.prog;
-                           return {pct:Math.min(1,G.actionsPlayed/Math.max(1,n)), left:`${n} Actions in one turn`, note:`played ${G.actionsPlayed}`}; }
-    case 'leech':        return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} draws eaten`, note:'play cards that draw'};
-    case 'upgrade':      return {pct:(t.gotT+t.gotA)/(t.needT+t.needA),
-                                 left:`Treasure ${t.gotT}/${t.needT} · Action ${t.gotA}/${t.needA}`, note:'trash from hand'};
-  }
-  return {pct:0,left:'',note:''};
-}
-function threatButton(t){
-  const rem=t.need-t.prog;
-  switch(t.kind){
-    case 'prog_coin':    return `Deposit ${Math.min(G.coin,coinFor(rem))} coin`;
-    case 'once_coin':    return `Pay ${coinFor(t.need)} coin`;
-    case 'prog_action':  return `Spend ${actN(Math.min(G.actions,unitsFor(rem)))}`;
-    case 'prog_buy':     return `Spend ${plural(Math.min(G.buys,unitsFor(rem)),'Buy')}`;
-    case 'prog_discard': return 'Feed cards';
-    case 'sacrifice':    return 'Sacrifice cards';
-    case 'panic':        return 'Shake on it';
-    case 'once_hybrid':  return `Pay ${coinFor(t.needCoin)} coin + ${actN(unitsFor(t.needAct))}`;
-    case 'upgrade':      return 'Trash into the rift';
-    case 'scavenge':     return 'Feed the nest';
-    case 'banish':       return 'Banish it';
-    case 'leech':        return 'Eats your draws';
-  }
-  return 'Act';
-}
-const attackWhen = t => t.cd<=1 ? 'at end of this turn' : `in ${t.cd} turns`;
-// The attack line under a threat; in splice mode it is the fuse.
-function atkLine(t){
-  if(!fused()) return `⚔ <b>${t.atk.name}</b> ${attackWhen(t)}: ${atkText(t)}.`;
-  const what=t.atk.k==='grow'||t.atk.k==='entomb'?'':t.atk.k==='price'?`you take ${junkName('jinx',t.curses)}, `:`${atkText(t)}, `;
-  const scar=splice()?`scars ${t.scarBest?'your finest card':'a card'}, `:'';
-  return `💥 <b>Detonates</b> ${attackWhen(t)}: ${what}${scar}−${t.elite?2:1} ❤.`;
-}
-function rewardLine(t){
-  if(merge()) return `<div class="treward">✨ Clear it: take one of ${TUNE.spoils+(t.elite?1:0)} free cards</div>`;
-  if(!splice()) return '';
-  const swift=t.age<=1;
-  return `<div class="treward">✨ Clear it: splice a keyword${swift?` · <b>swift bonus</b> ${t.age===0?'this turn or next':'this turn'}`:''}</div>`;
-}
-
-function threatInfoEl(t){
-  const p=threatProgress(t), el=document.createElement('div');
-  el.className='tinfo'+(t.elite?' elite':'');
-  el.innerHTML=`<div class="thead"><div class="tart">${t.art}</div><div><div class="tname">${t.n}</div><div class="tkind">${t.label}</div></div></div>
-    <p>${t.desc(t)}</p>
-    <div class="tatk${t.cd<=1?' imminent':''}">${atkLine(t)}</div>
-    ${rewardLine(t)}
-    <p class="tnum"><span>${p.left}</span><span>${p.note}</span></p>
-    ${!fused()&&t.age>=TUNE.enrageAfter?'<p class="warn">Enraged: it attacks every turn until cleared.</p>':''}`;
-  return el;
-}
-
-function chip(id,long,short,cls){
-  const e=$(id); e.innerHTML=`<span class="long">${long}</span><span class="short">${short}</span>`;
-  e.className='chip'+(cls?' '+cls:'');
-}
-
-function render(){
-  if(!G) return;
-  const live=!busy&&!G.over&&G.phase==='turn';
-
-  // top bar
-  chip('cWave',`Wave ${G.wave}`,`W${G.wave}`,'wave');
-  chip('cTurn',`Turn ${G.turnInWave}`,`T${G.turnInWave}`);
-  chip('cHearts',`❤ ${G.hearts} / ${TUNE.hearts}`,`❤ ${G.hearts}`,G.hearts<=2?'now':'hearts');
-  $('cHearts').hidden=!fused();
-  const remaining=G.queue.length+G.slots.filter(s=>s).length;
-  chip('cQueue',`Threats ${remaining} / ${G.waveTotal}`,`☠ ${remaining}/${G.waveTotal}`);
-  if(merge()) chip('cTier',`🔨 ${plural(G.merges,'merge')}`,`🔨 ${G.merges}`);
-  else chip('cTier',`Market tier: ${tierName(TUNE.maxTier(G.wave))}`,`Tier ${tierName(TUNE.maxTier(G.wave))}`);
-  const every=TUNE.spawnEvery(G.wave), untilSpawn=G.slots.every(s=>!s)?0:every-(G.turnInWave%every||every);
-  if(!G.queue.length) chip('cNext','No more threats this wave','⏳ —');
-  else chip('cNext', untilSpawn===0?'Next threat at end of this turn':`Next threat in ${plural(untilSpawn,'turn')}`,
-                     `⏳ ${untilSpawn===0?'now':untilSpawn}`, untilSpawn===0?'now':untilSpawn===1?'soon':'');
-
-  // jokers
-  const J=$('jokers'); J.innerHTML='<span class="jlabel">CHARMS</span>';
-  for(let i=0;i<TUNE.jokerSlots;i++){
-    const j=G.jokers[i], el=document.createElement('button');
-    if(!j){ el.className='joker empty'; el.disabled=true; el.setAttribute('aria-label','Empty charm slot'); J.appendChild(el); continue; }
-    const d=JOKERS[j.key], st=jokerStatus(j);
-    el.className='joker '+d.r;
-    el.setAttribute('aria-label',`${d.n}: ${jtx(j.key)}`);
-    el.innerHTML=`<span class="ja">${d.art}</span><span class="jname">${d.n}</span>${st?`<span class="js">${st}</span>`:''}
-      <span class="jtip"><b>${d.n}</b> · <i>${d.r}</i><br>${jtx(j.key)}</span>`;
-    el.onclick=()=>openInspect(jokerCardEl(j.key,st),'');
-    J.appendChild(el);
-  }
-
-  // market
-  const m=$('market'); m.innerHTML=''; let affordable=0;
-  G.market.forEach((c,i)=>{
-    const slot=document.createElement('div'); slot.className='slot'+(i<2?' leaving':'');
-    if(c){
-      const el=cardEl(c), price=costOf(c);
-      const afford=G.buys>0&&G.coin>=price&&live; if(afford) affordable++;
-      el.classList.toggle('buyable',afford); el.classList.toggle('dead',!afford);
-      bindCard(el,c,afford?()=>buyCard(i):null,`Buy for ${price}`);
-      slot.appendChild(el);
-      // A Patron's upgrades: the card pops, the tag counts the levels it gained.
-      const up=UI.ups.get(c);
-      if(up){ el.classList.add('upgraded'); el.style.setProperty('--pop',Math.min(1.35,1.12+.06*up));
-        const tag=document.createElement('div'); tag.className='up-tag'; tag.textContent=`▲ +${up}`; slot.appendChild(tag); }
-      if(i<2){ const tag=document.createElement('div'); tag.className='leaving-tag'; tag.textContent='leaves'; slot.appendChild(tag); }
-    }
-    m.appendChild(slot);
-  });
-  UI.ups.clear();
-  $('tabBadge').textContent=affordable?affordable:'';
-  $('tabThreats').classList.toggle('on',UI.tab==='threats');
-  $('tabMarket').classList.toggle('on',UI.tab==='market');
-
-  // threats
-  const T=$('threats'); T.innerHTML='';
-  G.slots.forEach((t,i)=>{
-    const box=document.createElement('div');
-    if(!t){ box.className='tslot empty'; box.textContent=`Slot ${i+1} — clear`; T.appendChild(box); return; }
-    const p=threatProgress(t), ready=threatReady(t)&&live;
-    box.className='tslot'+(ready?' ready':'')+(t.fresh?' new':'')+(t.elite?' elite':'')+(UI.hits.has(t.id)?' hit':'');
-    box.innerHTML=`
-      <button class="thead" title="Read this threat"><span class="tart">${t.art}</span>
-        <span class="tnames"><span class="tname">${t.n}</span><span class="tkind">${t.label}</span></span><span class="ti">ⓘ</span></button>
-      <div class="tdesc">${t.desc(t)}</div>
-      <div class="tatk${t.cd<=1?' imminent':''}">${atkLine(t)}</div>
-      ${rewardLine(t)}
-      <div class="tnum"><span>${p.left}</span><span class="dim">${p.note}</span></div>
-      <div class="tbar"><div class="tfill ${t.bar}" style="width:${Math.round(clamp(p.pct,0,1)*100)}%"></div></div>`;
-    box.querySelector('.thead').onclick=()=>openInspect(threatInfoEl(t),'',[[threatButton(t),()=>clickThreat(t),'go',!(threatReady(t)&&live)]]);
-    const pips=[];
-    if(t.elite) pips.push('<span class="pip elite">ELITE</span>');
-    if(!fused()&&t.age>=TUNE.enrageAfter) pips.push('<span class="pip">ENRAGED</span>');
-    if(pips.length){ const d=document.createElement('div'); d.className='pips'; d.innerHTML=pips.join(''); box.appendChild(d); }
-    const b=document.createElement('button');
-    b.className='tbtn2'+(t.kind==='panic'?' blood':ready?' go':'');
-    b.textContent=threatButton(t); b.disabled=!ready;
-    b.onclick=()=>clickThreat(t);
-    box.appendChild(b);
-    T.appendChild(box);
-  });
-
-  UI.hits.clear();
-
-  // resources
-  const r=(id,v,label,icon)=>{const e=$(id); e.innerHTML=`${icon}<span class="lbl"> ${label}</span> <b>${v}</b>`; e.classList.toggle('spent',v<=0);};
-  r('rAct',G.actions,merge()?'Energy':'Actions','⚡'); r('rBuy',G.buys,'Buys','🛒');
-  $('rCoin').innerHTML=`🪙<span class="lbl"> Coin</span> <b>${G.coin}</b>`;
-  if(G.coin>UI.lastCoin){ floatText($('rCoin'),`+${G.coin-UI.lastCoin}`,'coin'); pulseClass($('rCoin'),'bump',300); }
-  UI.lastCoin=G.coin;
-  $('pDeck').innerHTML=`<span class="long">Draw </span><span class="short">📚 </span>${G.deck.length}`;
-  $('pDisc').innerHTML=`<span class="long">Discard </span><span class="short">🗑 </span>${G.discard.length}`;
-  $('pTreas').disabled=!live||!G.hand.some(c=>c.t==='treasure');
-  $('btnDeck').textContent=`Deck (${deckSize()})`;
-  $('endturn').disabled=!live;
-
-  // hand — overlap cards just enough to fit the width; past a third covered, it becomes a slider
-  const h=$('hand'), hw=$('handwrap'), keep=hw.scrollLeft; h.innerHTML='';
-  G.hand.forEach(c=>{
-    const el=cardEl(c,{hand:true}), ok=canPlay(c)&&live;
-    el.classList.toggle('playable',ok); el.classList.toggle('dead',!ok);
-    bindCard(el,c,ok?()=>playCard(c):null,'Play');
-    h.appendChild(el);
-  });
-  let slide=false;
-  if(h.children.length){
-    const cw=h.children[0].offsetWidth, n=h.children.length;
-    const avail=hw.clientWidth-12;
-    slide=(cw-avail/n)/cw>.35;
-    const m=slide?-cw*.04:Math.min(-cw*.12,(avail/n-cw)/2);
-    for(const el of h.children) el.style.margin=`0 ${m}px`;
-  }
-  hw.classList.toggle('slide',slide);
-  hw.scrollLeft=slide?keep:0;
-  scheduleSave();
-}
-
-/* ==========================================================
-   MENU / SETTINGS
-   ========================================================== */
-function openMenu(){ syncSettings(); $('menu').classList.add('on'); $('mClose').focus(); }
-function closeMenu(){ $('menu').classList.remove('on'); }
-function toggleLedger(force){
-  const s=$('side'), on=force??!s.classList.contains('open');
-  s.classList.toggle('open',on);
-  if(on){ const l=$('log'); l.scrollTop=l.scrollHeight; }
-}
-async function confirmNewRun(){
-  closeMenu();
-  if(busy) return;
-  if(G&&!G.over&&G.turn>1){
-    busy=true; render();
-    const k=await chooseOption('Abandon this run?',`You are on wave ${G.wave}. Your deck and jokers will be lost.`,
-      [['n','Keep playing'],['y','Start a new run']]);
-    busy=false;
-    if(k!=='y'){ render(); return; }
-  }
-  newRun();
-}
-function setTab(tab){ UI.tab=tab; document.body.classList.toggle('tab-market',UI.layout==='short'&&tab==='market'); render(); }
-
-/* ---------- wiring ---------- */
-$('endturn').onclick=endTurn;
-$('pTreas').onclick=playAllTreasures;
-$('btnDeck').onclick=()=>viewPile('Your whole deck',allCards());
-$('btnTrash').onclick=()=>viewPile('Trash',G.trash);
-$('btnNew').onclick=confirmNewRun;
-$('btnLedger').onclick=()=>toggleLedger();
-$('sideClose').onclick=()=>toggleLedger(false);
-$('logSave').onclick=saveLog;
-$('overSave').onclick=saveLog;
-$('btnMenu').onclick=openMenu;
-$('pDeck').onclick=()=>viewPile('Draw pile (sorted)',G.deck);
-$('pDisc').onclick=()=>viewPile('Discard pile',G.discard);
-$('tabThreats').onclick=()=>setTab('threats');
-$('tabMarket').onclick=()=>setTab('market');
-$('overBtn').onclick=()=>newRun(G.mode);
-// A saved run waits on the title screen: Continue resumes it; starting a new run replaces it, after asking.
-async function startMode(mode){
-  $('title').classList.remove('on');
-  if(readSave()){
-    const k=await chooseOption('Start a new run?',`Your saved run (${saveSummary()}) will be lost.`,[['y','Start a new run'],['n','Back']]);
-    if(k!=='y'){ $('title').classList.add('on'); return; }
-  }
-  SAVE.armed=true; newRun(mode);
-}
-async function continueRun(){
-  if(!loadGame()){ refreshTitle(); return; }
-  $('title').classList.remove('on'); SAVE.armed=true; render();
-  if(G.camp){ busy=true; try{ await campFlow(); } finally{ busy=false; render(); } }   // saved between waves
-}
-function refreshTitle(){ const s=saveSummary(); $('tContinue').hidden=!s; $('tContinue').textContent=s?`Continue · ${s}`:''; }
-$('tContinue').onclick=continueRun;
-$('tPlay').onclick=()=>startMode('merge');
-// Classic is a frozen copy of the game from 22 October 2026, in classic/.
+$('tPlay').onclick=()=>{ const s=readSave(); if(s){ UI.P=s.P; UI.T=s.T; } else { UI.P=newProfile((Date.now()%1e9)|0); UI.T=null; persist(); } route(); };
+$('tNew').onclick=()=>{ const b=$('tNew'); if(!b.dataset.arm){ b.dataset.arm='1'; b.textContent='Really erase everything?'; return; } clearSave(); renderTitle(); };
 $('tClassic').onclick=()=>{ location.href='classic/index.html'; };
-$('tHow').onclick=()=>$('howto').classList.add('on');
-$('hClose').onclick=()=>$('howto').classList.remove('on');
-$('mHow').onclick=()=>{ closeMenu(); $('howto').classList.add('on'); };
+$('tHow').onclick=()=>howTo();
+function howTo(){ sheet(`<h2>How to play</h2>
+<p><b>Trips.</b> Leave the Keep and fight deeper and deeper until you go home or get beaten. Going home keeps all your coin, defeat keeps 70%. Nothing else is ever lost. Spend at the Keep, then go again: what beat you dies in the march.</p>
+<p><b>Your hand.</b> Each card is a choice. <b>Play</b> it for its effect, paying energy. Or <b>Burn</b> it for Powder: expensive cards burn hotter (cost + 1).</p>
+<p><b>The board.</b> Powder runs left to right into your bastions. A full bastion fires at once, once a turn. The Wheel adds Powder every turn. Spare Powder waits in the Magazine, and past that it is wasted.</p>
+<p><b>Enemies</b> show what they will do. Aimed hits strike your leftmost bastion (a Gatehouse first), archers the rightmost, and some go straight for you. Block stops everything first. A destroyed bastion goes to your discard and must be drawn and paid for again.</p>
+<p><b>Getting strong.</b> Levels multiply a card; every 10 levels pays triple. Levels 5, 20 and 40 open sockets, which you can rearrange free. Caravans come once, every 7 fights. Bosses every 12 fights change the rules. A Title Deed must be packed for each slot past two, and it is dead in your hand.</p>
+<button class="btn gold" onclick="closeSheet()">Got it</button>`); }
+function sheet(html){ const s=$('sheet'); s.innerHTML='<div class="panel">'+html+'</div>'; s.hidden=false; s.onclick=e=>{ if(e.target===s&&!s.dataset.lock) closeSheet(); }; }
+function closeSheet(){ const s=$('sheet'); s.hidden=true; s.dataset.lock=''; }
 
-$('menu').onclick=e=>{ if(e.target.id==='menu') closeMenu(); };
-$('mClose').onclick=closeMenu;
-$('sRange').oninput=e=>setUserScale(+e.target.value/100);
-$('sDown').onclick=()=>setUserScale(UI.user-.1);
-$('sUp').onclick=()=>setUserScale(UI.user+.1);
-$('sAuto').onclick=()=>setUserScale(1);
-$('sTap').onchange=e=>{ UI.tapInspect=e.target.checked; savePrefs(); };
-$('mDeck').onclick=()=>{ closeMenu(); viewPile('Your whole deck',allCards()); };
-$('mTrash').onclick=()=>{ closeMenu(); viewPile('Trash',G.trash); };
-$('mLedger').onclick=()=>{ closeMenu(); if(!UI.side) toggleLedger(true); };
-$('mSave').onclick=()=>{ closeMenu(); saveLog(); };
-$('mNew').onclick=confirmNewRun;
-$('inspect').onclick=e=>{ if(e.target.id==='inspect') closeInspect(); };
+/* ---------- router ---------- */
+function route(){
+  const T=UI.T, P=UI.P; closeSheet(); persist();
+  if(!T){ renderHome(); return; }
+  if(T.marchList&&T.marchList.length) return playMarch();
+  if(T.phase==='caravan') return renderCaravan();
+  if(T.phase==='prefight') return renderPrefight();
+  if(T.phase==='fight') return renderFight();
+  if(T.phase==='bossreward') return renderBossReward();
+  if(T.phase==='postfight') return renderPostFight();
+  if(T.phase==='defeat') return renderDefeat();
+  renderHome();
+}
+function goHome(how){ const P=UI.P,T=UI.T; const secs=P.secs-T.stat.start; const r=endTrip(P,T,how); r.secs=secs; r.rate=r.got/Math.max(30,secs)*60; r.best=P.bestRate; if(r.rate>P.bestRate) P.bestRate=r.rate;
+  (P.hist=P.hist||[]).push(estPower(P)); UI.T=null; UI.sel=null; persist(); renderHome(true); }
 
-document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){ closeInspect(); closeMenu(); toggleLedger(false); $('howto').classList.remove('on'); return; }
-  if($('title').classList.contains('on')||$('howto').classList.contains('on')) return;
-  if($('veil').classList.contains('on')||$('inspect').classList.contains('on')||$('menu').classList.contains('on')||busy) return;
-  if(e.target.tagName==='INPUT') return;
-  if(e.key==='e') endTurn();
-  if(e.key==='t') playAllTreasures();
-  if(e.key==='+'||e.key==='=') setUserScale(UI.user+.1);
-  if(e.key==='-') setUserScale(UI.user-.1);
-});
+/* ---------- home ---------- */
+function renderHome(fresh){
+  const P=UI.P; show('home');
+  const p=estPower(P), reach=marchReach(P), r=fresh&&P.last;
+  let html=`<header class="hbar"><div class="coin">🪙 <b>${fmt(P.coin)}</b></div><div class="pow">Power <b>${fmt(p)}</b></div><button class="ghost" onclick="renderTitle()">☰</button></header>`;
+  if(r) html+=reportCard(P,r);
+  html+=sparkline(P);
+  html+=`<div class="go"><button class="btn gold big" onclick="startTripUI()">March ▶<small>sweeps to fight ${reach+1}, then you take over</small></button></div>`;
+  html+=scoutRow(P,reach);
+  html+=`<nav class="tabs">${[['board','Board'],['pack','Pack'],['keep','Keep']].map(([k,n])=>`<button class="${UI.tab===k?'on':''}" onclick="UI.tab='${k}';renderHome()">${n}</button>`).join('')}</nav>`;
+  html+=UI.tab==='board'?boardTab(P):UI.tab==='pack'?packTab(P):keepTab(P);
+  $('home').innerHTML=html;
+}
+function reportCard(P,r){
+  const head=r.how==='defeat'?`Beaten at fight ${r.f+1}`:`Home from fight ${r.f+1}`;
+  const body=r.how==='defeat'?`Kept <b>${fmt(r.got)}</b> coin, ${fmt(r.lost)} dropped. ${P.nemesis?`${ENEMIES[P.nemesis.key].name} had ${Math.round(P.nemesis.left*100)}% left.`:''}`:`Kept all <b>${fmt(r.got)}</b> coin.`;
+  const rate=`${mmss(r.secs)} away · ${fmt(r.rate)} coin/min${r.rate>r.best&&r.best>0?' · <b>new best!</b>':r.best?` · best ${fmt(r.best)}`:''}`;
+  return `<div class="report ${r.how}"><b>${head}</b><br>${body}<br><small>${rate} · marched ${r.marched}, fought ${r.fights}</small></div>`;
+}
+function sparkline(P){ const h=(P.hist||[]).slice(-40); if(h.length<2) return ''; const ls=h.map(x=>Math.log10(Math.max(1,x))), a=Math.min(...ls), b=Math.max(...ls,a+.01);
+  const pts=ls.map((v,i)=>`${(i/(ls.length-1)*300).toFixed(1)},${(34-(v-a)/(b-a)*30).toFixed(1)}`).join(' ');
+  return `<div class="spark"><svg viewBox="0 0 300 36" preserveAspectRatio="none"><polyline points="${pts}"/></svg><small>${fmt(h[0])} → ${fmt(h[h.length-1])} over ${h.length} trips</small></div>`; }
+function scoutRow(P,reach){
+  let out=''; for(let f=reach;f<reach+5;f++){ const k=enemyKey(P,f), e=ENEMIES[k], R=ratioAt(P,f);
+    const tags=(isCaravanF(f)&&!P.caravans[f]?'🐪':'')+(e.boss?'★':''); out+=`<div class="sc ${R<1?'bad':R<2?'mid':'ok'}" title="${esc(e.name)}"><span>${e.art}</span><small>${tags||f+1}</small><b>×${R<10?R.toFixed(1):fmt(R)}</b></div>`; }
+  return `<div class="scout"><small>Ahead</small>${out}</div>`;
+}
+function itemRow(P,c,extra){
+  const d=CARDS[c.key], k=levelCost(c), can=P.coin>=k, mile=TUNE.mileEvery-(c.lvl%TUNE.mileEvery), junk=c.key==='deed'||c.key==='ward';
+  return `<div class="row ${extra||''}" onclick="openItem(${c.id})"><span class="art">${d.art}</span><div class="mid"><b>${esc(d.name)}</b>${junk?'':` <small>Lv ${c.lvl}${c.sock.length?' · '+c.sock.map(s=>PERKS[s].name).join(', '):''}</small>`}<div class="dsc">${esc(describe(c))}</div>${junk?'':`<div class="mile" title="next triple"><i style="width:${(1-mile/TUNE.mileEvery)*100}%"></i></div>`}</div>
+  ${junk?'':`<button class="buy ${can?'':'off'}" onclick="event.stopPropagation();quick(${c.id})">+1<small>${fmt(k)}</small></button>`}</div>`;
+}
+function boardTab(P){
+  const open=slotsOpen(P), on=P.layout.slice(0,open);
+  let h=`<p class="note">Powder runs left to right. <b>${open}</b> of ${P.slots} slots open${P.slots>open?` (pack a Title Deed for more)`:''}. Wheel: <b>${P.wheel}</b> a turn.</p>`;
+  on.forEach((id,i)=>{ h+=itemRow(P,cardOf(P,id)).replace('</div>\n','</div>\n'); });
+  for(let i=on.length;i<open;i++) h+=`<div class="row empty">Empty slot: tap a bastion below</div>`;
+  const reserve=P.cards.filter(c=>isPiece(c)&&!onBoard(P,c.id));
+  if(reserve.length) h+=`<p class="note">Reserve (off the board; packed ones can be drawn and deployed mid-fight)</p>`+reserve.map(c=>itemRow(P,c,'res')).join('');
+  return h;
+}
+function packTab(P){
+  const list=P.cards.filter(c=>!isPiece(c)), cnt=packedCount(P);
+  let h=`<p class="note">Your pack holds <b>${cnt}</b> cards (${TUNE.deckMin} to ${TUNE.deckMax}). Tap a card to pack, level or socket it. Everything you ever bought stays here.</p>`;
+  const packed=list.filter(c=>c.packed), vault=list.filter(c=>!c.packed);
+  h+=packed.map(c=>itemRow(P,c)).join('');
+  if(vault.length) h+=`<p class="note">In the vault</p>`+vault.map(c=>itemRow(P,c,'res')).join('');
+  return h;
+}
+function keepTab(P){
+  const row=(art,name,val,what,cost)=>`<div class="row"><span class="art">${art}</span><div class="mid"><b>${name}</b> <small>${val}</small><div class="dsc">${what}</div></div><button class="buy ${P.coin>=cost.k?'':'off'}" onclick="keepBuy('${cost.w}')">+1<small>${fmt(cost.k)}</small></button></div>`;
+  return `<p class="note">Rules so far: ${P.energy} energy, ${P.hand} cards in hand, ${P.slots} slots${P.rewards.length?' · '+P.rewards.map(k=>REWARDS[k].name).join(', '):''}.</p>`+
+   row('⚙️','The Wheel',`${P.wheel} Powder a turn`,'How fast your machine runs. Each turn it pours Powder in before you act.',{k:wheelCost(P),w:'wheel'})+
+   row('🔥','The Hearth',`${fmt(maxHpOf(P))} health`,'Your health on every trip.',{k:hearthCost(P),w:'hearth'})+
+   row('🧺','The Magazine',`holds ${TUNE.magBase+P.mag}`,'Spare Powder waits here for next turn.',{k:magCost(P),w:'mag'})+
+   row('📒','The Ledger',`coin ×${fmt(coinMult(P))}`,'Every bounty pays 25% more, compounding.',{k:ledgerCost(P),w:'ledger'});
+}
+function quick(id){ if(buyLevel(UI.P,id)){ persist(); flashMile(cardOf(UI.P,id)); renderHome(); } }
+function keepBuy(w){ if(buyKeep(UI.P,w)){ persist(); renderHome(); } }
+function flashMile(c){ if(c.lvl%TUNE.mileEvery===0&&c.lvl>0) banner(`${CARDS[c.key].name} level ${c.lvl}: pays triple!`); else if(TUNE.sockAt.includes(c.lvl)) banner(`${CARDS[c.key].name}: a socket opens`); }
+function banner(t){ const b=document.createElement('div'); b.className='banner'; b.textContent=t; $('fx').appendChild(b); setTimeout(()=>b.remove(),1700); }
+function openItem(id){
+  const P=UI.P, c=cardOf(P,id), d=CARDS[c.key], junk=c.key==='deed'||c.key==='ward', piece=isPiece(c), p0=estPower(P);
+  let gain=''; if(!junk){ c.lvl++; const p1=estPower(P); c.lvl--; gain=p1>p0*1.0005?`Power ×${(p1/p0).toFixed(2)}`:'No effect on damage'; }
+  let toMile=0,cum=0; if(!junk){ const m=TUNE.mileEvery-(c.lvl%TUNE.mileEvery); let l=c.lvl; for(let i=0;i<m;i++){ cum+=levelCost({key:c.key,lvl:l++}); } toMile=m; }
+  let h=`<h2>${d.art} ${esc(d.name)} ${junk?'':`<small>Lv ${c.lvl}</small>`}</h2><p>${esc(describe(c))}</p>`;
+  if(piece) h+=`<p class="note">Needs ${pieceNeed(c)} Powder · ${fmt(pieceHp(c))} health · deploy ${cardCost(c)} energy</p>`; else if(!junk) h+=`<p class="note">Costs ${cardCost(c)} energy · burns for ${stokeOf(c)} Powder</p>`;
+  if(!junk) h+=`<div class="acts"><button class="btn ${P.coin>=levelCost(c)?'gold':''}" onclick="sheetBuy(${id},1)">+1 level<small>${fmt(levelCost(c))} · ${gain}</small></button><button class="btn ${P.coin>=cum?'gold':''}" onclick="sheetBuy(${id},${toMile})">+${toMile} to triple<small>${fmt(cum)}</small></button></div>`;
+  if(!junk){ const n=Math.max(3,socketsOpen(P,c)); h+=`<h3>Sockets</h3><div class="socks">`;
+    for(let i=0;i<n+(P.extraSock?1:0)&&i<4;i++){ const need=i<3?TUNE.sockAt[i]:60, open=c.lvl>=need, cur=c.sock[i];
+      h+=`<div class="sock ${open?'':'shut'}">${open?(cur?`<b>${PERKS[cur].name}</b>`:'empty'):`Lv ${need}`}</div>`; } h+='</div>';
+    if(socketsOpen(P,c)>0){ h+='<div class="perks">'+Object.keys(PERKS).filter(k=>perkFits(k,c)).map(k=>`<button class="perk ${c.sock.includes(k)?'on':''}" onclick="togglePerk(${id},'${k}')"><b>${PERKS[k].name}</b><small>${PERKS[k].text}</small></button>`).join('')+'</div>'; }
+  }
+  if(piece){ const i=P.layout.indexOf(id), on=onBoard(P,id), open=slotsOpen(P);
+    h+='<div class="acts">'; if(on){ if(i>0) h+=`<button class="btn" onclick="movePiece(${id},${i-1})">◀ Left</button>`; if(i<open-1&&i+1<P.layout.length) h+=`<button class="btn" onclick="movePiece(${id},${i+1})">Right ▶</button>`; h+=`<button class="btn" onclick="movePiece(${id},null)">To reserve</button>`; }
+    else { if(P.layout.slice(0,open).length<open) h+=`<button class="btn gold" onclick="movePiece(${id},${P.layout.slice(0,open).length})">Put on board</button>`; else h+=[...Array(open).keys()].map(s=>`<button class="btn" onclick="swapIn(${id},${s})">Replace ${esc(CARDS[cardOf(P,P.layout[s]).key].name)}</button>`).join(''); h+=`<button class="btn" onclick="packIt(${id})">${c.packed?'Leave out of pack':'Pack as a card'}</button>`; }
+    h+='</div>'; }
+  else h+=`<div class="acts"><button class="btn" onclick="packIt(${id})">${c.packed?'Leave in the vault':'Pack it'}</button></div>`;
+  h+=`<button class="btn close" onclick="closeSheet();renderHome()">Done</button>`;
+  sheet(h);
+}
+function sheetBuy(id,n){ let any=false; for(let i=0;i<n;i++) if(buyLevel(UI.P,id)){ any=true; flashMile(cardOf(UI.P,id)); } if(any){ persist(); renderHome(); openItem(id); } }
+function togglePerk(id,k){ const P=UI.P,c=cardOf(P,id); if(c.sock.includes(k)) c.sock=c.sock.filter(x=>x!==k); else { if(c.sock.length>=socketsOpen(P,c)) c.sock.shift(); c.sock.push(k); } persist(); renderHome(); openItem(id); }
+function movePiece(id,slot){ placePiece(UI.P,id,slot); if(slot==null){ const c=cardOf(UI.P,id); c.packed=false; } persist(); renderHome(); openItem(id); }
+function swapIn(id,s){ const P=UI.P, out=P.layout[s]; P.layout[s]=id; cardOf(P,id).packed=true; cardOf(P,out).packed=false; persist(); renderHome(); openItem(id); }
+function packIt(id){ if(!togglePack(UI.P,id)) banner(`The pack holds ${TUNE.deckMin} to ${TUNE.deckMax} cards`); persist(); renderHome(); openItem(id); }
 
-let rq=0;
-const relayout=()=>{ cancelAnimationFrame(rq); rq=requestAnimationFrame(()=>{ applyLayout(); render(); }); };
-addEventListener('resize',relayout);
-addEventListener('orientationchange',relayout);
-if(window.visualViewport) visualViewport.addEventListener('resize',relayout);
-if(mqCoarse.addEventListener) mqCoarse.addEventListener('change',relayout);
+/* ---------- trip ---------- */
+function startTripUI(){ const P=UI.P; UI.T=startTrip(P); route(); }
+function playMarch(){
+  const T=UI.T, P=UI.P, list=T.marchList.slice(); T.marchList=[];
+  const m=$('march'); m.hidden=false; const tail=list.slice(-14), head=list.length-tail.length;
+  let coin=list.slice(0,head).reduce((s,x)=>s+x.coin,0), i=0, done=false;
+  const nem=P.nemesis; const step=Math.min(240,3000/Math.max(1,tail.length));
+  m.innerHTML=`<div class="mbox"><h2>The March</h2><div id="mEnemy" class="menemy"></div><div id="mBig" class="mbig"></div><div class="mcoin">🪙 <b id="mCoin">${fmt(coin)}</b></div><div id="mNote" class="mnote"></div><small>tap to skip</small></div>`;
+  const finish=()=>{ if(done) return; done=true; clearInterval(iv); m.hidden=true; m.onclick=null; persist(); route(); };
+  m.onclick=finish;
+  const iv=setInterval(()=>{
+    if(i>=tail.length){ finish(); return; }
+    const x=tail[i++], e=ENEMIES[x.key]; coin+=x.coin;
+    $('mEnemy').innerHTML=`<span class="kill">${e.art}</span><b>${esc(e.name)}</b><small>fight ${x.f+1}</small>`;
+    $('mBig').textContent=`${fmt(x.hp*Math.max(1,x.over))}!`; $('mBig').className='mbig '+(x.over>30?'huge':x.over>8?'large':''); $('mBig').style.animation='none'; void $('mBig').offsetWidth; $('mBig').style.animation='';
+    $('mCoin').textContent=fmt(coin);
+    if(nem&&x.f===nem.f){ $('mNote').innerHTML=`<b>Your nemesis falls!</b> It beat you last trip. Today: ${x.over>=1?'×'+fmt(x.over)+' overkill':'gone'}.`; }
+  },step);
+}
+function renderCaravan(){
+  const T=UI.T,P=UI.P,o=T.offer; show('fight'); $('fight').innerHTML=''; const have=T.coin+P.coin;
+  sheetLock(`<h2>🐪 A caravan</h2><p>It comes this way once, and you can buy one thing. <b>${fmt(o.price)}</b> coin, you have ${fmt(have)}. It stays in your collection for good.</p>`+
+   o.items.map((it,i)=>{ const c={key:it.key,lvl:it.lvl,sock:[]},d=CARDS[it.key]; return `<button class="offer ${have>=o.price?'':'off'}" onclick="buyCaravan(${i})"><span class="art">${d.art}</span><div class="mid"><b>${esc(d.name)}</b> <small>${d.piece?'Bastion':'Card'} · Lv ${it.lvl} · ${d.piece?`needs ${pieceNeed(c)} Powder`:`cost ${d.cost}`}</small><div class="dsc">${esc(describe(c))}</div></div></button>`; }).join('')+
+   `<button class="btn" onclick="caravanLeave(UI.P,UI.T);route()">Let it pass</button>`);
+}
+function sheetLock(h){ sheet(h); $('sheet').dataset.lock='1'; }
+function buyCaravan(i){ if(caravanBuy(UI.P,UI.T,i)){ banner('Bought. Find it in your Pack or Reserve at home.'); route(); } }
+function renderBossReward(){
+  const T=UI.T; show('fight');
+  sheetLock(`<h2>★ The boss falls</h2><p>Choose one change. It lasts forever.</p>`+T.offer.rewards.map(k=>`<button class="offer" onclick="takeReward(UI.P,UI.T,'${k}');route()"><div class="mid"><b>${REWARDS[k].name}</b><div class="dsc">${REWARDS[k].text}</div></div></button>`).join(''));
+}
+function enemyBrief(P,f){ const k=enemyKey(P,f), e=ENEMIES[k], R=ratioAt(P,f); return {k,e,R,txt:`<span class="big-art">${e.art}</span><b>${esc(e.name)}</b> <small>fight ${f+1}</small><div class="note">${fmt(enemyHp(P,f))} health · odds ×${R<10?R.toFixed(1):fmt(R)} ${R>=2?'(easy)':R>=1?'(fair)':'(against you)'} · bounty ${fmt(bounty(P,f))}</div>`}; }
+function hpLine(T){ return `<div class="bar you"><i style="width:${100*T.hp/T.maxHp}%"></i><span>❤ ${fmt(T.hp)} / ${fmt(T.maxHp)}</span></div>`; }
+function renderPrefight(){
+  const T=UI.T,P=UI.P; show('fight'); renderBoardOnly();
+  const b=enemyBrief(P,T.f), nem=P.nemesis&&P.nemesis.f===T.f;
+  sheetLock(`<h2>Next up</h2><div class="brief">${b.txt}${nem?'<div class="note"><b>This one beat you last time.</b></div>':''}</div>${hpLine(T)}<p>Trip coin <b>${fmt(T.coin)}</b>.</p>
+   <div class="acts"><button class="btn gold" onclick="fightUI()">Fight</button><button class="btn" onclick="goHome('retreat')">Go home, keep it all</button></div>`);
+}
+function renderPostFight(){
+  const T=UI.T,P=UI.P; show('fight'); const F=T.F, b=enemyBrief(P,T.f);
+  const risk=fmt(T.coin*(1-TUNE.defeatKeep));
+  sheetLock(`<h2>${F.over==='fled'?'It got away':`${ENEMIES[F.key].art} Felled`}</h2><p>${F.over==='fled'?'The Cutpurse ran off with a tenth of your trip coin.':`+${fmt(F.reward)} coin.`} Trip coin <b>${fmt(T.coin)}</b>.${T.nemesisFell?' <b>Your nemesis is dead.</b>':''}</p>${hpLine(T)}<div class="brief">${b.txt}</div>
+  <div class="acts"><button class="btn gold" onclick="pressOn()">Press on<small>a defeat drops ${risk}</small></button><button class="btn" onclick="goHome('retreat')">Go home<small>keep ${fmt(T.coin)}</small></button></div>`);
+  T.nemesisFell=false;
+}
+function pressOn(){ tripAdvance(UI.P,UI.T); route(); }
+function renderDefeat(){
+  const T=UI.T,P=UI.P; show('fight'); const F=T.F; const left=F?F.enemy.hp/F.enemy.maxHp:1;
+  sheetLock(`<h2>Beaten</h2><p>${F?`${ENEMIES[F.key].art} ${esc(ENEMIES[F.key].name)} had ${Math.round(left*100)}% left.`:''} You drag home <b>${fmt(T.coin*TUNE.defeatKeep)}</b> of ${fmt(T.coin)} coin. Your cards, levels and Keep are untouched.</p><button class="btn gold" onclick="goHome('defeat')">Home</button>`);
+}
+function fightUI(){ beginFight(UI.P,UI.T); UI.T.ev=[]; UI.sel=null; route(); }
 
-loadPrefs();
-applyLayout();
-newRun();
-refreshTitle();
-{ const b=loadBest(); $('tBest').textContent=b?`Best run: ${plural(b,'wave')} cleared`:'No runs yet — good luck, steward!'; }
+/* ---------- fight screen ---------- */
+function targetName(P,T,a){ const n=b=>b?CARDS[cardOf(P,b.id).key].name:'you';
+  if(a.at==='you'||!T.board.length) return 'you'; if(a.at==='all') return 'everything';
+  if(a.at==='right') return n(T.board[T.board.length-1]);
+  return n(T.board.find(b=>CARDS[cardOf(P,b.id).key].taunt)||T.board[0]); }
+function targetIds(P,T){ const ids=new Set(); const F=T.F; for(const a of F.intent){ if(a.hit&&T.board.length){ if(a.at==='left') ids.add((T.board.find(b=>CARDS[cardOf(P,b.id).key].taunt)||T.board[0]).id); if(a.at==='right') ids.add(T.board[T.board.length-1].id); if(a.at==='all') T.board.forEach(b=>ids.add(b.id)); } } return ids; }
+function intentHtml(P,T){ const F=T.F; return F.intent.map(a=>{
+    if(a.hit) return `<span class="int hit">⚔ ${fmt(intentHit(F,a))} → ${esc(targetName(P,T,a))}</span>`;
+    if(a.drain) return `<span class="int">💧 drains ${T.board.length?esc(targetName(P,T,{at:'left'}))+' and ':''}Magazine</span>`;
+    if(a.seal) return `<span class="int">🔒 seals ${T.board[0]?esc(CARDS[cardOf(P,T.board[0].id).key].name):'nothing'}</span>`;
+    if(a.rubble) return `<span class="int">🪨 adds Rubble to your hand</span>`; return ''; }).join('')+(ENEMIES[F.key].flee?`<span class="int">🏃 flees after turn ${ENEMIES[F.key].flee}</span>`:'')+(F.enemy.wardUp?`<span class="int">🛡 ignores your next hit</span>`:''); }
+function pieceHtml(P,T,b,tg){ const c=cardOf(P,b.id),d=CARDS[c.key],need=pieceNeed(c),max=has(c,'twin')?2:1,done=b.fires>=max;
+  const pay=d.fx.filter(([k])=>k==='dmg'||k==='block'||k==='poison').map(([k,x])=>fmt(fxAmount(c,k,x)*(T.F&&T.F.whet?T.F.whet:1))+({dmg:'⚔',block:'🛡',poison:'☠'})[k]).join(' ')||(d.fx[0]?d.fx[0][0]:'');
+  let pips=''; for(let i=0;i<need;i++) pips+=`<i class="${i<b.fill?'on':''}"></i>`;
+  return `<div class="piece ${done?'fired':''} ${b.sealed?'sealed':''} ${tg.has(b.id)?'tgt':''}" data-id="${b.id}"><div class="pa">${d.art}</div><div class="pn">${esc(d.name)}</div><div class="pips">${pips}</div><div class="py">${pay}</div><div class="bar"><i style="width:${100*b.hp/b.maxHp}%"></i></div></div>`; }
+function boardHtml(P,T){ const tg=T.F?targetIds(P,T):new Set(), F=T.F;
+  return `<div class="board"><div class="wheel"><div class="wa">⚙️</div><small>+${P.wheel}</small><div class="mag" title="Magazine">🧺${F?F.mag:0}/${TUNE.magBase+P.mag}</div></div>${T.board.map(b=>pieceHtml(P,T,b,tg)).join('')}${[...Array(Math.max(0,slotsOpen(P)-T.board.length)).keys()].map(()=>'<div class="piece hole">empty</div>').join('')}</div>`; }
+function renderBoardOnly(){ const T=UI.T,P=UI.P; $('fight').innerHTML=boardHtml(P,T); }
+function renderFight(){
+  const T=UI.T,P=UI.P,F=T.F; show('fight'); if(!F) return route();
+  const e=F.enemy, def=ENEMIES[F.key];
+  const cardsH=F.hand.map((id,i)=>{ const c=cardOf(P,id),d=CARDS[c.key],can=canPlay(P,T,i),big=(F.boost[id]||1)>1;
+    return `<button class="card ${UI.sel===i?'sel':''} ${can?'':'dim'} ${d.junk?'junk':''} ${d.piece?'pc':''}" onclick="selectCard(${i})"><span class="cost">${d.junk?'':cardCost(c)}</span><span class="art">${d.art}</span><span class="nm">${esc(d.name)}</span><span class="val">${cardVal(c,id,F)}${big?' ×3':''}</span><span class="burn">🔥${stokeOf(c)}</span></button>`; }).join('');
+  const sel=UI.sel!=null&&F.hand[UI.sel]!=null?cardOf(P,F.hand[UI.sel]):null;
+  const detail=sel?`<div class="detail"><div class="dt">${esc(describe(sel))}</div><div class="acts"><button class="btn gold" ${canPlay(P,T,UI.sel)?'':'disabled'} onclick="act('play')">Play${CARDS[sel.key].junk?'':' ('+cardCost(sel)+'⚡)'}</button><button class="btn hot" ${canBurn(P,T,UI.sel)?'':'disabled'} onclick="act('burn')">Burn +${stokeOf(sel)}<small>${burnPreview(P,T,stokeOf(sel))}</small></button></div></div>`
+   :`<div class="detail hint">${hintText(P,T)}</div>`;
+  $('fight').innerHTML=`<div class="tbar"><span>Fight ${F.f+1} · turn ${F.turn}</span><span>🪙 ${fmt(T.coin)}</span></div>
+  ${hpLine(T)}
+  <div class="enemy ${def.boss?'boss':''}" id="enemy"><div class="ea">${def.art}</div><div class="eb"><b>${esc(def.name)}</b><div class="bar foe"><i style="width:${clamp(100*e.hp/e.maxHp,0,100)}%"></i><span>${fmt(e.hp)} / ${fmt(e.maxHp)}</span></div>
+   <div class="ints">${intentHtml(P,T)}${e.poison>0?`<span class="int psn">☠ ${fmt(e.poison)}</span>`:''}${e.hex>0?`<span class="int hexed">🎎 ${e.hex} halved</span>`:''}</div></div></div>
+  ${boardHtml(P,T)}
+  <div class="status"><span class="energy">⚡ <b>${F.energy}</b></span><span class="blk">🛡 <b>${fmt(F.block)}</b></span><span class="dk">deck ${F.draw.length} · discard ${F.disc.length}</span></div>
+  ${detail}
+  <div class="hand">${cardsH}</div>
+  <div class="acts end"><button class="btn" onclick="autoTurn()">Auto turn</button><button class="btn gold" id="endBtn" onclick="endT()">End turn</button></div>`;
+  playEvents();
+}
+function cardVal(c,id,F){ const d=CARDS[c.key]; const f=d.fx.find(([k])=>k==='dmg'||k==='block'||k==='poison'); if(!f) return ''; return fmt(fxAmount(c,f[0],f[1])*(F.boost[id]||1))+({dmg:'⚔',block:'🛡',poison:'☠'})[f[0]]; }
+function burnPreview(P,T,n){ let left=n; for(const b of (T.F.aim>0?T.board.slice().reverse():T.board)){ const c=cardOf(P,b.id); if(b.sealed||b.fires>=(has(c,'twin')?2:1)) continue; const need=pieceNeed(c)-b.fill; if(need<=left) return `${CARDS[c.key].name} fires`; return `${CARDS[c.key].name} ${b.fill+left}/${pieceNeed(c)}`; } return 'to the Magazine'; }
+function hintText(P,T){ const F=T.F; if(P.trips<=2&&F.f<3){ return F.turn===1?'Tap a card. <b>Play</b> spends energy. <b>Burn</b> feeds Powder to the board, left to right.':'A full bastion fires at once. Each fires once a turn. Watch where the enemy will hit.'; }
+  const R=ratioAt(P,F.f); return `Odds ×${R<10?R.toFixed(1):fmt(R)}. Tap a card to see it.`; }
+function selectCard(i){ UI.sel=UI.sel===i?null:i; renderFight(); }
+function act(a){ const T=UI.T,P=UI.P; if(UI.sel==null) return; const i=UI.sel; UI.sel=null; if(doAction(P,T,{a,i})) afterAct(); else renderFight(); }
+function endT(){ UI.sel=null; doAction(UI.P,UI.T,{a:'end'}); afterAct(); }
+function autoTurn(){ UI.sel=null; fixedTurn(UI.P,UI.T); afterAct(); }
+function afterAct(){ const T=UI.T; persist(); if(T.phase==='fight'){ renderFight(); return; }
+  // Show the last blows, then move on.
+  renderFight(); setTimeout(route,Math.min(900,200+eventsSpan)); }
+let eventsSpan=0;
+function playEvents(){
+  const T=UI.T, ev=(T.ev||[]).filter(e=>e.t!=='feed'||T.ev.length<30); T.ev=[]; if(!ev.length){ eventsSpan=0; return; }
+  const step=Math.min(130,900/ev.length); eventsSpan=step*ev.length;
+  ev.forEach((e,i)=>setTimeout(()=>{
+    const en=$('enemy');
+    if(e.t==='dmg'){ floatAt(en,fmt(e.n),e.src==='poison'?'psn':e.over>3?'crit':'dmg'); if(en){ en.classList.remove('shake'); void en.offsetWidth; en.classList.add('shake'); } }
+    else if(e.t==='block') floatAt(document.querySelector('.blk'),'+'+fmt(e.n),'blkf');
+    else if(e.t==='poison') floatAt(en,'☠'+fmt(e.n),'psn');
+    else if(e.t==='coin') floatAt(document.querySelector('.tbar'),'+'+fmt(e.n)+' 🪙','cn');
+    else if(e.t==='fire'){ const p=document.querySelector(`.piece[data-id="${e.id}"]`); if(p){ p.classList.remove('flash'); void p.offsetWidth; p.classList.add('flash'); } }
+    else if(e.t==='hurt'){ const p=document.querySelector(`.piece[data-id="${e.id}"]`); floatAt(p||document.querySelector('.board'),'-'+fmt(e.n),'hurt'); }
+    else if(e.t==='lost') banner(`${CARDS[cardOf(UI.P,e.id).key].name} destroyed: back to the discard`);
+    else if(e.t==='you') floatAt(document.querySelector('.bar.you'),'-'+fmt(e.n),'hurt');
+    else if(e.t==='waste') floatAt(document.querySelector('.mag'),'wasted','hurt');
+    else if(e.t==='warded') floatAt(en,'warded!','blkf');
+  },i*step));
+}
+function floatAt(el,txt,cls){ if(!el) return; const r=el.getBoundingClientRect(), d=document.createElement('div'); d.className='float '+cls; d.textContent=txt; d.style.left=(r.left+r.width/2-20+Math.random()*30-15)+'px'; d.style.top=(r.top+r.height/2-10)+'px'; $('fx').appendChild(d); setTimeout(()=>d.remove(),1000); }
+
+/* ---------- clock: real seconds, for the coin-per-minute report ---------- */
+setInterval(()=>{ if(UI.P&&!document.hidden&&$('title').hidden) UI.P.secs+=1; },1000);
+addEventListener('pagehide',()=>{ if(UI.P) persist(); });
+renderTitle();

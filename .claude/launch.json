@@ -6,6 +6,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8765"],
       "port": 8765
+    },
+    {
+      "name": "forays-yours",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8772"],
+      "port": 8772
     }
   ]
 }

@@ -2,7 +2,7 @@
 /* Fight bots, all on the real rules.
    randomTurn: any legal move.  fixedTurn (js/game.js): no thought.
    thinkTurn: samples whole turns on a copy of the fight, with the unseen draw reshuffled, and keeps the turn that scores best after the enemy acts. */
-function cloneT(T){ const F=T.F; return {...T,ev:null,stat:{...T.stat},offer:null,board:T.board.map(b=>({...b})),
+function cloneT(T){ const F=T.F; return {...T,sim:true,ev:null,stat:{...T.stat},offer:null,board:T.board.map(b=>({...b})),
   F:{...F,enemy:{...F.enemy},draw:F.draw.slice(),hand:F.hand.slice(),disc:F.disc.slice(),boost:{...F.boost}}}; }
 function legalMoves(P,T,withSwap){ const F=T.F,out=[]; for(let i=0;i<F.hand.length;i++){ if(canPlay(P,T,i)) out.push({a:'play',i}); if(canBurn(P,T,i)) out.push({a:'burn',i}); }
   if(withSwap&&F.energy>=TUNE.swapCost) for(let i=0;i+1<T.board.length;i++) out.push({a:'swap',i}); out.push({a:'end'}); return out; }

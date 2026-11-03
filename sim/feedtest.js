@@ -73,10 +73,10 @@ if(what==='all'||what==='deeds'){
   const B=['stake','cannon','apoth','mortar','cannon','hut'];
   const base=build({seed:1,deeds:2,board:B.slice(0,4),slots:6}), P0=estPower(base);
   console.log('\n## Deeds: same absolute enemy (R=1 for 2 Deeds, 4 slots). think bot. Deed count opens that many slots past two.');
-  for(const mult of [1,.6]){ for(const d of [0,1,2,3,4]){ let w=0,t=0,c=0;
-      for(const key of ENEMYSET) for(let s=1;s<=N;s++){ const P=build({seed:s,deeds:d,board:B.slice(0,2+d),slots:6});
+  for(const wh of [3,1,8]) for(const mult of [1]){ for(const d of [0,1,2,3,4]){ let w=0,t=0,c=0;
+      for(const key of ENEMYSET) for(let s=1;s<=N;s++){ const P=build({seed:s,deeds:d,board:B.slice(0,2+d),slots:6,wheel:wh});
         const T0=runAbs(P,key,P0*mult,s*13+7); w+=T0.win?1:0; t+=T0.taken; c++; }
-      console.log(`hp x${mult} Deeds ${d}: win ${pc(w/c)} taken ${pc(t/c)}`); } }
+      console.log(`wheel ${wh} Deeds ${d}: win ${pc(w/c)} taken ${pc(t/c)}`); } }
   console.log('Fixed slots at 4 with free Deeds off, by Deed count held but useless:');
   TUNE.junk='none'; for(const d of [0,2]){ let w=0,t=0,c=0; for(const key of ENEMYSET) for(let s=1;s<=N;s++){ const P=build({seed:s,deeds:d,board:B.slice(0,4),slots:4}); const r=runAbs(P,key,P0,s*13+7); w+=r.win?1:0;t+=r.taken;c++; } console.log(`free slots, ${d} dead cards: win ${pc(w/c)} taken ${pc(t/c)}`);} TUNE.junk='deed';
 }

@@ -208,12 +208,11 @@ function checkWin(P,T){
   const F=T.F; if(F.over||F.enemy.hp>0) return;
   F.over='win'; const b=bounty(P,F.f); T.coin=num(T.coin+b); F.reward=b;
   const boss=isBossF(F.f), first=boss&&!P.bosses[F.f];
-  if(F.f>P.deepest) P.deepest=F.f;
-  if(boss) P.bosses[F.f]=1;
+  if(!T.sim){ if(F.f>P.deepest) P.deepest=F.f; if(boss) P.bosses[F.f]=1; if(first) P.bursts++; }
   T.hp=Math.min(T.maxHp,T.hp+T.maxHp*TUNE.healAfter);
   for(const b2 of T.board){ b2.hp=Math.min(b2.maxHp,b2.hp+b2.maxHp*TUNE.repairAfter); }
   T.f++; T.phase=first?'bossreward':'postfight';
-  if(first){ T.offer={rewards:rewardOffer(P,F.f)}; P.bursts++; }
+  if(first&&!T.sim) T.offer={rewards:rewardOffer(P,F.f)};
   if(P.nemesis&&P.nemesis.f===F.f) T.nemesisFell=true;
 }
 function rewardOffer(P,f){
@@ -312,7 +311,7 @@ function endTrip(P,T,how){
 }
 
 /* ---------- home purchases ---------- */
-function levelCost(c){ const rare=CARDS[c.key].piece?1.5:1; return TUNE.cost0*rare*Math.pow(TUNE.costG,c.lvl); }
+function levelCost(c){ return TUNE.cost0*(CARDS[c.key].piece?TUNE.pieceCostX:1)*Math.pow(TUNE.costG,c.lvl); }
 const hearthCost=P=>TUNE.hearthCost*Math.pow(TUNE.hearthG,P.hearth);
 const wheelCost=P=>TUNE.wheelCost*Math.pow(TUNE.wheelG,P.wheelBuys||0);
 const magCost=P=>TUNE.magCost*Math.pow(TUNE.magG,P.magBuys||0);
