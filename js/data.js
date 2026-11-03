@@ -21,7 +21,7 @@ function rng32(o,k){ o[k]=(o[k]+0x6D2B79F5)|0; let t=o[k]; t=Math.imul(t^(t>>>15
 function hash01(a,b){ const o={s:(Math.imul(a|0,2654435761)^Math.imul(b|0,40503))|0}; rng32(o,'s'); return rng32(o,'s'); }
 
 const TUNE = {
-  hp0:20, hpG:1.30,  atk0:9, atkG:1.235,  coin0:30, coinG:1.30,   // enemy per fight
+  hp0:20, hpG:1.30,  atk0:13, atkG:1.20,  coin0:30, coinG:1.27,   // enemy per fight
   bossEvery:12, bossHp:2.6, bossCoin:4, caravanEvery:7, caravanPrice:2,
   valG:1.40, mileX:3, mileEvery:10, defG:1.42,                   // value of a card or bastion per level
   cost0:4, pieceCostX:2.5, costG:1.62, hearthCost:10, hearthG:1.60, baseHp:40,
@@ -45,7 +45,7 @@ const CARDS = {
   pavise: {name:'Pavise',        art:'🛡️', cost:2, fx:[['block',15]], text:'Gain {block} block.'},
   second: {name:'Second Wind',   art:'🌬️', cost:0, stoke:0, fx:[['energy',1]], text:'+1 energy. Burns for nothing.'},
   mend:   {name:'Masons',        art:'🧱', cost:1, fx:[['repair',.35],['block',2]], text:'Repair every bastion 35%. Gain {block} block.'},
-  whet:   {name:'Whetstone',     art:'🪨', cost:1, fx:[['whet',3]], text:'The next bastion to fire pays triple.'},
+  whet:   {name:'Whetstone',     art:'🪨', cost:1, fx:[['whet',3]], text:'The next bastion to fire or attack card you play pays triple.'},
   funnel: {name:'Funnel',        art:'🔻', cost:0, fx:[['aim',3]], text:'The next 3 Powder go to the rightmost bastion that can fire.'},
   vial:   {name:'Blight Vial',   art:'🧪', cost:1, fx:[['poison',11]], text:'Apply {poison} blight. Blight halves each turn.'},
   doll:   {name:'Hex Doll',      art:'🎎', cost:1, fx:[['hex',2]], text:'The next 2 enemy hits are halved.'},
@@ -78,10 +78,12 @@ const PERKS = {
   fuel:   {name:'Fuel',   for:'card',  text:'Burns for 2 more Powder.'},
   echo:   {name:'Echo',   for:'card',  text:'Its effect happens twice.'},
   swift:  {name:'Swift',  for:'card',  text:'Draw a card when played.'},
+  flurry: {name:'Flurry', for:'card',  text:'Pays times the number of cards played this turn, itself included.'},
   bulwark:{name:'Bulwark',for:'piece', text:'Eight times the health.'},
   twin:   {name:'Twin',   for:'piece', text:'Can fire twice a turn.'},
   relay:  {name:'Relay',  for:'piece', text:'Passes 1 Powder on when it fires.'},
   primed: {name:'Primed', for:'piece', text:'Starts every fight one Powder short of firing.'},
+  charge: {name:'Charge', for:'piece', text:'The next bastion to fire or attack card you play this turn pays triple. Chains multiply.'},
 };
 
 /* Enemies. intent(turn) gives a list of actions: {hit:mult,at:'left'|'right'|'you'|'all'}, {drain:1}, {seal:1}, {rubble:n}. */

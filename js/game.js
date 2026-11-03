@@ -60,24 +60,37 @@ const enemyAtk=f=>TUNE.atk0*Math.pow(TUNE.atkG,f);
 const coinMult=P=>Math.pow(TUNE.ledgerX,P.ledger);
 const bounty=(P,f)=>TUNE.coin0*Math.pow(TUNE.coinG,f)*(isBossF(f)?TUNE.bossCoin:1)*coinMult(P);
 
-/* Power estimate: damage over three turns if the Powder falls as expected. R = this / enemy health. */
+/* Power estimate: damage over three turns if the Powder falls as expected. R = this / enemy health.
+   It walks the real feed for a few turns, because a Charge chain pays only when it completes inside one turn. */
+function feedWalk(P,X,top,hf){
+  const ps=[]; for(const id of P.layout.slice(0,slotsOpen(P))){ if(!id) continue; const c=cardOf(P,id), d=CARDS[c.key]; if(!d) continue;
+    let pay=0; for(const [k,b] of d.fx){ if(k==='dmg') pay+=fxAmount(c,k,b); else if(k==='poison') pay+=fxAmount(c,k,b)*1.5; }
+    ps.push({need:pieceNeed(c),max:has(c,'twin')?2:1,pay,scaled:d.fx.some(([k])=>k==='dmg'||k==='block'||k==='poison'),charge:has(c,'charge'),relay:has(c,'relay'),fill:0}); }
+  let total=0,carry=0,mag=0; const W=6,magCap=TUNE.magBase+P.mag;
+  for(let t=0;t<W;t++){
+    let rem=X+carry+mag; mag=0; carry=rem-Math.floor(rem); rem=Math.floor(rem); let whet=1;
+    for(const p of ps){ let fires=0; while(rem>0&&fires<p.max){ const take=Math.min(rem,p.need-p.fill); p.fill+=take; rem-=take; if(p.fill<p.need) break; p.fill=0; fires++;
+        total+=p.pay*(p.scaled?whet:1); if(p.scaled) whet=p.charge?whet*3:1; if(p.relay) rem+=1; } }
+    mag=Math.min(rem,magCap);
+    if(whet>1) total+=top*hf*(whet-1);
+  }
+  return total/W;
+}
 function estPower(P){
   const deck=packList(P); const hf=Math.min(1,P.hand/Math.max(1,deck.length));
   const opts=[]; let stokeSum=0,stokeN=0;
-  for(const c of deck){ const d=CARDS[c.key]; if(d.piece||d.junk) { stokeSum+=stokeOf(c); stokeN++; continue; }
+  for(const c of deck){ const d=CARDS[c.key]; stokeSum+=stokeOf(c); stokeN++; if(d.piece||d.junk) continue;
     let dmg=0; for(const [k,b] of d.fx) if(k==='dmg') dmg+=fxAmount(c,k,b); else if(k==='poison') dmg+=fxAmount(c,k,b)*1.5;
-    if(has(c,'echo')) dmg*=2; opts.push({dmg,cost:cardCost(c)}); stokeSum+=stokeOf(c); stokeN++; }
+    if(has(c,'echo')) dmg*=2; if(has(c,'flurry')) dmg*=2; opts.push({dmg,cost:cardCost(c)}); }
   opts.sort((a,b)=>b.dmg/Math.max(.5,b.cost)-a.dmg/Math.max(.5,a.cost));
-  let E=P.energy,hand=0,plays=0;
-  for(const o of opts){ if(E<=0) break; const fr=o.cost?Math.min(hf,E/o.cost):hf; hand+=o.dmg*fr; E-=o.cost*fr; plays+=fr; }
-  const avgStoke=stokeN?stokeSum/stokeN:1;
-  let rem=P.wheel+(TUNE.feed==='stoke'?Math.max(0,P.hand-plays)*avgStoke*.8:TUNE.feed==='wheel'?3:0), board=0;
-  for(const id of P.layout.slice(0,slotsOpen(P))){ if(!id) continue; const c=cardOf(P,id), d=CARDS[c.key]; if(!d) continue;
-    const need=pieceNeed(c), max=has(c,'twin')?2:1, r=Math.min(max,rem/need); rem-=need*r;
-    for(const [k,b] of d.fx) if(k==='dmg') board+=fxAmount(c,k,b)*r; else if(k==='poison') board+=fxAmount(c,k,b)*1.5*r;
-    if(has(c,'relay')) rem+=r;
-  }
-  return num(3*(hand+board));
+  let E=P.energy,hand=0,plays=0,top=0;
+  for(const o of opts){ if(o.cost<=P.energy&&o.dmg>top) top=o.dmg; if(E<=0) continue; const fr=o.cost?Math.min(hf,E/o.cost):hf; hand+=o.dmg*fr; E-=o.cost*fr; plays+=fr; }
+  const avg=stokeN?stokeSum/stokeN:1, feed=TUNE.feed;
+  const extra=feed==='wheel'?3:0;
+  // Two ways to run a turn: play what energy allows and burn the rest, or burn nearly everything for the board.
+  const mixed=hand+feedWalk(P,P.wheel+extra+(feed==='stoke'?Math.max(0,P.hand-plays)*avg*.8:0),top,hf);
+  const burn=feed==='stoke'?feedWalk(P,P.wheel+Math.max(0,P.hand-1)*avg*.8,top,hf):0;
+  return num(3*Math.max(mixed,burn));
 }
 const ratioAt=(P,f)=>estPower(P)/enemyHp(P,f);
 // The deepest fight a march reaches right now, for the home screen's preview.
@@ -143,7 +156,7 @@ function drawCards(F,n,reshuffle){
 }
 function startTurn(P,T){
   const F=T.F, def=ENEMIES[F.key];
-  F.turn++; F.energy=P.energy; F.block=0; F.whet=0; F.aim=0; T.stat.turns++;
+  F.turn++; F.energy=P.energy; F.block=0; F.whet=0; F.aim=0; F.plays=0; T.stat.turns++;
   F.enemy.wardUp=def.ward||0;
   for(const b of T.board){ b.fires=0; b.sealed=false; }
   const kept=F.hand.length; drawCards(F,Math.max(0,P.hand-kept),true);
@@ -169,10 +182,11 @@ function addPowder(P,T,n,src){
   F.pumping=false;
 }
 function firePiece(P,T,b){
-  const F=T.F, c=cardOf(P,b.id), d=CARDS[c.key]; let mul=F.whet||1; F.whet=0;
+  const F=T.F, c=cardOf(P,b.id), d=CARDS[c.key], scaled=d.fx.some(([k])=>k==='dmg'||k==='block'||k==='poison'); let mul=scaled?(F.whet||1):1; if(scaled) F.whet=0;
   if(TUNE.junk==='hold') for(const id of F.hand) if(cardOf(P,id).key==='deed') mul*=1.5;
   if(T.ev) T.ev.push({t:'fire',id:b.id});
   for(const [k,a] of d.fx) applyFx(P,T,k,a,c,mul,'board',b);
+  if(has(c,'charge')&&scaled) F.whet=mul*3;
   if(has(c,'relay')) addPowder(P,T,1,'relay');
 }
 function applyFx(P,T,kind,base,c,mul,src,b){
@@ -189,7 +203,7 @@ function applyFx(P,T,kind,base,c,mul,src,b){
     case 'energy': F.energy+=amt/(mul||1); break;
     case 'repair': for(const x of T.board) x.hp=Math.min(x.maxHp,x.hp+x.maxHp*base); break;
     case 'selfrepair': b.hp=Math.min(b.maxHp,b.hp+b.maxHp*base); break;
-    case 'whet': F.whet=3; break;
+    case 'whet': F.whet=(F.whet||1)*3; break;
     case 'aim': F.aim+=base; break;
     case 'trigger': { const x=T.board.find(y=>!y.sealed&&y.fires<(has(cardOf(P,y.id),'twin')?2:1)); if(x){ x.fires++; firePiece(P,T,x); } break; }
     case 'rotate': if(T.board.length>1) T.board.push(T.board.shift()); break;
@@ -211,8 +225,8 @@ function checkWin(P,T){
   if(!T.sim){ if(F.f>P.deepest) P.deepest=F.f; if(boss) P.bosses[F.f]=1; if(first) P.bursts++; }
   T.hp=Math.min(T.maxHp,T.hp+T.maxHp*TUNE.healAfter);
   for(const b2 of T.board){ b2.hp=Math.min(b2.maxHp,b2.hp+b2.maxHp*TUNE.repairAfter); }
-  T.f++; T.phase=first?'bossreward':'postfight';
-  if(first&&!T.sim) T.offer={rewards:rewardOffer(P,F.f)};
+  T.f++; const offer=first&&!T.sim?rewardOffer(P,F.f):null; T.phase=first&&(T.sim||offer.length)?'bossreward':'postfight';
+  if(offer) T.offer={rewards:offer}; if(first&&!T.sim&&F.f>=TUNE.finalFight) P.won=true;
   if(P.nemesis&&P.nemesis.f===F.f) T.nemesisFell=true;
 }
 function rewardOffer(P,f){
@@ -238,7 +252,8 @@ function doAction(P,T,m){
     if(!canPlay(P,T,m.i)) return false;
     const id=F.hand[m.i], c=cardOf(P,id), d=CARDS[c.key]; F.energy-=cardCost(c); F.hand.splice(m.i,1);
     if(d.piece){ const at=m.at==null?T.board.length:clamp(m.at,0,T.board.length); T.board.splice(at,0,newPiece(P,id)); if(T.ev) T.ev.push({t:'deploy',id}); return true; }
-    const mul=F.boost[id]||1, reps=has(c,'echo')?2:1;
+    F.plays++; T.stat.plays=(T.stat.plays||0)+1; let mul=(F.boost[id]||1)*(has(c,'flurry')?F.plays:1); const reps=has(c,'echo')?2:1;
+    if(F.whet>1&&d.fx.some(([k])=>k==='dmg'||k==='poison')){ mul*=F.whet; F.whet=0; } // a charge carries into your next attack card as well
     for(let r=0;r<reps;r++) for(const [k,a] of d.fx) applyFx(P,T,k,a,c,mul,'hand');
     if(has(c,'swift')) drawCards(F,1,false);
     if(!d.temp) F.disc.push(id);
@@ -246,7 +261,7 @@ function doAction(P,T,m){
     if(!canBurn(P,T,m.i)) return false;
     const id=F.hand[m.i], c=cardOf(P,id), d=CARDS[c.key]; F.hand.splice(m.i,1);
     if(!d.temp) F.disc.push(id);
-    const n=stokeOf(c); if(n) addPowder(P,T,n,'burn');
+    T.stat.burns=(T.stat.burns||0)+1; const n=stokeOf(c); if(n) addPowder(P,T,n,'burn');
     if(T.ev) T.ev.push({t:'burn',n});
   } else if(m.a==='swap'){
     if(F.energy<TUNE.swapCost||m.i<0||m.i+1>=T.board.length) return false;
@@ -326,7 +341,7 @@ function buyKeep(P,what){
 }
 function setSocket(P,id,idx,perk){ const c=cardOf(P,id); if(idx>=socketsOpen(P,c)) return false; if(perk&&c.sock.includes(perk)) return false;
   if(perk&&!perkFits(perk,c)) return false; if(perk) c.sock[idx]=perk; else c.sock.splice(idx,1); c.sock=c.sock.filter(Boolean); return true; }
-function perkFits(perk,c){ const f=PERKS[perk].for; return f==='both'||(f==='piece')===isPiece(c); }
+function perkFits(perk,c){ const f=PERKS[perk].for; if(perk==='charge'&&!CARDS[c.key].fx.some(([k])=>k==='dmg'||k==='block'||k==='poison')) return false; return f==='both'||(f==='piece')===isPiece(c); }
 function togglePack(P,id){ const c=cardOf(P,id); if(onBoard(P,id)) return false;
   const cnt=packedCount(P);
   if(c.packed){ if(cnt<=TUNE.deckMin) return false; c.packed=false; } else { if(cnt>=TUNE.deckMax) return false; c.packed=true; }

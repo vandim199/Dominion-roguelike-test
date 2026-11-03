@@ -92,3 +92,5 @@ h2{margin:.1em 0 .4em;font-size:1.3rem}h3{margin:.8em 0 .3em;font-size:1rem}p{ma
 .banner{position:absolute;top:12%;left:50%;transform:translateX(-50%);background:var(--gold);color:#241a05;font-weight:bold;padding:.45em .9em;border-radius:20px;animation:bn 1.7s forwards;white-space:nowrap;max-width:92vw;overflow:hidden;text-overflow:ellipsis;font-size:.9rem}
 @keyframes bn{0%{opacity:0;top:9%}10%{opacity:1;top:12%}80%{opacity:1}100%{opacity:0}}
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01s!important}}
+.modes{display:flex;gap:4px;align-items:center;margin:.3em 0}.modes small{margin-right:auto}.modes button{background:var(--pan);border:1px solid var(--line);border-radius:7px;padding:.2em .6em;min-height:34px;font-size:.82rem}.modes .on{border-color:var(--gold);color:var(--gold)}.goals{margin:.1em 0 .3em}
+.chg{color:var(--hot);font-weight:bold;font-size:.9rem}

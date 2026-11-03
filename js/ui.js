@@ -4,7 +4,7 @@
    ========================================================== */
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
-const UI={P:null,T:null,tab:'board',sel:null,timer:null,hint:true};
+const UI={P:null,T:null,tab:'board',sel:null,buy:1};
 function show(id){ for(const s of ['title','home','fight']) $(s).hidden=s!==id; }
 function persist(){ saveGame(UI.P,UI.T); }
 const mmss=s=>Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
@@ -52,15 +52,16 @@ function renderHome(fresh){
   let html=`<header class="hbar"><div class="coin">🪙 <b>${fmt(P.coin)}</b></div><div class="pow">Power <b>${fmt(p)}</b></div><button class="ghost" onclick="renderTitle()">☰</button></header>`;
   if(r) html+=reportCard(P,r);
   html+=sparkline(P);
-  html+=`<div class="go"><button class="btn gold big" onclick="startTripUI()">March ▶<small>sweeps to fight ${reach+1}, then you take over</small></button></div>`;
+  html+=`<div class="go"><button class="btn gold big" onclick="startTripUI()">March ▶<small>${reach>0?`sweeps through ${reach} fight${reach>1?'s':''}, then you take over`:'you fight from the first'}</small></button></div>`;
   html+=scoutRow(P,reach);
+  html+=`<div class="modes"><small>Quick buy</small>${[[1,'+1'],[2,'To triple'],[3,'Max']].map(([k,n])=>`<button class="${UI.buy===k?'on':''}" onclick="UI.buy=${k};renderHome()">${n}</button>`).join('')}</div>`;
   html+=`<nav class="tabs">${[['board','Board'],['pack','Pack'],['keep','Keep']].map(([k,n])=>`<button class="${UI.tab===k?'on':''}" onclick="UI.tab='${k}';renderHome()">${n}</button>`).join('')}</nav>`;
   html+=UI.tab==='board'?boardTab(P):UI.tab==='pack'?packTab(P):keepTab(P);
   $('home').innerHTML=html;
 }
 function reportCard(P,r){
   const head=r.how==='defeat'?`Beaten at fight ${r.f+1}`:`Home from fight ${r.f+1}`;
-  const body=r.how==='defeat'?`Kept <b>${fmt(r.got)}</b> coin, ${fmt(r.lost)} dropped. ${P.nemesis?`${ENEMIES[P.nemesis.key].name} had ${Math.round(P.nemesis.left*100)}% left.`:''}`:`Kept all <b>${fmt(r.got)}</b> coin.`;
+  const body=r.how==='defeat'?`Kept <b>${fmt(r.got)}</b> coin, ${fmt(r.lost)} dropped. ${P.nemesis?`${ENEMIES[P.nemesis.key].name} had ${Math.round(P.nemesis.left*100)}% left. Odds were ×${ratioAt(P,P.nemesis.f).toFixed(2)}.`:''}`:`Kept all <b>${fmt(r.got)}</b> coin.`;
   const rate=`${mmss(r.secs)} away · ${fmt(r.rate)} coin/min${r.rate>r.best&&r.best>0?' · <b>new best!</b>':r.best?` · best ${fmt(r.best)}`:''}`;
   return `<div class="report ${r.how}"><b>${head}</b><br>${body}<br><small>${rate} · marched ${r.marched}, fought ${r.fights}</small></div>`;
 }
@@ -70,12 +71,17 @@ function sparkline(P){ const h=(P.hist||[]).slice(-40); if(h.length<2) return ''
 function scoutRow(P,reach){
   let out=''; for(let f=reach;f<reach+5;f++){ const k=enemyKey(P,f), e=ENEMIES[k], R=ratioAt(P,f);
     const tags=(isCaravanF(f)&&!P.caravans[f]?'🐪':'')+(e.boss?'★':''); out+=`<div class="sc ${R<1?'bad':R<2?'mid':'ok'}" title="${esc(e.name)}"><span>${e.art}</span><small>${tags||f+1}</small><b>×${R<10?R.toFixed(1):fmt(R)}</b></div>`; }
-  return `<div class="scout"><small>Ahead</small>${out}</div>`;
+  let nb=reach; while(!(isBossF(nb)&&!P.bosses[nb])&&nb<400) nb++; let nc=reach; while(!(isCaravanF(nc)&&!P.caravans[nc])&&nc<400) nc++;
+  return `<div class="scout"><small>Ahead</small>${out}</div><p class="note goals">★ Next boss, a new rule: fight ${nb+1} · 🐪 Next caravan: fight ${nc+1}${P.won?' · <b>You felled the last King</b>':''}</p>`;
 }
+function bundle(P,c){ // what the row's quick button buys in the current mode: one level, up to the next triple, or as many as you can afford
+  let n=0,k=0,l=c.lvl, stop=UI.buy===1?1:UI.buy===2?TUNE.mileEvery-(c.lvl%TUNE.mileEvery):1e3;
+  while(n<stop){ const x=levelCost({key:c.key,lvl:l}); if(UI.buy===3&&k+x>P.coin) break; k+=x; n++; l++; }
+  if(!n){ n=1; k=levelCost(c); } return {n,k}; }
 function itemRow(P,c,extra){
-  const d=CARDS[c.key], k=levelCost(c), can=P.coin>=k, mile=TUNE.mileEvery-(c.lvl%TUNE.mileEvery), junk=c.key==='deed'||c.key==='ward';
+  const d=CARDS[c.key], B=bundle(P,c), k=B.k, can=P.coin>=k, mile=TUNE.mileEvery-(c.lvl%TUNE.mileEvery), junk=c.key==='deed'||c.key==='ward';
   return `<div class="row ${extra||''}" onclick="openItem(${c.id})"><span class="art">${d.art}</span><div class="mid"><b>${esc(d.name)}</b>${junk?'':` <small>Lv ${c.lvl}${c.sock.length?' · '+c.sock.map(s=>PERKS[s].name).join(', '):''}</small>`}<div class="dsc">${esc(describe(c))}</div>${junk?'':`<div class="mile" title="next triple"><i style="width:${(1-mile/TUNE.mileEvery)*100}%"></i></div>`}</div>
-  ${junk?'':`<button class="buy ${can?'':'off'}" onclick="event.stopPropagation();quick(${c.id})">+1<small>${fmt(k)}</small></button>`}</div>`;
+  ${junk?'':`<button class="buy ${can?'':'off'}" onclick="event.stopPropagation();quick(${c.id})">+${B.n}<small>${fmt(k)}</small></button>`}</div>`;
 }
 function boardTab(P){
   const open=slotsOpen(P), on=P.layout.slice(0,open);
@@ -102,7 +108,7 @@ function keepTab(P){
    row('🧺','The Magazine',`holds ${TUNE.magBase+P.mag}`,'Spare Powder waits here for next turn.',{k:magCost(P),w:'mag'})+
    row('📒','The Ledger',`coin ×${fmt(coinMult(P))}`,'Every bounty pays 25% more, compounding.',{k:ledgerCost(P),w:'ledger'});
 }
-function quick(id){ if(buyLevel(UI.P,id)){ persist(); flashMile(cardOf(UI.P,id)); renderHome(); } }
+function quick(id){ const P=UI.P,c=cardOf(P,id),B=bundle(P,c); if(P.coin<B.k) return; for(let i=0;i<B.n;i++) if(buyLevel(P,id)) flashMile(c); persist(); renderHome(); }
 function keepBuy(w){ if(buyKeep(UI.P,w)){ persist(); renderHome(); } }
 function flashMile(c){ if(c.lvl%TUNE.mileEvery===0&&c.lvl>0) banner(`${CARDS[c.key].name} level ${c.lvl}: pays triple!`); else if(TUNE.sockAt.includes(c.lvl)) banner(`${CARDS[c.key].name}: a socket opens`); }
 function banner(t){ const b=document.createElement('div'); b.className='banner'; b.textContent=t; $('fx').appendChild(b); setTimeout(()=>b.remove(),1700); }
@@ -129,7 +135,7 @@ function openItem(id){
 function sheetBuy(id,n){ let any=false; for(let i=0;i<n;i++) if(buyLevel(UI.P,id)){ any=true; flashMile(cardOf(UI.P,id)); } if(any){ persist(); renderHome(); openItem(id); } }
 function togglePerk(id,k){ const P=UI.P,c=cardOf(P,id); if(c.sock.includes(k)) c.sock=c.sock.filter(x=>x!==k); else { if(c.sock.length>=socketsOpen(P,c)) c.sock.shift(); c.sock.push(k); } persist(); renderHome(); openItem(id); }
 function movePiece(id,slot){ placePiece(UI.P,id,slot); if(slot==null){ const c=cardOf(UI.P,id); c.packed=false; } persist(); renderHome(); openItem(id); }
-function swapIn(id,s){ const P=UI.P, out=P.layout[s]; P.layout[s]=id; cardOf(P,id).packed=true; cardOf(P,out).packed=false; persist(); renderHome(); openItem(id); }
+function swapIn(id,s){ const P=UI.P, out=P.layout[s]; const j=P.layout.indexOf(id); if(j>=0) P.layout.splice(j,1); P.layout[s]=id; cardOf(P,id).packed=true; cardOf(P,out).packed=false; persist(); renderHome(); openItem(id); }
 function packIt(id){ if(!togglePack(UI.P,id)) banner(`The pack holds ${TUNE.deckMin} to ${TUNE.deckMax} cards`); persist(); renderHome(); openItem(id); }
 
 /* ---------- trip ---------- */
@@ -161,7 +167,7 @@ function sheetLock(h){ sheet(h); $('sheet').dataset.lock='1'; }
 function buyCaravan(i){ if(caravanBuy(UI.P,UI.T,i)){ banner('Bought. Find it in your Pack or Reserve at home.'); route(); } }
 function renderBossReward(){
   const T=UI.T; show('fight');
-  sheetLock(`<h2>★ The boss falls</h2><p>Choose one change. It lasts forever.</p>`+T.offer.rewards.map(k=>`<button class="offer" onclick="takeReward(UI.P,UI.T,'${k}');route()"><div class="mid"><b>${REWARDS[k].name}</b><div class="dsc">${REWARDS[k].text}</div></div></button>`).join(''));
+  sheetLock(`<h2>★ The boss falls</h2>${UI.P.won?'<p><b>That was the last of the Hollow Kings. The Keep is safe, and the road still goes on for as long as you care to walk it.</b></p>':''}<p>Choose one change. It lasts forever.</p>`+T.offer.rewards.map(k=>`<button class="offer" onclick="takeReward(UI.P,UI.T,'${k}');route()"><div class="mid"><b>${REWARDS[k].name}</b><div class="dsc">${REWARDS[k].text}</div></div></button>`).join(''));
 }
 function enemyBrief(P,f){ const k=enemyKey(P,f), e=ENEMIES[k], R=ratioAt(P,f); return {k,e,R,txt:`<span class="big-art">${e.art}</span><b>${esc(e.name)}</b> <small>fight ${f+1}</small><div class="note">${fmt(enemyHp(P,f))} health · odds ×${R<10?R.toFixed(1):fmt(R)} ${R>=2?'(easy)':R>=1?'(fair)':'(against you)'} · bounty ${fmt(bounty(P,f))}</div>`}; }
 function hpLine(T){ return `<div class="bar you"><i style="width:${100*T.hp/T.maxHp}%"></i><span>❤ ${fmt(T.hp)} / ${fmt(T.maxHp)}</span></div>`; }
@@ -210,13 +216,13 @@ function renderFight(){
     return `<button class="card ${UI.sel===i?'sel':''} ${can?'':'dim'} ${d.junk?'junk':''} ${d.piece?'pc':''}" onclick="selectCard(${i})"><span class="cost">${d.junk?'':cardCost(c)}</span><span class="art">${d.art}</span><span class="nm">${esc(d.name)}</span><span class="val">${cardVal(c,id,F)}${big?' ×3':''}</span><span class="burn">🔥${stokeOf(c)}</span></button>`; }).join('');
   const sel=UI.sel!=null&&F.hand[UI.sel]!=null?cardOf(P,F.hand[UI.sel]):null;
   const detail=sel?`<div class="detail"><div class="dt">${esc(describe(sel))}</div><div class="acts"><button class="btn gold" ${canPlay(P,T,UI.sel)?'':'disabled'} onclick="act('play')">Play${CARDS[sel.key].junk?'':' ('+cardCost(sel)+'⚡)'}</button><button class="btn hot" ${canBurn(P,T,UI.sel)?'':'disabled'} onclick="act('burn')">Burn +${stokeOf(sel)}<small>${burnPreview(P,T,stokeOf(sel))}</small></button></div></div>`
-   :`<div class="detail hint">${hintText(P,T)}</div>`;
+   :`<div class="detail hint"><div>${hintText(P,T)}</div></div>`;
   $('fight').innerHTML=`<div class="tbar"><span>Fight ${F.f+1} · turn ${F.turn}</span><span>🪙 ${fmt(T.coin)}</span></div>
   ${hpLine(T)}
   <div class="enemy ${def.boss?'boss':''}" id="enemy"><div class="ea">${def.art}</div><div class="eb"><b>${esc(def.name)}</b><div class="bar foe"><i style="width:${clamp(100*e.hp/e.maxHp,0,100)}%"></i><span>${fmt(e.hp)} / ${fmt(e.maxHp)}</span></div>
    <div class="ints">${intentHtml(P,T)}${e.poison>0?`<span class="int psn">☠ ${fmt(e.poison)}</span>`:''}${e.hex>0?`<span class="int hexed">🎎 ${e.hex} halved</span>`:''}</div></div></div>
   ${boardHtml(P,T)}
-  <div class="status"><span class="energy">⚡ <b>${F.energy}</b></span><span class="blk">🛡 <b>${fmt(F.block)}</b></span><span class="dk">deck ${F.draw.length} · discard ${F.disc.length}</span></div>
+  <div class="status"><span class="energy">⚡ <b>${F.energy}</b></span><span class="blk">🛡 <b>${fmt(F.block)}</b></span>${F.whet>1?`<span class="chg">⚡×${fmt(F.whet)} next</span>`:''}<span class="dk">deck ${F.draw.length} · discard ${F.disc.length}</span></div>
   ${detail}
   <div class="hand">${cardsH}</div>
   <div class="acts end"><button class="btn" onclick="autoTurn()">Auto turn</button><button class="btn gold" id="endBtn" onclick="endT()">End turn</button></div>`;
