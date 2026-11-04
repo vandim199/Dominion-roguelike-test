@@ -10,7 +10,7 @@ You leave the Keep with a small pack of cards and a row of bastions, fight deepe
 - **Board.** Powder runs left to right. A full bastion fires at once, once a turn. The Wheel adds Powder every turn. Spare Powder waits in the Magazine.
 - **Charge.** A socketed perk: the next bastion or attack card pays triple, and chains multiply. A chain has to complete inside one turn, so the late game is about counting Powder.
 - **Enemies** show their intents. Aimed hits strike the leftmost bastion (a Gatehouse first), archers the rightmost, some go straight for you. A destroyed bastion returns to the discard and must be drawn and paid for again.
-- **Trips.** The March sweeps what your machine clears on Wheel Powder alone, or anything you utterly outclass. Then you play by hand. Going home keeps all coin, defeat keeps 70%. Nothing else is ever lost.
+- **Trips.** The March sweeps what your machine clears on Wheel Powder alone, or anything you utterly outclass. Then you play by hand. Marched fights pay a tenth. Going home keeps all coin, defeat keeps 70%. Nothing else is ever lost.
 - **Growth.** Levels multiply a card, with triple pay every 10 levels. Levels 5, 20 and 40 open sockets, free to rearrange. Caravans stop once every 7 fights and sell one card. Bosses every 12 fights grant a permanent rule change. A Title Deed must be packed for each slot past two, and it is dead in your hand.
 - **Saving.** Automatic, after every action, in one slot per published version.
 
