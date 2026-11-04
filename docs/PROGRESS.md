@@ -1,4 +1,4 @@
-STATUS: IN PROGRESS
+STATUS: DONE
 
 Branch: `wild/forays-yours` (publishes to `v/wild-forays-yours/`). Never commit to main or force-push.
 
@@ -13,8 +13,7 @@ Branch: `wild/forays-yours` (publishes to `v/wild-forays-yours/`). Never commit 
 Keep working: `classic/`, `js/versions.js`, `#tVersions`, `slotKey`. Every commit ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
 ## Done
-- Rules core, feed test, full UI loop with save, whole-loop bot, results script, tuning pass.
-- Browser: loop played through, reload resumes the same fight, phone width looked right (first check).
+- All deliverables: rules core, feed test, full UI loop with save, whole-loop bots, tuning, browser check, README, TAKE, RESULTS.
 
 ## Next
-- Run `sim/results.js` to `docs/results_raw.txt`; write RESULTS.md, TAKE.md decision log, README. Browser recheck of buy modes and Charge display.
+- Nothing required. If continuing: a real person's playtest first, then the weak spots listed in RESULTS section 4.

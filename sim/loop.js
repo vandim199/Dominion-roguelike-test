@@ -104,7 +104,7 @@ function runGame(seed,kind,o={}){
       if(T.phase==='prefight'||T.phase==='postfight'){
         if(T.phase==='postfight'){ tripAdvance(P,T); if(T.phase==='caravan') continue; }
         const R=oddsAt(P,T.f);
-        const go=kind==='naive'||o.neverRetreat?true:!(R<(o.retreatR||.75)||(T.hp/T.maxHp<.35&&R<1.6))||(T.stat.fights===0&&T.stat.marched===0);
+        const go=kind==='naive'||o.neverRetreat?true:!(R<(o.retreatR||.75)||(T.hp/T.maxHp<.35&&R<1.6))||(T.stat.fights===0&&(T.stat.marched===0||o.mustFight));
         if(!go||(o.farm&&T.stat.marched>0&&T.stat.fights===0)){ how='retreat'; break; }
         const t0=T.stat.turns; playFight(P,T,fightBot,rs,{samples});
         const dt=(T.stat.turns-t0)*SEC.turn+SEC.fight; sec+=dt; turnsTotal+=T.stat.turns-t0;
