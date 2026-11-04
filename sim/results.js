@@ -90,6 +90,7 @@ if(what==='loop'||what==='depth'||what==='all'){
   const nd=summarize('careful upgrades but never buys the Wheel',games('careful',{noWheel:true}));
   console.log(`\nno Wheel buying / careful, minutes to 1e12: x${(med(t(nd))/med(t(car))).toFixed(2)}`);
   // Retreat policy: dying must never out-earn leaving.
-  console.log('\n### Retreat policy, careful upgrades: coin earned per minute over the whole run');
-  for(const R of [1.2,.9,.7,0]){ const rs=games('careful',{retreatR:R||.0001,neverRetreat:R===0}); console.log(`retreat when next R< ${R}: minutes to 1e12 ${med(t(rs)).toFixed(0)}, trips ${med(rs.map(r=>r.P.trips))}, defeats ${med(rs.map(r=>r.P.defeats))}`); }
+  console.log('\n### Retreat policy, careful upgrades: minutes to 1e12 by when the bot chooses to leave');
+  for(const R of [1.2,1,.75,.5,0]){ const rs=games('careful',{retreatR:R||.0001,neverRetreat:R===0}); console.log(`retreat when next R< ${R}: minutes to 1e12 ${med(t(rs)).toFixed(0)}, trips ${med(rs.map(r=>r.P.trips))}, defeats ${med(rs.map(r=>r.P.defeats))}`); }
+  { const rs=games('careful',{farm:true,capMin:200}); console.log(`march-and-go-home farming (fights only when nothing can be marched; 200 min cap): minutes to 1e12 ${med(t(rs)).toFixed(0)}, 1e9 ${med(rs.map(r=>r.marks[1e9]==null?Infinity:r.marks[1e9]/60)).toFixed(0)}, trips ${med(rs.map(r=>r.P.trips))}`); }
 }

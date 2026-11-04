@@ -21,12 +21,12 @@ function rng32(o,k){ o[k]=(o[k]+0x6D2B79F5)|0; let t=o[k]; t=Math.imul(t^(t>>>15
 function hash01(a,b){ const o={s:(Math.imul(a|0,2654435761)^Math.imul(b|0,40503))|0}; rng32(o,'s'); return rng32(o,'s'); }
 
 const TUNE = {
-  hp0:20, hpG:1.30,  atk0:15, atkG:1.18,  coin0:45, coinG:1.255,   // enemy per fight
+  hp0:20, hpG:1.30,  atk0:17, atkG:1.19,  coin0:70, coinG:1.255,   // enemy per fight
   bossEvery:12, bossHp:2.6, bossCoin:4, caravanEvery:7, caravanPrice:2,
   valG:1.40, mileX:3, mileEvery:10, defG:1.42,                   // value of a card or bastion per level
-  cost0:3, pieceCostX:2.5, costG:1.62, hearthCost:10, hearthG:1.60, baseHp:60,
+  cost0:3, pieceCostX:2.5, costG:1.72, hearthCost:10, hearthG:1.60, baseHp:60,
   wheelCost:30, wheelG:5, magCost:60, magG:5, ledgerCost:300, ledgerG:60, ledgerX:1.25,
-  marchR:8, marchMachine:1, defeatKeep:.7, enrageAfter:6, enrageX:1.4, healAfter:.2, repairAfter:.25,
+  marchR:8, marchMachine:1, marchCoin:.1, defeatKeep:.7, enrageAfter:6, enrageX:1.4, healAfter:.2, repairAfter:.25,
   magBase:2, swapCost:1, handBase:5, energyBase:3, deckMin:8, deckMax:12, finalFight:118,
   sockAt:[5,20,40],
   feed:'stoke',      // 'stoke' any card burns for Powder; 'powdercards' only Powder cards feed; 'wheel' only the wheel feeds
@@ -60,10 +60,10 @@ const CARDS = {
   // Bastions
   cannon: {name:'Cannon',        art:'💣', piece:true, cost:2, need:3, hp:30, fx:[['dmg',14]], text:'Deal {dmg}.'},
   mortar: {name:'Mortar',        art:'🎯', piece:true, cost:3, need:7, hp:20, fx:[['dmg',46]], text:'Deal {dmg}.'},
-  stake:  {name:'Palisade',      art:'🪓', piece:true, cost:1, need:2, hp:40, fx:[['block',9]], text:'Gain {block} block.'},
-  gate:   {name:'Gatehouse',     art:'🏰', piece:true, cost:2, need:4, hp:90, taunt:true, fx:[['block',6],['selfrepair',.3]], text:'Takes aimed hits first. Gain {block} block and repair 30%.'},
+  stake:  {name:'Palisade',      art:'🪓', piece:true, cost:1, need:2, hp:40, fx:[['block',7]], text:'Gain {block} block.'},
+  gate:   {name:'Gatehouse',     art:'🏰', piece:true, cost:2, need:3, hp:90, taunt:true, fx:[['block',6],['selfrepair',.3]], text:'Takes aimed hits first. Gain {block} block and repair 30%.'},
   apoth:  {name:'Apothecary',    art:'⚗️', piece:true, cost:2, need:3, hp:24, fx:[['poison',18]], text:'Apply {poison} blight.'},
-  hut:    {name:'Witch Hut',     art:'🛖', piece:true, cost:2, need:5, hp:24, fx:[['hex',2],['dmg',8]], text:'Next 2 enemy hits halved. Deal {dmg}.'},
+  hut:    {name:'Witch Hut',     art:'🛖', piece:true, cost:2, need:4, hp:24, fx:[['hex',2],['dmg',8]], text:'Next 2 enemy hits halved. Deal {dmg}.'},
   mint:   {name:'Mint',          art:'🪙', piece:true, cost:2, need:4, hp:24, fx:[['coin',.4]], text:'Gain coin: {coin} of this bounty.'},
   post:   {name:'Courier Post',  art:'📯', piece:true, cost:2, need:4, hp:24, fx:[['draw',2]], text:'Draw 2.'},
   granary:{name:'Granary',       art:'🌾', piece:true, cost:2, need:5, hp:30, fx:[['energy',2]], text:'+2 energy.'},

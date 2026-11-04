@@ -20,7 +20,7 @@ $('tNew').onclick=()=>{ const b=$('tNew'); if(!b.dataset.arm){ b.dataset.arm='1'
 $('tClassic').onclick=()=>{ location.href='classic/index.html'; };
 $('tHow').onclick=()=>howTo();
 function howTo(){ sheet(`<h2>How to play</h2>
-<p><b>Trips.</b> Leave the Keep and fight deeper and deeper until you go home or get beaten. Going home keeps all your coin, defeat keeps 70%. Nothing else is ever lost. Spend at the Keep, then go again: what beat you dies in the march.</p>
+<p><b>Trips.</b> Leave the Keep and fight deeper and deeper until you go home or get beaten. Going home keeps all your coin, defeat keeps 70%. Marched fights pay a tenth: the real money is at your limit. Nothing else is ever lost. Spend at the Keep, then go again: what beat you dies in the march.</p>
 <p><b>Your hand.</b> Each card is a choice. <b>Play</b> it for its effect, paying energy. Or <b>Burn</b> it for Powder: expensive cards burn hotter (cost + 1).</p>
 <p><b>The board.</b> Powder runs left to right into your bastions. A full bastion fires at once, once a turn. The Wheel adds Powder every turn. Spare Powder waits in the Magazine, and past that it is wasted.</p>
 <p><b>Enemies</b> show what they will do. Aimed hits strike your leftmost bastion (a Gatehouse first), archers the rightmost, and some go straight for you. Block stops everything first. A destroyed bastion goes to your discard and must be drawn and paid for again.</p>
@@ -61,7 +61,7 @@ function renderHome(fresh){
 }
 function reportCard(P,r){
   const head=r.how==='defeat'?`Beaten at fight ${r.f+1}`:`Home from fight ${r.f+1}`;
-  const body=r.how==='defeat'?`Kept <b>${fmt(r.got)}</b> coin, ${fmt(r.lost)} dropped. ${P.nemesis?`${ENEMIES[P.nemesis.key].name} had ${Math.round(P.nemesis.left*100)}% left. Odds were ×${ratioAt(P,P.nemesis.f).toFixed(2)}.`:''}`:`Kept all <b>${fmt(r.got)}</b> coin.`;
+  const body=r.how==='defeat'?`Kept <b>${fmt(r.got)}</b> coin, ${fmt(r.lost)} dropped. ${P.nemesis?`${ENEMIES[P.nemesis.key].name} had ${Math.round(P.nemesis.left*100)}% left. Odds were ×${oddsAt(P,P.nemesis.f).toFixed(2)}.`:''}`:`Kept all <b>${fmt(r.got)}</b> coin.`;
   const rate=`${mmss(r.secs)} away · ${fmt(r.rate)} coin/min${r.rate>r.best&&r.best>0?' · <b>new best!</b>':r.best?` · best ${fmt(r.best)}`:''}`;
   return `<div class="report ${r.how}"><b>${head}</b><br>${body}<br><small>${rate} · marched ${r.marched}, fought ${r.fights}</small></div>`;
 }
@@ -69,7 +69,7 @@ function sparkline(P){ const h=(P.hist||[]).slice(-40); if(h.length<2) return ''
   const pts=ls.map((v,i)=>`${(i/(ls.length-1)*300).toFixed(1)},${(34-(v-a)/(b-a)*30).toFixed(1)}`).join(' ');
   return `<div class="spark"><svg viewBox="0 0 300 36" preserveAspectRatio="none"><polyline points="${pts}"/></svg><small>${fmt(h[0])} → ${fmt(h[h.length-1])} over ${h.length} trips</small></div>`; }
 function scoutRow(P,reach){
-  let out=''; for(let f=reach;f<reach+5;f++){ const k=enemyKey(P,f), e=ENEMIES[k], R=ratioAt(P,f);
+  let out=''; for(let f=reach;f<reach+5;f++){ const k=enemyKey(P,f), e=ENEMIES[k], R=oddsAt(P,f);
     const tags=(isCaravanF(f)&&!P.caravans[f]?'🐪':'')+(e.boss?'★':''); out+=`<div class="sc ${R<1?'bad':R<2?'mid':'ok'}" title="${esc(e.name)}"><span>${e.art}</span><small>${tags||f+1}</small><b>×${R<10?R.toFixed(1):fmt(R)}</b></div>`; }
   let nb=reach; while(!(isBossF(nb)&&!P.bosses[nb])&&nb<400) nb++; let nc=reach; while(!(isCaravanF(nc)&&!P.caravans[nc])&&nc<400) nc++;
   return `<div class="scout"><small>Ahead</small>${out}</div><p class="note goals">★ Next boss, a new rule: fight ${nb+1} · 🐪 Next caravan: fight ${nc+1}${P.won?' · <b>You felled the last King</b>':''}</p>`;
@@ -170,7 +170,7 @@ function renderBossReward(){
   const T=UI.T; show('fight');
   sheetLock(`<h2>★ The boss falls</h2>${UI.P.won?'<p><b>That was the last of the Hollow Kings. The Keep is safe, and the road still goes on for as long as you care to walk it.</b></p>':''}<p>Choose one change. It lasts forever.</p>`+T.offer.rewards.map(k=>`<button class="offer" onclick="takeReward(UI.P,UI.T,'${k}');route()"><div class="mid"><b>${REWARDS[k].name}</b><div class="dsc">${REWARDS[k].text}</div></div></button>`).join(''));
 }
-function enemyBrief(P,f){ const k=enemyKey(P,f), e=ENEMIES[k], R=ratioAt(P,f); return {k,e,R,txt:`<span class="big-art">${e.art}</span><b>${esc(e.name)}</b> <small>fight ${f+1}</small><div class="note">${fmt(enemyHp(P,f))} health · odds ×${R<10?R.toFixed(1):fmt(R)} ${R>=2?'(easy)':R>=1?'(fair)':'(against you)'} · bounty ${fmt(bounty(P,f))}</div>`}; }
+function enemyBrief(P,f){ const k=enemyKey(P,f), e=ENEMIES[k], R=oddsAt(P,f); return {k,e,R,txt:`<span class="big-art">${e.art}</span><b>${esc(e.name)}</b> <small>fight ${f+1}</small><div class="note">${fmt(enemyHp(P,f))} health · odds ×${R<10?R.toFixed(1):fmt(R)} ${R>=2?'(easy)':R>=1?'(fair)':'(against you)'} · bounty ${fmt(bounty(P,f))}</div>`}; }
 function hpLine(T){ return `<div class="bar you"><i style="width:${100*T.hp/T.maxHp}%"></i><span>❤ ${fmt(T.hp)} / ${fmt(T.maxHp)}</span></div>`; }
 function renderPrefight(){
   const T=UI.T,P=UI.P; show('fight'); renderBoardOnly();
@@ -232,7 +232,7 @@ function renderFight(){
 function cardVal(c,id,F){ const d=CARDS[c.key]; const f=d.fx.find(([k])=>k==='dmg'||k==='block'||k==='poison'); if(!f) return ''; return fmt(fxAmount(c,f[0],f[1])*(F.boost[id]||1))+({dmg:'⚔',block:'🛡',poison:'☠'})[f[0]]; }
 function burnPreview(P,T,n){ let left=n; for(const b of (T.F.aim>0?T.board.slice().reverse():T.board)){ const c=cardOf(P,b.id); if(b.sealed||b.fires>=(has(c,'twin')?2:1)) continue; const need=pieceNeed(c)-b.fill; if(need<=left) return `${CARDS[c.key].name} fires`; return `${CARDS[c.key].name} ${b.fill+left}/${pieceNeed(c)}`; } return 'to the Magazine'; }
 function hintText(P,T){ const F=T.F; if(P.trips<=2&&F.f<3){ return F.turn===1?'Tap a card. <b>Play</b> spends energy. <b>Burn</b> feeds Powder to the board, left to right.':'A full bastion fires at once. Each fires once a turn. Watch where the enemy will hit.'; }
-  const R=ratioAt(P,F.f); return `Odds ×${R<10?R.toFixed(1):fmt(R)}. Tap a card to see it.`; }
+  const R=oddsAt(P,F.f); return `Odds ×${R<10?R.toFixed(1):fmt(R)}. Tap a card to see it.`; }
 function selectCard(i){ UI.sel=UI.sel===i?null:i; renderFight(); }
 function act(a){ const T=UI.T,P=UI.P; if(UI.sel==null) return; const i=UI.sel; UI.sel=null; if(doAction(P,T,{a,i})) afterAct(); else renderFight(); }
 function endT(){ UI.sel=null; doAction(UI.P,UI.T,{a:'end'}); afterAct(); }

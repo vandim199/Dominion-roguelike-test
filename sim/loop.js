@@ -103,9 +103,9 @@ function runGame(seed,kind,o={}){
       if(T.phase==='caravan'){ sec+=SEC.caravan; const b0=estPower(P); caravanPick(P,T,kind,rs); if(T.phase==='caravan') caravanLeave(P,T); if(T.stat.marched) {} continue; }
       if(T.phase==='prefight'||T.phase==='postfight'){
         if(T.phase==='postfight'){ tripAdvance(P,T); if(T.phase==='caravan') continue; }
-        const R=ratioAt(P,T.f);
-        const go=kind==='naive'||o.neverRetreat?true:!(R<(o.retreatR||.7)||(T.hp/T.maxHp<.35&&R<1.6))||T.stat.fights===0;
-        if(!go){ how='retreat'; break; }
+        const R=oddsAt(P,T.f);
+        const go=kind==='naive'||o.neverRetreat?true:!(R<(o.retreatR||.75)||(T.hp/T.maxHp<.35&&R<1.6))||(T.stat.fights===0&&T.stat.marched===0);
+        if(!go||(o.farm&&T.stat.marched>0&&T.stat.fights===0)){ how='retreat'; break; }
         const t0=T.stat.turns; playFight(P,T,fightBot,rs,{samples});
         const dt=(T.stat.turns-t0)*SEC.turn+SEC.fight; sec+=dt; turnsTotal+=T.stat.turns-t0;
         if(R>=2) bands.hi+=dt; else if(R>=1) bands.mid+=dt; else bands.lo+=dt;

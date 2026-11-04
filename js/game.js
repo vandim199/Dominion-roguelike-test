@@ -93,6 +93,12 @@ function estPower(P){
   return num(3*Math.max(mixed,burn));
 }
 const ratioAt=(P,f)=>estPower(P)/enemyHp(P,f);
+/* Odds shown to the player: offence alone overstates a late fight, because a bastion that dies each turn cuts the chain and a boss rule (a seal, a sweep) costs links.
+   A heuristic: the lesser of offence (halved for bosses, reduced when the front bastion falls to one hit) and toughness against about four hits. */
+function toughness(P){ let d=maxHpOf(P); for(const c of P.cards){ const on=onBoard(P,c.id); if(!c.packed&&!on) continue; for(const [k,x] of CARDS[c.key].fx) if(k==='block') d+=fxAmount(c,k,x)*.8; if(on) d+=pieceHp(c)*.3; } return d; }
+function oddsAt(P,f){ const boss=isBossF(f), hit=enemyAtk(f)*(boss?1.3:1); let off=ratioAt(P,f)/(boss?2:1);
+  const ids=P.layout.slice(0,slotsOpen(P)).filter(Boolean); if(ids.length){ const cs=ids.map(id=>cardOf(P,id)), front=cs.find(c=>CARDS[c.key].taunt)||cs[0], fh=pieceHp(front); if(hit>fh) off/=Math.sqrt(hit/fh); }
+  return Math.min(off,toughness(P)/(hit*4)); }
 // The deepest fight a march reaches right now, for the home screen's preview.
 // A march sweeps what your machine clears on Wheel Powder alone in about three turns, or anything you utterly outclass.
 const machineDmg=P=>3*feedWalk(P,P.wheel,0,0);
@@ -118,7 +124,7 @@ function tripAdvance(P,T){
     if(boss&&!P.bosses[T.f]) break;
     if(!canMarch(P,T.f,p,m)) break;
     const b=bounty(P,T.f), hp=enemyHp(P,T.f);
-    T.coin=num(T.coin+b); T.marchList.push({f:T.f,key:enemyKey(P,T.f),hp,over:p/3/hp,coin:b}); T.stat.marched++;
+    const paid=b*TUNE.marchCoin; T.coin=num(T.coin+paid); T.marchList.push({f:T.f,key:enemyKey(P,T.f),hp,over:p/3/hp,coin:paid}); T.stat.marched++;
     if(T.f>P.deepest) P.deepest=T.f;
     T.f++;
   }
