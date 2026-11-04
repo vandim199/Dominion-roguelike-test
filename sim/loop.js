@@ -42,7 +42,7 @@ function improveQuick(q){ G.fixLayout(q); const e=q.layout.indexOf(null); const 
 
 function tripOnce(P,cfg,rec){
   const pw0=G.estPower(P).dmg; const f=G.dropIn(P,pw0);
-  const T=G.startTrip(P,{f,seed:(P.seed*7+P.trips*13)|0}); T.ev=null;
+  const T=G.startTrip(P,{f,pw:pw0,seed:(P.seed*7+P.trips*13)|0}); T.ev=null;
   const R=B.mkR(P.seed+P.trips*101); let how=null, seen=0;
   while(!how){
     const eHp=T.enemy.max; const rNow=pw0*T.surge/eHp;
@@ -78,7 +78,7 @@ function runOne(seed,cfg){
 function pct(a,p){ if(!a.length) return NaN; const s=a.slice().sort((x,y)=>x-y); return s[Math.min(s.length-1,Math.floor(p*s.length))]; }
 function report(cfg,seeds){
   const runs=[]; for(let s=1;s<=seeds;s++){ const r=runOne(s,cfg); runs.push(r); if(cfg.trace&&s===1) console.log(r.trace.join('\n')); }
-  const allB=runs.flatMap(r=>r.bursts); const med=m=>pct(runs.map(r=>r.marks[m]).filter(x=>x!=null),.5);
+  const allB=runs.flatMap(r=>r.bursts); const med=m=>{ const a=runs.map(r=>r.marks[m]).filter(x=>x!=null); return a.length?pct(a,.5):null; };
   const tb=runs.reduce((o,r)=>{ o.hi+=r.bands.hi; o.mid+=r.bands.mid; o.lo+=r.bands.lo; return o; },{hi:0,mid:0,lo:0}); const tt=tb.hi+tb.mid+tb.lo;
   const o={fight:cfg.fight,spend:cfg.spend,seeds,
     burstMin:{median:+pct(allB,.5).toFixed(2),p10:+pct(allB,.1).toFixed(2),p90:+pct(allB,.9).toFixed(2),n:allB.length},

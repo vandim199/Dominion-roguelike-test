@@ -9,16 +9,16 @@
    ========================================================== */
 const TUNE = {
   gHp:1.30, gAtk:1.30, gCoin:1.30,       // growth per fight
-  hp0:16, atk0:9,  coin0:18,               // fight 1 values
+  hp0:16, atk0:9,  coin0:6,               // fight 1 values
   pLv:1.5, mile:3,                        // payoff ×pLv per level, ×mile more at every 5th level
-  cLv:2.12,                               // price ×cLv per level
-  capBase:1, capPer:2.75,                  // level cap = capBase + deepest/capPer
+  cLv:2.16,                               // price ×cLv per level
+  capR:2.5, gritStep:1.5,                    // Gunnery stops once your odds at new ground reach capR; each defeat without new ground lifts that by gritStep                  // level cap = capBase + deepest/capPer
   bossEvery:15, finalBoss:105, bossHp:2.2, bossAtk:1.25,
   enrageTurn:5, enrage:1.5,
   energy:3, hand:5, mag:3,
   healBetween:.15, repairBetween:.25,
   defeatKeep:.7, firstClear:2,
-  dropR:4, standing:1.6, haul:.1, carry:.3, swapCost:1, wardCut:.3, wardBoss:.15,
+  dropR:9, dropGap:4, standing:1.6, haul:.1, closeR:1.5, closePay:2, carry:.3, swapCost:1, wardCut:.3, wardBoss:.15,
   startHp:60, cacheEvery:3, surge:1.5,
 };
 

@@ -20,14 +20,16 @@ const fightAtk = f => TUNE.atk0*unit(TUNE.gAtk,f);
 const fightCoin = f => TUNE.coin0*unit(TUNE.gCoin,f);
 const isBoss = f => f%TUNE.bossEvery===0;
 const defOf = k => BASTIONS[k]||CARDS[k];
-const levelCap = P => Math.floor(TUNE.capBase+P.deepest/TUNE.capPer);
+// The gate: you cannot buy your way far past the road you have actually walked.
+const gunGate = P => TUNE.capR*Math.pow(TUNE.gritStep,P.grit||0)*fightHp(P.deepest+1);
+function underCap(P,k){ if(k==='gun') return estPower(P,2).dmg<gunGate(P); return P.lv[k]<P.lv.gun+2; }
 const deedCount = P => P.own.deed+2*P.own.charter;
 function slotCount(P){ let n=2; const d=deedCount(P); for(const [need,s] of DEED_SLOTS) if(d>=need) n=s; return n; }
 
 /* ---------- profile ---------- */
 function newProfile(seed){
   const P={v:2,seed:seed||12345,coin:0,crests:0,deepest:0,beaten:0,won:false,lv:{gun:0,mason:0,walls:0},own:{deed:0,charter:0},bench:{},bases:{ballista:1,buttress:1},
-    layout:['ballista','buttress'],works:{},trips:0,defeats:0,offers:[],keep:[],hist:[],kills:{},seen:{},playedTurns:0,last:null};
+    layout:['ballista','buttress'],works:{},trips:0,defeats:0,grit:0,offers:[],keep:[],hist:[],kills:{},seen:{},playedTurns:0,last:null};
   for(const k in CARDS){ if(CARDS[k].start) P.own[k]=CARDS[k].start; }
   rollOffers(P); return P;
 }
@@ -49,7 +51,7 @@ function gainType(P,k){
   else P.own[k]=(P.own[k]||0)+1;
 }
 function levelPrice(P,k){ return TRACKS[k].price*Math.pow(TUNE.cLv,P.lv[k]||0); }
-function canLevel(P,k){ return (P.lv[k]||0)<levelCap(P)&&P.coin>=levelPrice(P,k); }
+function canLevel(P,k){ return P.coin>=levelPrice(P,k)&&underCap(P,k); }
 function buyLevel(P,k){ if(!canLevel(P,k)) return false; P.coin-=levelPrice(P,k); P.lv[k]=(P.lv[k]||0)+1; return true; }
 function buyMax(P,k){ let n=0; while(canLevel(P,k)&&n<200){ buyLevel(P,k); n++; } return n; }
 function buyDeed(P){ const n=deedCount(P), c=deedPrice(n); if(P.coin<c) return false; P.coin-=c; P.own.deed++; P.fresh=1; fixLayout(P); return true; }
@@ -64,12 +66,12 @@ function firstBossAhead(P){ return (Math.floor(P.beaten/TUNE.bossEvery)+1)*TUNE.
 function dropIn(P,power){
   const pw=power==null?estPower(P).dmg:power;
   const f=1+Math.floor(Math.log(Math.max(1,pw/(TUNE.dropR*TUNE.hp0)))/Math.log(TUNE.gHp));
-  return Math.max(1,Math.min(f,P.deepest,firstBossAhead(P)-1));
+  return Math.max(1,Math.min(f,P.deepest-TUNE.dropGap,firstBossAhead(P)-1));   // always a few rematches first: the march back is the enjoyment, and it taxes very short trips
 }
 function startTrip(P,opts){
   opts=opts||{};
   fixLayout(P);
-  const T={seed:(opts.seed!=null?opts.seed:P.seed)|0,ev:[],gun:lvl(1,P.lv.gun),mas:lvl(1,P.lv.mason),phase:'turn',f:opts.f||1,startF:opts.f||1,
+  const T={pw:opts.pw||0,seed:(opts.seed!=null?opts.seed:P.seed)|0,ev:[],gun:lvl(1,P.lv.gun),mas:lvl(1,P.lv.mason),phase:'turn',f:opts.f||1,startF:opts.f||1,
     energyMax:TUNE.energy+(P.works.energy?1:0),handMax:TUNE.hand+(P.works.hand?1:0),magCap:P.works.magazine?8:TUNE.mag,
     stores:P.works.stores?4:0,twin:!!P.works.twin,foundry:P.works.foundry?4:1,
     mult:standing(P),surge:1,maxHp:lvl(TUNE.startHp,P.lv.walls),coin:0,crests:0,beaten:P.beaten,deepest:P.deepest,topWon:0,
@@ -147,15 +149,17 @@ function hurtEnemy(T,v,src){
   if(E.hp<=0) winFight(T);
 }
 const haulOf = T => 1+TUNE.haul*(T.wins||0);   // every win on this trip makes the next purse bigger, so a long trip beats two short ones
+const isClose = T => T.pw>0&&T.pw*T.surge/T.enemy.max<TUNE.closeR;
 function winFight(T){
   const E=T.enemy, over=-E.hp, f=T.f;
   T.carry=E.dummy?0:num(over*TUNE.carry); T.phase='won'; T.st.fightsWon++;
   let c=fightCoin(f)*E.coin*haulOf(T); const first=f>T.deepest; if(first) c*=TUNE.firstClear; T.wins=(T.wins||0)+1;
+  const close=isClose(T); if(close) c*=TUNE.closePay;   // close fights are slow, so they must pay, or the best play is to avoid them
   T.coin=num(T.coin+c); if(f>T.topWon) T.topWon=f;
   if(f>T.deepest) T.deepest=f;
   if((isBoss(f)||f===TUNE.finalBoss)&&f>T.beaten){ T.beaten=f; T.crests++; }
   const ratio=over/E.max;
-  emit(T,'win',{f,coin:c,first,over,ratio,enemy:E.n,turn:T.turn,boss:E.boss});
+  emit(T,'win',{f,coin:c,first,close,over,ratio,enemy:E.n,turn:T.turn,boss:E.boss});
   T.hp=Math.min(T.maxHp,T.hp+T.maxHp*TUNE.healBetween);
   for(const b of T.board) if(b&&!b.hits) b.hp=Math.min(b.max,b.hp+b.max*TUNE.repairBetween);
   for(const c2 of T.hand.concat(T.disc,T.draw)) if(c2.b&&c2.cheapNow) {}
@@ -249,7 +253,7 @@ function damageChain(T,x,order,src){
     const a=Math.min(b.hp,x); b.hp-=a; x-=a; T.st.baseLost+=a/b.max; emit(T,'hit',{i,n:a});
     if(b.hp<=0) killBase(T,i);
   }
-  if(x>0){ T.hp=num(T.hp-x); T.st.taken=num(T.st.taken+x/T.maxHp); emit(T,'hitYou',{n:x}); }
+  if(x>0){ T.st.taken=num(T.st.taken+Math.min(x,Math.max(0,T.hp))/T.maxHp); T.hp=num(T.hp-x); emit(T,'hitYou',{n:x}); }
 }
 function killBase(T,i){ const b=T.board[i]; T.board[i]=null; T.disc.push({k:b.k,b:1,cheap:1}); emit(T,'baseDown',{i,k:b.k}); }
 function doIntent(T,I){
@@ -279,6 +283,7 @@ function endTrip(P,T,how){
   P.coin=num(P.coin+got); P.deepest=Math.max(P.deepest,T.deepest); P.beaten=Math.max(P.beaten,T.beaten); P.crests+=T.crests;
   if(T.beaten>=TUNE.finalBoss) P.won=true;
   P.trips++; if(how!=='retreat') P.defeats++;
+  P.grit=P.deepest>prevDeep?0:(P.grit||0)+(how==='retreat'?0:1);
   P.keep=[...new Set(T.spoils)];
   P.playedTurns+=T.st.turns;
   const lostTo=how==='retreat'?null:{n:T.enemy.n,i:T.enemy.i,f:T.f};
@@ -341,4 +346,4 @@ function estPower(P,deals,turns){
 }
 function cloneT(T){ const c=Object.assign({},T); c.ev=null; c.board=T.board.map(b=>b&&Object.assign({},b)); c.draw=T.draw.slice(); c.hand=T.hand.slice(); c.disc=T.disc.slice(); c.burn=T.burn.slice(); c.cards=T.cards; c.spoils=T.spoils; c.enemy=Object.assign({},T.enemy); c.st=Object.assign({},T.st); c.cache=null; return c; }
 
-if(typeof module!=='undefined') module.exports={SLOT,slotKey,newProfile,fixLayout,offerPrice,rollOffers,buyOffer,gainType,levelPrice,canLevel,buyLevel,buyMax,buyDeed,charterPrice,buyCharter,buyWork,setBench,standing,firstBossAhead,dropIn,haulOf,startTrip,startFight,beginTurn,playCard,swapBases,endTurn,nextFight,pickCache,endTrip,keepSpoil,autoTurn,autoChoice,estPower,cloneT,intentOf,intentAmount,hitTarget,cardCost,lvl,fightHp,fightAtk,fightCoin,isBoss,levelCap,deedCount,slotCount,enemyFor,defOf,shuffle,rng,DUMMY,wardCount,enrageFactor,newBase};
+if(typeof module!=='undefined') module.exports={SLOT,slotKey,newProfile,fixLayout,offerPrice,rollOffers,buyOffer,gainType,levelPrice,canLevel,buyLevel,buyMax,buyDeed,charterPrice,buyCharter,buyWork,setBench,standing,firstBossAhead,dropIn,haulOf,startTrip,startFight,beginTurn,playCard,swapBases,endTurn,nextFight,pickCache,endTrip,keepSpoil,autoTurn,autoChoice,estPower,cloneT,intentOf,intentAmount,hitTarget,cardCost,lvl,fightHp,fightAtk,fightCoin,isBoss,underCap,gunGate,deedCount,slotCount,enemyFor,defOf,shuffle,rng,DUMMY,wardCount,enrageFactor,newBase};

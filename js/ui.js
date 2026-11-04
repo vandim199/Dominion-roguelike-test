@@ -93,9 +93,8 @@ function renderStairs(){
 }
 function spendHtml(){
   let s='<h3>Upgrades <span class="dim">every card and Bastion reads from these</span></h3>';
-  const cap=levelCap(P);
-  for(const k in TRACKS){ const d=TRACKS[k], L=P.lv[k], pr=levelPrice(P,k), gain=lvl(1,L+1)/lvl(1,L), mile=(L+1)%5===0, atCap=L>=cap;
-    s+=`<div class="row"><div class="ric">${d.i}</div><div class="rmain"><b>${d.n}</b> <span class="lv">Lv ${L}</span><div class="dim">${d.d}</div><div class="rnext ${mile?'mile':''}">Next: ×${gain.toFixed(1)}${mile?' milestone':''}${atCap?` · capped until fight ${Math.ceil((L+1-TUNE.capBase)*TUNE.capPer)}`:''}</div></div>
+  for(const k in TRACKS){ const d=TRACKS[k], L=P.lv[k], pr=levelPrice(P,k), gain=lvl(1,L+1)/lvl(1,L), mile=(L+1)%5===0, atCap=!underCap(P,k);
+    s+=`<div class="row"><div class="ric">${d.i}</div><div class="rmain"><b>${d.n}</b> <span class="lv">Lv ${L}</span><div class="dim">${d.d}</div><div class="rnext ${mile?'mile':''}">Next: ×${gain.toFixed(1)}${mile?' milestone':''}${atCap?(k==='gun'?` · capped: your odds at fight ${P.deepest+1} are already ×${fmt2(power/fightHp(P.deepest+1))}. Win new ground, or lose trying, to lift it`:' · capped: raise Gunnery first'):''}</div></div>
       <div class="rbtns"><button class="buy" data-act="lv" data-k="${k}" ${canLevel(P,k)?'':'disabled'}>${fmt(pr)}</button><button class="ghost small" data-act="max" data-k="${k}" ${canLevel(P,k)?'':'disabled'}>Max</button></div></div>`; }
   const n=deedCount(P), nextSlot=DEED_SLOTS.find(([need])=>need>n), dp=deedPrice(n);
   s+='<h3>Deeds <span class="dim">junk in hand, and the only way to more slots</span></h3>';
@@ -153,7 +152,7 @@ function applyBoardSwap(a,b){
 }
 function setOut(){
   refreshPower(); P.hist.push(power); if(P.hist.length>200) P.hist.shift();
-  T=startTrip(P,{f:startAt||1}); startAt=null; deploying=null; swapSel=null; turnPower=power;
+  T=startTrip(P,{f:startAt||1,pw:power}); startAt=null; deploying=null; swapSel=null; turnPower=power;
   show('fight'); renderFight(); playEvents(); saveNow(P,T); maybeWon();
 }
 
@@ -252,7 +251,7 @@ function oneEvent(e){
     case 'waste': floatAt($('yMag'),`${e.n} Powder wasted`,'dim',.85); break;
     case 'rent': floatAt($('fCoin'),'🪙 +'+fmt(e.n),'gold'); break;
     case 'carry': floatAt(en,`Overkill carries: ${fmt(e.n)}`,'gold',1.1); break;
-    case 'win': { const big=e.ratio>=1; banner(e.boss?'Boss down!':'Down!',big?`Overkill ×${fmt2(e.ratio+1)}`:'',Math.min(1+Math.log10(1+Math.max(0,e.ratio))*.5,2.2)); break; }
+    case 'win': { const big=e.ratio>=1; banner(e.boss?'Boss down!':e.close?'Close call!':'Down!',e.close?'Double purse':big?`Overkill ×${fmt2(e.ratio+1)}`:'',Math.min(1+Math.log10(1+Math.max(0,e.ratio))*.5,2.2)); break; }
   }
 }
 function banner(a,b,scale){ const f=document.createElement('div'); f.className='banner'; f.innerHTML=`<b>${esc(a)}</b>${b?`<span>${esc(b)}</span>`:''}`; f.style.setProperty('--s',scale||1); $('fx').appendChild(f); setTimeout(()=>f.remove(),1100); }
@@ -269,7 +268,7 @@ function wonSheet(){
   const nf=f+1, ne=enemyFor(nf), boss=isBoss(nf)||nf===TUNE.finalBoss, r=turnPower*T.surge/(fightHp(nf)*ne.h*(boss?TUNE.bossHp:1));
   const crest=T.beaten>P.beaten&&T.beaten===f;
   sheet(`<h2>Fight ${f} won</h2><p>${crest?'<b class="gold">You took a Crest.</b> Spend it at home.<br>':''}Carrying <b class="gold">🪙 ${fmt(T.coin)}</b>, haul ×${haulOf(T).toFixed(1)} on the next purse. ❤️ ${fmt(T.hp)} of ${fmt(T.maxHp)}.</p>
-    <div class="nextup ${boss?'boss':''}"><span class="big">${ne.i}</span><div><b>${esc(ne.n)}</b>${boss?' · BOSS':''}<div class="dim">Fight ${nf}. Odds <b class="${r>=1?'ok':'bad'}">${oddsTxt(r)}</b>${nf>T.deepest?' · new ground pays double':''}</div>${ne.rule?`<div class="dim">${esc(ne.rule)}</div>`:''}</div></div>
+    <div class="nextup ${boss?'boss':''}"><span class="big">${ne.i}</span><div><b>${esc(ne.n)}</b>${boss?' · BOSS':''}<div class="dim">Fight ${nf}. Odds <b class="${r>=1?'ok':'bad'}">${oddsTxt(r)}</b>${nf>T.deepest?' · new ground pays double':''}${r<TUNE.closeR?' · close fight pays double':''}</div>${ne.rule?`<div class="dim">${esc(ne.rule)}</div>`:''}</div></div>
     <div class="choices row2"><button class="go" data-next="1">Onward</button><button class="ghost" data-home="1">Go home, keep all</button></div>`);
 }
 function lostSheet(){
