@@ -16,7 +16,7 @@ function renderTitle(){
   $('tPlay').textContent=s?'Continue':'Play'; $('tNew').hidden=!s; $('tNew').textContent='New game'; $('tNew').dataset.arm='';
 }
 $('tPlay').onclick=()=>{ const s=readSave(); if(s){ UI.P=s.P; UI.T=s.T; } else { UI.P=newProfile((Date.now()%1e9)|0); UI.T=null; persist(); } route(); };
-$('tNew').onclick=()=>{ const b=$('tNew'); if(!b.dataset.arm){ b.dataset.arm='1'; b.textContent='Really erase everything?'; return; } clearSave(); renderTitle(); };
+$('tNew').onclick=()=>{ const b=$('tNew'); if(!b.dataset.arm){ b.dataset.arm='1'; b.textContent='Really erase everything?'; return; } UI.P=null; UI.T=null; clearSave(); renderTitle(); };
 $('tClassic').onclick=()=>{ location.href='classic/index.html'; };
 $('tHow').onclick=()=>howTo();
 function howTo(){ sheet(`<h2>How to play</h2>

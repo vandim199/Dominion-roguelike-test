@@ -24,7 +24,7 @@ const TUNE = {
   hp0:20, hpG:1.30,  atk0:15, atkG:1.18,  coin0:45, coinG:1.255,   // enemy per fight
   bossEvery:12, bossHp:2.6, bossCoin:4, caravanEvery:7, caravanPrice:2,
   valG:1.40, mileX:3, mileEvery:10, defG:1.42,                   // value of a card or bastion per level
-  cost0:3, pieceCostX:2.5, costG:1.62, hearthCost:10, hearthG:1.60, baseHp:40,
+  cost0:3, pieceCostX:2.5, costG:1.62, hearthCost:10, hearthG:1.60, baseHp:60,
   wheelCost:30, wheelG:5, magCost:60, magG:5, ledgerCost:300, ledgerG:60, ledgerX:1.25,
   marchR:8, marchMachine:1, defeatKeep:.7, enrageAfter:6, enrageX:1.4, healAfter:.2, repairAfter:.25,
   magBase:2, swapCost:1, handBase:5, energyBase:3, deckMin:8, deckMax:12, finalFight:118,

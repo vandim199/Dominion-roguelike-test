@@ -1,52 +1,39 @@
-# Coinkeep
+# Coinkeep: Forays
 
-A pocket roguelike deckbuilder. You're the steward of a little hilltop town, and trouble arrives in endless waves: tax collectors, ogres, pirates, blizzards, ghosts. Build one deck for the whole run and use it to pay off, outlast or blow up every threat. Between waves you pick charms that bend the rules and visit the Inn to upgrade, copy or trash cards.
+A branch-only rework of Coinkeep into an incremental enemy battler. Vanilla JavaScript, no build step, works on phone and desktop. Published from this branch at `v/wild-forays-yours/`. The frozen original stays in `classic/`, reachable from the title screen.
 
-## Playing
+## The game
 
-Open `index.html` in a browser, or serve the folder (e.g. GitHub Pages, or `python -m http.server`). No build step. It can be added to a phone's home screen (web app manifest included).
+You leave the Keep with a small pack of cards and a row of bastions, fight deeper until you go home or get beaten, then spend coin and go again.
 
-Works on desktop, tablets and phones in either orientation. Use **⚙ Settings** to change the UI size (or `+` / `−` on a keyboard). On touch screens, tap a card to read it before playing or buying it, and press and hold a card in a picker to read it.
-
-**Saving is automatic.** The run is saved in the browser (localStorage) whenever the game is waiting for you, and between waves before the charm draft and the Inn. **Continue** on the title screen picks it up, log included. Randomness is seeded and saved with the run, so reloading can't reroll a draw, a shuffle or an offer. The save is deleted when the town falls. Starting a new run while one is saved asks first. The Classic version keeps its own save.
-
-**📜 Log → ⬇ Save** (also in Settings and on the game-over screen) downloads the whole run's log as a text file, not just the last 200 lines on screen.
-
-## Modes
-
-**Play** is merge mode. Cards are played with ⚡ Energy (1 a turn; each card's play cost is in its blue pip). Your Anvil merges a pair of identical cards from anywhere in your deck (discard pile and cards already played this turn first, then draw pile, then hand) into one a level higher, which goes to your discard pile. A card's play cost never changes as it levels; its effect goes up by one: Copper → Silver → Gold (+1, +2, +3 Coin), Spark +1/+2/+3 ⚡ for 0, Scout +1/+2/+3 Cards for 1 ⚡. The market sells the Anvil, but rarely (`TUNE.rareWeight`); the Twin Hammers charm lets it merge 2 pairs. Each of a Patron's upgrades picks any market card, so one card can go up several levels at once. The market stocks each card one level below the best you've merged it to (`TUNE.marketLag`), and cards that cost more ⚡ to play arrive in later waves (`TUNE.energyFrom`). The Ward stays in your hand and only works once it's in your discard pile. At the Inn between waves, **Merge** combines two different cards into one that does both and costs their average ⚡, rounded up (a fusion is a card of its own, so two copies of one can be merged by the Anvil, raising every part a level). Every Inn service has a Back button. In your hand a card shows only its ⚡ cost; the market and the close-up view show its price too. Threats have fuses: one that runs out detonates, attacks and costs a heart. Clearing one offers a free level-one card. The cards are `mdef`s in `js/data.js`; merge mode's threat curves are `TUNE.merge`.
-
-**Classic mode** opens `classic/`, a frozen copy of the game as it was on 22 October 2026 (commit 1e687d5), before Energy and merging. Its own title screen offers that version's Play (splice mode) and Classic. It keeps its own best-run record and has a link back. Changes to `js/` don't touch it. The current code still has classic and splice mode too (the simulator's `--mode classic` / `--mode splice`), but they are no longer on the title screen.
-
-## Published versions
-
-GitHub Pages is built by `.github/workflows/pages.yml` (Settings → Pages → Source must be **GitHub Actions**). It publishes `main` at the site's root and every `wild/*` branch under `v/<branch>/` (`wild/mult` → `v/wild-mult/`), and writes `versions.json`, which the title screen's **Versions** row (`js/versions.js`) lists, so every version is a tap away. A push to `main` or to any `wild/*` branch rebuilds the whole site; a new `wild/*` branch appears on its own. Each version keeps its own save and best run (`SLOT` in `js/game.js`). Opened as a local file, the Versions row stays hidden.
-
-## Simulator
-
-`sim/` plays the game headless with bots, so balance changes can be measured instead of guessed. It needs Node.js and loads `js/data.js` and `js/game.js` exactly as they are, so edit the game and rerun:
-
-```
-node sim/sim.js                          # all bots, 100 runs each, merge mode
-node sim/sim.js --bot engine --runs 500  # one bot, more runs
-node sim/sim.js --mode classic           # or splice
-node sim/sim.js --bot money --log run.txt --json runs.json
-```
-
-Bots: **engine** (Sparks, Scouts and the other Actions, kept within its ⚡ budget; villages and draw in classic), **money** (mostly Coins, merged; Big Money in classic) and **random** (a floor any strategy should beat). Both heuristic bots merge every pair an Anvil lets them. Runs are seeded: the same `--seed` plays the same game. A run ends when the town falls, after `--waves` waves (30), after `--turns` turns (2000, "stalled") or when the deck passes `--deckcap` cards (400, "runaway deck").
-
-The report shows, per bot: waves cleared; how runs end and which threat ended them; per wave, the coin, spare Actions, cards seen and how often a turn drew the whole deck, next to what the wave's coin threats and the market ask (as turns of income); each threat's clear and detonation rate; and for every card, charm and splice, how often it was taken and how those runs did.
+- **Hand.** Five cards and three energy. Each card can be played for its effect, or burned for Powder (its cost + 1).
+- **Board.** Powder runs left to right. A full bastion fires at once, once a turn. The Wheel adds Powder every turn. Spare Powder waits in the Magazine.
+- **Charge.** A socketed perk: the next bastion or attack card pays triple, and chains multiply. A chain has to complete inside one turn, so the late game is about counting Powder.
+- **Enemies** show their intents. Aimed hits strike the leftmost bastion (a Gatehouse first), archers the rightmost, some go straight for you. A destroyed bastion returns to the discard and must be drawn and paid for again.
+- **Trips.** The March sweeps what your machine clears on Wheel Powder alone, or anything you utterly outclass. Then you play by hand. Going home keeps all coin, defeat keeps 70%. Nothing else is ever lost.
+- **Growth.** Levels multiply a card, with triple pay every 10 levels. Levels 5, 20 and 40 open sockets, free to rearrange. Caravans stop once every 7 fights and sell one card. Bosses every 12 fights grant a permanent rule change. A Title Deed must be packed for each slot past two, and it is dead in your hand.
+- **Saving.** Automatic, after every action, in one slot per published version.
 
 ## Files
 
-- `index.html` — page structure, title screen, how-to-play
-- `css/style.css` — styles; all sizes in `rem`, so the UI scale is the root font-size
-- `js/data.js` — tuning, cards, charms and threats
-- `js/game.js` — rules: waves, turns, threats, attacks, the Inn
-- `js/ui.js` — rendering, modals, inspector, effects, layout and scaling, settings
-- `js/save.js` — automatic saving and loading
-- `js/versions.js` — the title screen's version switcher on the published site
-- `manifest.webmanifest`, `icon.svg` — install-to-home-screen metadata
-- `classic/` — the 22 October 2026 version, frozen, behind the Classic mode button
-- `sim/sim.js` — the simulator: options, sandbox, report
-- `sim/bots.js` — runs inside the sandbox: stand-ins for `ui.js`, the bots, the recording
+| File | What it holds |
+|---|---|
+| `index.html`, `css/style.css` | The page and its look |
+| `js/data.js` | Tuning, cards, perks, enemies, rewards, number formatting, seeded randomness, `slotKey` |
+| `js/game.js` | All rules, no DOM: profile, trip, fight, purchases, power estimate |
+| `js/save.js` | Autosave and load validation |
+| `js/ui.js` | Screens and animation |
+| `js/versions.js` | The title screen's version switcher |
+| `sim/load.js` | Loads the browser scripts into Node |
+| `sim/bots.js` | Fight bots: random, fixed (`fixedTurn` in `game.js`, also the Auto button), think |
+| `sim/loop.js` | Whole-game bots: careful and naive upgraders |
+| `sim/feedtest.js` | The first test of the riskiest idea, plus Deed and Ward tests |
+| `sim/results.js` | Every number in `docs/RESULTS.md` |
+
+## Running
+
+Open `index.html` through any static server, for example `python -m http.server 8772`.
+
+Reproduce the measurements with `node sim/results.js all`, or `node sim/feedtest.js 10 deeds` for the Deed test. See `docs/RESULTS.md`.
+
+Design notes and decision log: `docs/TAKE.md`.
