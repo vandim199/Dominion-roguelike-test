@@ -69,6 +69,10 @@ function summarize(label,rs){
 }
 const games=(kind,o={})=>{ const out=[]; for(let s=1;s<=LN;s++) out.push(runGame(s*97+3,kind,{capMin:400,target:1e15,samples:+process.env.SAMPLES||16,...o})); return out; };
 if(what==='decision'||what==='all') decision();
+{ // Stress: far past the game's end, every number must stay finite, in the rules and through a save round trip.
+  const P=build('late',5); for(const c of P.cards) if(c.key!=='deed') c.lvl=300; P.hearth=320; P.coin=1e200; const T=startTrip(P); T.f=1000; beginFight(P,T,{key:'bishop',hp:estPower(P)*2,atk:enemyAtk(1000)}); for(let i=0;i<6&&!T.F.over;i++) fixedTurn(P,T);
+  console.log('Stress at level 300: power '+fmt(estPower(P))+', finite after six turns: '+(allFinite(P)&&allFinite(T))+', JSON round trip equal: '+(JSON.stringify(JSON.parse(JSON.stringify(T)))===JSON.stringify(T))); }
+if(what==='quick'){ const t=r=>r.map(x=>x.marks[1e12]==null?Infinity:x.marks[1e12]/60); const c=summarize('careful',games('careful')); for(const [n,o] of [['noWheel',{noWheel:true}],['noCharge',{noCharge:true}]]){ const r=summarize(n,games('careful',o)); console.log(n+' x'+(med(t(r))/med(t(c))).toFixed(2)); } }
 if(what==='loop'||what==='depth'||what==='all'){
   console.log('\n## 2. Whole-loop pacing, 15 s per played turn');
   const car=summarize('careful upgrades, think fight bot',games('careful'));

@@ -43,7 +43,7 @@ function route(){
   renderHome();
 }
 function goHome(how){ const P=UI.P,T=UI.T; const secs=P.secs-T.stat.start; const r=endTrip(P,T,how); r.secs=secs; r.rate=r.got/Math.max(30,secs)*60; r.best=P.bestRate; if(r.rate>P.bestRate) P.bestRate=r.rate;
-  (P.hist=P.hist||[]).push(estPower(P)); UI.T=null; UI.sel=null; persist(); renderHome(true); }
+  UI.T=null; UI.sel=null; persist(); renderHome(true); }
 
 /* ---------- home ---------- */
 function renderHome(fresh){
@@ -103,11 +103,12 @@ function packTab(P){
 function keepTab(P){
   const row=(art,name,val,what,cost)=>`<div class="row"><span class="art">${art}</span><div class="mid"><b>${name}</b> <small>${val}</small><div class="dsc">${what}</div></div><button class="buy ${P.coin>=cost.k?'':'off'}" onclick="keepBuy('${cost.w}')">+1<small>${fmt(cost.k)}</small></button></div>`;
   return `<p class="note">Rules so far: ${P.energy} energy, ${P.hand} cards in hand, ${P.slots} slots${P.rewards.length?' · '+P.rewards.map(k=>REWARDS[k].name).join(', '):''}.</p>`+
-   row('⚙️','The Wheel',`${P.wheel} Powder a turn`,'How fast your machine runs. Each turn it pours Powder in before you act.',{k:wheelCost(P),w:'wheel'})+
+   row('⚙️','The Wheel',`${P.wheel} Powder a turn`,`Each turn it pours Powder in before you act. Your machine alone, on this Powder, sweeps the March: +1 would reach fight ${wheelReachNext(P)+1}, now ${marchReach(P)+1}.`,{k:wheelCost(P),w:'wheel'})+
    row('🔥','The Hearth',`${fmt(maxHpOf(P))} health`,'Your health on every trip.',{k:hearthCost(P),w:'hearth'})+
    row('🧺','The Magazine',`holds ${TUNE.magBase+P.mag}`,'Spare Powder waits here for next turn.',{k:magCost(P),w:'mag'})+
    row('📒','The Ledger',`coin ×${fmt(coinMult(P))}`,'Every bounty pays 25% more, compounding.',{k:ledgerCost(P),w:'ledger'});
 }
+function wheelReachNext(P){ P.wheel++; const r=marchReach(P); P.wheel--; return r; }
 function quick(id){ const P=UI.P,c=cardOf(P,id),B=bundle(P,c); if(P.coin<B.k) return; for(let i=0;i<B.n;i++) if(buyLevel(P,id)) flashMile(c); persist(); renderHome(); }
 function keepBuy(w){ if(buyKeep(UI.P,w)){ persist(); renderHome(); } }
 function flashMile(c){ if(c.lvl%TUNE.mileEvery===0&&c.lvl>0) banner(`${CARDS[c.key].name} level ${c.lvl}: pays triple!`); else if(TUNE.sockAt.includes(c.lvl)) banner(`${CARDS[c.key].name}: a socket opens`); }
@@ -139,7 +140,7 @@ function swapIn(id,s){ const P=UI.P, out=P.layout[s]; const j=P.layout.indexOf(i
 function packIt(id){ if(!togglePack(UI.P,id)) banner(`The pack holds ${TUNE.deckMin} to ${TUNE.deckMax} cards`); persist(); renderHome(); openItem(id); }
 
 /* ---------- trip ---------- */
-function startTripUI(){ const P=UI.P; UI.T=startTrip(P); route(); }
+function startTripUI(){ const P=UI.P; (P.hist=P.hist||[]).push(estPower(P)); UI.T=startTrip(P); route(); }
 function playMarch(){
   const T=UI.T, P=UI.P, list=T.marchList.slice(); T.marchList=[];
   const m=$('march'); m.hidden=false; const tail=list.slice(-14), head=list.length-tail.length;

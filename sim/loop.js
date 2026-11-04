@@ -55,7 +55,7 @@ function spendCareful(P){
       for(let n=1;n<=m;n++){ cost+=levelCost({key:c.key,lvl:L+n-1}); if(n!==1&&n!==m) continue; c.lvl=L+n; const g=wantDef?Math.log(defOf(P)/d0):Math.log(estPower(P)/p0); c.lvl=L; consider(cost,g,(k=>()=>{ for(let i=0;i<k;i++) buyLevel(P,c.id); })(n)); }
     }
     { P.hearth++; const g=wantDef?Math.log(defOf(P)/d0):0; P.hearth--; consider(hearthCost(P),g,()=>buyKeep(P,'hearth')); }
-    if(!OPT.noWheel&&!wantDef){ let k=0; for(let n=1;n<=4;n++){ k+=TUNE.wheelCost*Math.pow(TUNE.wheelG,(P.wheelBuys||0)+n-1); P.wheel+=n; const g=Math.log(estPower(P)/p0); P.wheel-=n; consider(k,g,(m=>()=>{ for(let i=0;i<m;i++) buyKeep(P,'wheel'); })(n)); } }
+    if(!OPT.noWheel){ consider(wheelCost(P),.15,()=>buyKeep(P,'wheel')); } if(!OPT.noWheel&&!wantDef){ let k=0; for(let n=1;n<=4;n++){ k+=TUNE.wheelCost*Math.pow(TUNE.wheelG,(P.wheelBuys||0)+n-1); P.wheel+=n; const g=Math.log(estPower(P)/p0); P.wheel-=n; consider(k,g,(m=>()=>{ for(let i=0;i<m;i++) buyKeep(P,'wheel'); })(n)); } }
     consider(ledgerCost(P),.26*.5,()=>buyKeep(P,'ledger'));
     if(!best){ // saving for the other side is wasteful: if nothing helps the wanted side, buy the other side once
       break; }

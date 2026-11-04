@@ -94,7 +94,10 @@ function estPower(P){
 }
 const ratioAt=(P,f)=>estPower(P)/enemyHp(P,f);
 // The deepest fight a march reaches right now, for the home screen's preview.
-function marchReach(P){ const p=estPower(P); let f=0; while(f<400&&p/enemyHp(P,f)>=TUNE.marchR&&(!isBossF(f)||P.bosses[f])&&(!isCaravanF(f)||P.caravans[f])) f++; return f; }
+// A march sweeps what your machine clears on Wheel Powder alone in about three turns, or anything you utterly outclass.
+const machineDmg=P=>3*feedWalk(P,P.wheel,0,0);
+function canMarch(P,f,p,m){ const hp=enemyHp(P,f); return p/hp>=TUNE.marchR||m/hp>=TUNE.marchMachine; }
+function marchReach(P){ const p=estPower(P), m=machineDmg(P); let f=0; while(f<400&&canMarch(P,f,p,m)&&(!isBossF(f)||P.bosses[f])&&(!isCaravanF(f)||P.caravans[f])) f++; return f; }
 
 /* ---------- trip ---------- */
 function startTrip(P){
@@ -108,12 +111,12 @@ function startTrip(P){
 function newPiece(P,id){ const c=cardOf(P,id); const hp=pieceHp(c); return {id,hp,maxHp:hp,fill:0,fires:0,sealed:false}; }
 // March past what you already outclass, stopping at an unseen caravan, an unbeaten boss, or the first real fight.
 function tripAdvance(P,T){
-  const p=estPower(P); T.marchList=[];
+  const p=estPower(P), m=machineDmg(P); T.marchList=[];
   for(;;){
     if(isCaravanF(T.f)&&!P.caravans[T.f]){ T.phase='caravan'; T.offer=caravanOffer(P,T.f); return; }
     const boss=isBossF(T.f);
     if(boss&&!P.bosses[T.f]) break;
-    if(p/enemyHp(P,T.f)<TUNE.marchR) break;
+    if(!canMarch(P,T.f,p,m)) break;
     const b=bounty(P,T.f), hp=enemyHp(P,T.f);
     T.coin=num(T.coin+b); T.marchList.push({f:T.f,key:enemyKey(P,T.f),hp,over:p/3/hp,coin:b}); T.stat.marched++;
     if(T.f>P.deepest) P.deepest=T.f;
