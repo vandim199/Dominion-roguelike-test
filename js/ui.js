@@ -1,628 +1,336 @@
 "use strict";
 /* ==========================================================
-   Coinkeep — UI: layout & scaling, rendering, modals, card
-   inspector, effects, title screen, settings and input wiring.
-
-   Every size in style.css is in rem, so the UI scale is one
-   number: the root font-size. The layout (wide / narrow / short)
-   is picked from the viewport measured in rem *after* scaling,
-   so scaling up on a small screen switches to a compact layout.
+   Coinkeep: Forays. The screens. All rules live in game.js:
+   this file calls them, then redraws and plays the event list
+   they leave in T.ev.
    ========================================================== */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let P=null, T=null, busy=false, tab='spend', pick=null, deploying=null, swapSel=null, power=null, startAt=null, boardSel=null, turnPower=0;
 
-const UI = { layout:'wide', side:true, auto:1, scale:1, user:1, tapInspect:null, tab:'threats', touch:false,
-             lastCoin:0, hits:new Set(), ups:new Map() };
-const mqCoarse = matchMedia('(pointer: coarse)');
+/* ---------- screens ---------- */
+function show(id){ for(const s of ['title','keep','fight']){ const e=$(s); const on=s===id; e.hidden=!on; e.classList.toggle('on',on); } }
+function persist(){ scheduleSave(P,T); }
+function sheet(html){ $('sheetBox').innerHTML=html; $('sheet').hidden=false; }
+function closeSheet(){ $('sheet').hidden=true; }
 
-function loadPrefs(){
-  try{ const p=JSON.parse(localStorage.getItem('dcrisis.ui')||'{}');
-    if(p.user) UI.user=clamp(+p.user,.6,1.6);
-    if(typeof p.tapInspect==='boolean') UI.tapInspect=p.tapInspect;
-  }catch(e){}
+/* ---------- wording ---------- */
+function ctx(){ if(T) return {gun:T.gun,mas:T.mas,mult:T.mult*T.surge,temper:T.temper}; return {gun:lvl(1,P.lv.gun),mas:lvl(1,P.lv.mason),mult:standing(P),temper:1}; }
+function modeText(m,c){
+  const t=[];
+  if(m.p) t.push(`+${m.p} Powder`);
+  if(m.salvo) t.push(`Powder: 1 + your Bastions`);
+  if(m.d) t.push(`<b>${fmt(m.d*c.gun*c.mult*c.temper)}</b> damage`);
+  if(m.rally) t.push(`<b>${fmt(m.rally*c.gun*c.mult*c.temper)}</b> damage per Bastion fired this turn`);
+  if(m.s) t.push(`<b>${fmt(m.s*c.mas*c.mult*c.temper)}</b> shields`);
+  if(m.b) t.push(`<b>${fmt(m.b*c.gun*c.mult*c.temper)}</b> Blight`);
+  if(m.hex) t.push(`Next ${m.hex} attacks halved`);
+  if(m.draw) t.push(`Draw ${m.draw}`);
+  if(m.e) t.push(`+${m.e}⚡`);
+  if(m.repair) t.push(`Mend the worst Bastion 40%`);
+  if(m.refire) t.push(`The last Bastion to fire fires again`);
+  if(m.fuse) t.push(`Half-fill the first Bastion that can fire`);
+  if(m.fileall) t.push(`File all stuck cards free`);
+  if(m.burn) t.push(`<i>Once a fight</i>`);
+  return t.join('. ');
 }
-function savePrefs(){ try{ localStorage.setItem('dcrisis.ui',JSON.stringify({user:UI.user,tapInspect:UI.tapInspect})); }catch(e){} }
-const inspectOnTap = () => UI.tapInspect ?? UI.touch;
-
-/* ---------- layout & scale ---------- */
-function autoScale(){
-  const W=innerWidth, H=innerHeight;
-  if(H<520&&W>H) return clamp(H/460,.72,.95);              // phone, landscape
-  if(W<700)      return clamp(W/430,.78,1);                // phone, portrait
-  if(H>W*1.15)   return clamp(W/600,1,1.6);                // tablet / tall window, portrait
-  return clamp(Math.min(W/1440,H/880),.85,1.9);            // tablet landscape, laptop, desktop, 4K
+function baseText(k,c){ const d=BASTIONS[k], tmp=c.temper||1;
+  if(d.d) return `<b>${fmt(d.d*c.gun*c.mult*tmp)}</b> damage`;
+  if(d.s) return `<b>${fmt(d.s*c.mas*c.mult*tmp)}</b> shields`+(d.hits?', mend 1 hit':'');
+  if(d.b) return `<b>${fmt(d.b*c.gun*c.mult*tmp)}</b> Blight`;
+  if(d.hex) return `Next ${d.hex} attacks halved`;
+  if(d.coin) return `Coin: ¼ of this fight's purse`;
+  if(d.draw) return `Draw ${d.draw}`;
+  if(d.p) return `+${d.p} Powder`;
+  if(d.temper) return `Next payout ×${d.temper}`;
+  return '';
 }
-function applyLayout(){
-  UI.touch=mqCoarse.matches;
-  UI.auto=autoScale(); UI.scale=UI.auto*UI.user;
-  const px=16*UI.scale;
-  document.documentElement.style.fontSize=px+'px';
-  const W=innerWidth/px, H=innerHeight/px;                 // viewport in rem
-  UI.layout = (H<34&&W>H) ? 'short' : W<60 ? 'narrow' : 'wide';
-  UI.side = UI.layout==='wide' && W>=78;
-  const b=document.body;
-  b.classList.remove('L-wide','L-narrow','L-short');
-  b.classList.add('L-'+UI.layout);
-  b.classList.toggle('compact',UI.layout!=='wide');
-  b.classList.toggle('has-side',UI.side);
-  b.classList.toggle('tab-market',UI.layout==='short'&&UI.tab==='market');
-  b.classList.toggle('touch',UI.touch);
-  if(UI.side) $('side').classList.remove('open');
-  // cards too small to read drop their rules text (tap / hold to read them instead)
-  const cardPx=v=>parseFloat(getComputedStyle(b).getPropertyValue(v))*px;
-  b.classList.toggle('mini-mk',cardPx('--mk-w')<88);
-  b.classList.toggle('mini-hd',cardPx('--hd-w')<88);
-  syncSettings();
-}
-function setUserScale(v){ UI.user=clamp(Math.round(v*100)/100,.6,1.6); savePrefs(); applyLayout(); render(); }
-
-function syncSettings(){
-  const pct=Math.round(UI.user*100);
-  $('sRange').value=pct; $('sVal').textContent=pct+'%';
-  $('sEff').textContent=`Effective size ${Math.round(UI.scale*100)}% · ${UI.layout} layout`;
-  $('sTap').checked=inspectOnTap();
-}
-
-/* ---------- log & toasts ---------- */
-// The on-screen log keeps the last 200 lines; LEDGER keeps the whole run for Save log.
-const LEDGER=[];
-function log(msg,cls){
-  LEDGER.push([msg,cls||'']);
-  const d=document.createElement('div'); if(cls)d.className=cls; d.textContent=msg;
-  const l=$('log'); l.appendChild(d);
-  while(l.children.length>200) l.removeChild(l.firstChild);
-  l.scrollTop=l.scrollHeight;
-  if(cls==='good'||cls==='bad'||cls==='big') toast(msg,cls);
-}
-function toast(msg,cls){
-  if(UI.side&&cls!=='big') return;                         // the ledger is on screen already
-  const box=$('toasts'), d=document.createElement('div');
-  d.className='toast '+(cls||''); d.textContent=msg; box.appendChild(d);
-  while(box.children.length>3) box.removeChild(box.firstChild);
-  setTimeout(()=>d.remove(),3200);
-}
-
-/* ---------- effects: floating numbers, shakes, banners ---------- */
-const buzz = ms => { try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} };
-function floatText(anchor,text,cls){
-  const r=anchor.getBoundingClientRect(), d=document.createElement('div');
-  d.className='float '+(cls||''); d.textContent=text;
-  d.style.left=(r.left+r.width/2)+'px'; d.style.top=r.top+'px';
-  document.body.appendChild(d); setTimeout(()=>d.remove(),1000);
-}
-function pulseClass(el,cls,ms){ el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); setTimeout(()=>el.classList.remove(cls),ms); }
-function banner(text,sub){
-  const b=$('banner'); b.innerHTML=`<div>${text}</div>${sub?`<small>${sub}</small>`:''}`;
-  pulseClass(b,'on',1500);
-}
-function fx(kind,arg){
-  switch(kind){
-    case 'shake': pulseClass(document.body,'shake',420); buzz(40); break;
-    case 'hurt':  pulseClass(document.body,'hurt',500); buzz(80); break;
-    case 'hit':   UI.hits.add(arg.id); break;
-    case 'upgrade': UI.ups.set(arg,(UI.ups.get(arg)||0)+1); buzz(20);
-      if(UI.layout==='short'){ UI.tab='market'; document.body.classList.add('tab-market'); } break;   // no render: later upgrades still to count
-    case 'clear': floatText($('threats'),`${arg.art} cleared!`,'good'); buzz(25); break;
-    case 'wave':  banner(`Wave ${arg}`,arg%TUNE.eliteEvery===0?'An Elite leads the charge':''); break;
-    case 'lose':  buzz([90,60,180]); break;
+function intentText(I,amt,tgt){
+  const who=tgt<0||!T.board[tgt]?'you':BASTIONS[T.board[tgt].k].n;
+  switch(I.type){
+    case 'hit': return `⚔️ Hits <b>${who}</b> for <b>${fmt(amt)}</b>`;
+    case 'snipe': return `🎯 Snipes <b>${who}</b>, far right, for <b>${fmt(amt)}</b>`;
+    case 'face': return `🗡️ Hits <b>you</b> for <b>${fmt(amt)}</b>`;
+    case 'ram': return `🐏 Charges <b>${who}</b> for <b>${fmt(amt)}</b>`;
+    case 'volley': return `🌧️ Hits <b>every Bastion</b> for <b>${fmt(amt)}</b>, you for half`;
+    case 'drain': return `💧 Takes ${I.x} Powder from your fullest Bastion`;
+    case 'jam': return I.x<0?`🔒 Seizes slots from the left: no Powder next turn`:`🔒 Jams your ${I.x===0?'left':'right'} end: no Powder there next turn`;
+    case 'rubble': return `🪨 Throws ${I.x} Rubble in your discard pile`;
+    case 'hunker': return `🐢 Will hunker: takes ¼ damage during your next turn`;
+    case 'dodge': return `💨 Will dodge the first hit of your next turn`;
+    default: return `😴 Resting`;
   }
 }
+const oddsOf = hp => (power||1)/hp;
+const oddsTxt = r => r>=100?'×'+fmt(r):'×'+(r<10?r.toFixed(1):Math.round(r));
 
-function saveLog(){
-  if(!G) return;
-  const d=new Date(), p=n=>String(n).padStart(2,'0');
-  const stamp=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-  const url=URL.createObjectURL(new Blob([logText(LEDGER,stamp)],{type:'text/plain'}));
-  const a=document.createElement('a'); a.href=url; a.download=`coinkeep-log-${stamp.replace(/[ :]/g,'-')}.txt`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
+/* ---------- home ---------- */
+function refreshPower(){ power=estPower(P).dmg; }
+function renderKeep(){
+  fixLayout(P); refreshPower();
+  $('kCoin').textContent=fmt(P.coin); $('kPower').textContent=fmt(power); $('kDeep').textContent=P.deepest; $('kCrest').textContent=P.crests;
+  $('kCrestBox').hidden=!P.crests&&!Object.keys(P.works).length;
+  const l=P.last;
+  const rf=P.deepest+1, boss=isBoss(rf)||rf===TUNE.finalBoss;
+  const nextE=enemyFor(rf); const rr=power/(fightHp(rf)*nextE.h*(boss?TUNE.bossHp:1));
+  let rm='';
+  if(l&&l.lostTo){ const r=power/(fightHp(l.lostTo.f)); rm=`<b>${l.lostTo.i} ${esc(l.lostTo.n)}</b> beat you at fight ${l.lostTo.f}. Odds of a rematch now: <b class="${r>=1?'ok':'bad'}">${oddsTxt(r)}</b>`; }
+  else if(l) rm=`You walked home from fight ${l.f}. Next new ground: <b>${nextE.i} ${esc(nextE.n)}</b>, odds <b class="${rr>=1?'ok':'bad'}">${oddsTxt(rr)}</b>`;
+  else rm=`Your board is two Bastions and a debt. Set out and see how far it gets.`;
+  $('kRematch').innerHTML=rm+(boss?` <span class="bossnote">A boss stands at fight ${rf}.</span>`:'');
+  renderStairs();
+  for(const b of $('kTabs').children) b.classList.toggle('on',b.dataset.t===tab);
+  const body=$('kBody'); body.innerHTML={spend:spendHtml,board:boardTabHtml,deck:deckHtml,works:worksHtml}[tab]();
+  const drop=dropIn(P,power); if(startAt==null||startAt>Math.max(1,drop)) startAt=Math.max(1,drop);
+  $('kF').innerHTML=`Start at fight <b>${startAt}</b> <span class="dim">odds ${oddsTxt(power/fightHp(startAt))}</span>`;
+  persist();
+}
+function renderStairs(){
+  const h=P.hist.slice(-40).concat([power]); if(h.length<2){ $('kStairs').innerHTML=''; return; }
+  const ls=h.map(v=>Math.log10(Math.max(1,v))), max=Math.max(...ls,1), w=300/(h.length-1);
+  let d=`M0 ${44-ls[0]/max*40}`; ls.forEach((y,i)=>{ if(i){ d+=`H${(i*w).toFixed(1)}V${(44-y/max*40).toFixed(1)}`; } });
+  $('kStairs').innerHTML=`<path d="${d}" fill="none" stroke="var(--gold)" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+}
+function spendHtml(){
+  let s='<h3>Upgrades <span class="dim">every card and Bastion reads from these</span></h3>';
+  const cap=levelCap(P);
+  for(const k in TRACKS){ const d=TRACKS[k], L=P.lv[k], pr=levelPrice(P,k), gain=lvl(1,L+1)/lvl(1,L), mile=(L+1)%5===0, atCap=L>=cap;
+    s+=`<div class="row"><div class="ric">${d.i}</div><div class="rmain"><b>${d.n}</b> <span class="lv">Lv ${L}</span><div class="dim">${d.d}</div><div class="rnext ${mile?'mile':''}">Next: ×${gain.toFixed(1)}${mile?' milestone':''}${atCap?` · capped until fight ${Math.ceil((L+1-TUNE.capBase)*TUNE.capPer)}`:''}</div></div>
+      <div class="rbtns"><button class="buy" data-act="lv" data-k="${k}" ${canLevel(P,k)?'':'disabled'}>${fmt(pr)}</button><button class="ghost small" data-act="max" data-k="${k}" ${canLevel(P,k)?'':'disabled'}>Max</button></div></div>`; }
+  const n=deedCount(P), nextSlot=DEED_SLOTS.find(([need])=>need>n), dp=deedPrice(n);
+  s+='<h3>Deeds <span class="dim">junk in hand, and the only way to more slots</span></h3>';
+  s+=`<div class="row"><div class="ric">📜</div><div class="rmain"><b>Buy a Deed</b> <span class="lv">${n} owned · ×${fmt2(standing(P))}</span><div class="dim">×${TUNE.standing} to all payouts${nextSlot?`. ${nextSlot[0]} Deeds open slot ${nextSlot[1]}`:''}. It sticks in your hand until you pay 1⚡ to file it, for a little rent.</div></div>
+    <div class="rbtns"><button class="buy" data-act="deed" ${P.coin>=dp?'':'disabled'}>${fmt(dp)}</button></div></div>`;
+  if(P.own.deed>=2){ const cp=charterPrice(P); s+=`<div class="row"><div class="ric">👑</div><div class="rmain"><b>Merge 2 Deeds into a Charter</b><div class="dim">Still counts as 2, takes one card's room, triple rent.</div></div><div class="rbtns"><button class="buy" data-act="charter" ${P.coin>=cp?'':'disabled'}>${fmt(cp)}</button></div></div>`; }
+  s+='<h3>For sale <span class="dim">new stock every trip, priced by your depth</span></h3><div class="offers">';
+  const c=ctx();
+  for(const k of P.offers){ const pr=offerPrice(P,k), isB=!!BASTIONS[k], d=defOf(k);
+    s+=`<div class="offer ${isB?'isb':''}"><div class="otop"><span class="oic">${d.i}</span><b>${esc(d.n)}</b></div><div class="otxt">${isB?`<span class="tagb">Bastion · fill ${d.fill}</span> ${baseText(k,c)}`:(d.sticky?esc(d.tip):`<span class="tagc">${d.c}⚡</span> `+d.m.map(m=>modeText(m,c)).join(' <i>or</i> '))}</div>
+      <button class="buy" data-act="offer" data-k="${k}" ${P.coin>=pr?'':'disabled'}>${fmt(pr)}</button></div>`; }
+  if(!P.offers.length) s+='<p class="dim">Sold out until your next trip.</p>';
+  return s+'</div>';
+}
+const fmt2 = x => x<100?x.toFixed(1):fmt(x);
+function boardTabHtml(){
+  const c=ctx(); let s='<h3>Your board <span class="dim">tap two to swap</span></h3><p class="dim">Powder fills from the left. Attacks hit the left end first. A full Bastion fires, once a turn.</p><div class="board kboard">';
+  P.layout.forEach((k,i)=>{ const d=k&&BASTIONS[k]; s+=`<button class="slot ${boardSel===`s${i}`?'sel':''} ${k?'':'empty'}" data-act="bsel" data-k="s${i}">${k?`<div class="sic">${d.i}</div><div class="sname">${esc(d.n)}</div><div class="sfill">fill ${d.fill}</div><div class="spay">${baseText(k,c)}</div>`:'<div class="sname dim">empty</div>'}</button>`; });
+  s+='</div>';
+  const spare=Object.keys(P.bases).filter(k=>!P.layout.includes(k));
+  s+=`<h3>In your deck <span class="dim">Bastions not on the board are cards you can deploy mid-fight</span></h3><div class="offers">`;
+  for(const k of spare){ const d=BASTIONS[k]; s+=`<button class="offer spare ${boardSel===`b${k}`?'sel':''}" data-act="bsel" data-k="b${k}"><div class="otop"><span class="oic">${d.i}</span><b>${esc(d.n)}</b></div><div class="otxt"><span class="tagb">fill ${d.fill}</span> ${baseText(k,c)}</div></button>`; }
+  if(!spare.length) s+='<p class="dim">None. New Bastions go straight into an empty slot.</p>';
+  s+='</div>';
+  const sel=boardSel&&(boardSel[0]==='s'?P.layout[+boardSel.slice(1)]:boardSel.slice(1));
+  if(sel) s+=`<p class="tip"><b>${esc(BASTIONS[sel].n)}:</b> ${esc(BASTIONS[sel].tip)}</p>`;
+  return s;
+}
+function deckHtml(){
+  const c=ctx(); let s='<h3>Your deck <span class="dim">bench a copy to leave it at home</span></h3>';
+  for(const k in P.own){ const n=P.own[k]||0; if(!n) continue; const d=CARDS[k], b=P.bench[k]||0;
+    s+=`<div class="row"><div class="ric">${d.i}</div><div class="rmain"><b>${esc(d.n)}</b> <span class="lv">${n-b} of ${n} in deck</span><div class="dim">${d.sticky?esc(d.tip):`${d.c}⚡ `+d.m.map(m=>modeText(m,c)).join(' <i>or</i> ')}</div></div>
+      <div class="rbtns"><div class="step"><button class="ghost small" data-act="bench" data-k="${k}" data-d="1" ${n-b>0&&!d.sticky?'':'disabled'}>−</button><button class="ghost small" data-act="bench" data-k="${k}" data-d="-1" ${b>0?'':'disabled'}>+</button></div></div></div>`; }
+  return s;
+}
+function worksHtml(){
+  let s=`<h3>Works <span class="dim">a Crest from each boss buys one rule change</span></h3>`;
+  for(const k in WORKS){ const d=WORKS[k], has=P.works[k];
+    s+=`<div class="row"><div class="ric">${d.i}</div><div class="rmain"><b>${esc(d.n)}</b><div class="dim">${esc(d.d)}</div></div><div class="rbtns">${has?'<span class="ok">Built</span>':`<button class="buy" data-act="work" data-k="${k}" ${P.crests>0?'':'disabled'}>1 Crest</button>`}</div></div>`; }
+  return s;
+}
+function keepAct(e){
+  const b=e.target.closest('[data-act]'); if(!b||b.disabled) return; const a=b.dataset.act, k=b.dataset.k; const before=power;
+  if(a==='lv') buyLevel(P,k); else if(a==='max') buyMax(P,k); else if(a==='deed'){ buyDeed(P); }
+  else if(a==='charter') buyCharter(P); else if(a==='offer') buyOffer(P,k); else if(a==='work') buyWork(P,k);
+  else if(a==='bench') setBench(P,k,+b.dataset.d);
+  else if(a==='bsel'){ if(!boardSel||boardSel===k){ boardSel=boardSel===k?null:k; } else { applyBoardSwap(boardSel,k); boardSel=null; } }
+  renderKeep();
+  if(['lv','max','deed','offer','charter'].includes(a)&&power>before*1.001){ const box=$('kPower'); box.classList.remove('pop'); void box.offsetWidth; box.classList.add('pop'); floatAt(box,`×${fmt2(power/before)}`,'gold',1.2); }
+}
+function applyBoardSwap(a,b){
+  const isS=x=>x[0]==='s';
+  if(isS(a)&&isS(b)){ const i=+a.slice(1), j=+b.slice(1); const x=P.layout[i]; P.layout[i]=P.layout[j]; P.layout[j]=x; return; }
+  const s=isS(a)?a:b, sp=isS(a)?b:a; if(!isS(s)||isS(sp)) return; P.layout[+s.slice(1)]=sp.slice(1);
+}
+function setOut(){
+  refreshPower(); P.hist.push(power); if(P.hist.length>200) P.hist.shift();
+  T=startTrip(P,{f:startAt||1}); startAt=null; deploying=null; swapSel=null; turnPower=power;
+  show('fight'); renderFight(); playEvents(); saveNow(P,T); maybeWon();
 }
 
-function resetUI(){
-  LEDGER.length=0;
-  $('log').innerHTML=''; $('toasts').innerHTML='';
-  $('over').classList.remove('on'); closeInspect(); closeMenu();
-  UI.lastCoin=0;
+/* ---------- the fight ---------- */
+function renderFight(){
+  const E=T.enemy;
+  $('fF').textContent=`Fight ${T.f}`+(E.boss?' · BOSS':''); $('fCoin').textContent='🪙 '+fmt(T.coin);
+  const r=(turnPower*T.surge)/E.max; $('fOdds').textContent='odds '+oddsTxt(r); $('fOdds').className='chip num '+(r>=2?'ok':r>=1?'':'bad');
+  $('fAuto').hidden=!(r>=2);
+  $('eArt').textContent=E.i; $('eName').textContent=E.n; $('enemy').classList.toggle('boss',!!E.boss);
+  $('eBar').style.width=Math.max(0,E.hp/E.max*100)+'%'; $('eHp').textContent=fmt(Math.max(0,E.hp));
+  const st=[]; if(E.hunker) st.push('🐢 hunkered: takes ¼'); if(E.dodge) st.push('💨 will dodge one hit'); if(E.blight>0) st.push('☣️ '+fmt(E.blight)); if(E.rule) st.push(E.rule); if(enrageFactor(T)>1) st.push('😡 enraged ×'+fmt2(enrageFactor(T)));
+  $('eStat').textContent=st.join(' · ');
+  const I=intentOf(T), amt=intentAmount(T,I), tg=hitTarget(T,I), nx=intentOf(T,1);
+  $('eIntent').innerHTML=intentText(I,amt,tg);
+  $('eNext').innerHTML='Then: '+intentText(nx,intentAmount(T,nx),hitTarget(T,nx));
+  // board
+  const c=ctx(); const atk=['hit','snipe','ram'].includes(I.type)?tg:-1; const volley=I.type==='volley';
+  let h=''; T.board.forEach((b,i)=>{ if(!b){ h+=`<button class="slot empty ${deploying!=null?'target':''}" data-slot="${i}"><div class="sname dim">empty</div></button>`; return; }
+    const d=BASTIONS[b.k]; let pips=''; for(let p=0;p<d.fill;p++) pips+=`<i class="${p<b.fill?'f':''}"></i>`;
+    const hb=b.hits?`<div class="hits">${'🛡️'.repeat(b.hits)}</div>`:`<div class="bar sh"><i style="width:${b.hp/b.max*100}%"></i></div>`;
+    h+=`<button class="slot ${b.fired?'fired':''} ${b.jam?'jam':''} ${swapSel===i?'sel':''} ${(atk===i||volley)?'tgt':''} ${deploying!=null?'target':''}" data-slot="${i}" id="sl${i}"><div class="sic">${d.i}</div><div class="sname">${esc(d.n)}</div><div class="spay">${baseText(b.k,c)}</div><div class="pipsrow">${pips}</div>${hb}${b.jam?'<div class="stag">🔒</div>':b.fired?'<div class="stag">✓</div>':''}</button>`; });
+  $('board').innerHTML=h; $('board').dataset.n=T.board.length;
+  $('fSwap').textContent=T.freeSwap>0?'1 free swap: tap two':`swap: ${TUNE.swapCost}⚡`;
+  // you
+  $('yBar').style.width=Math.max(0,T.hp/T.maxHp*100)+'%'; $('yHp').textContent=`❤️ ${fmt(Math.max(0,T.hp))} / ${fmt(T.maxHp)}`;
+  $('yShield').textContent='🛡️ '+fmt(T.shield); $('yShield').style.visibility=T.shield>0?'':'hidden';
+  let ep=''; const mx=Math.max(T.energyMax,T.energy); for(let i=0;i<mx;i++) ep+=`<i class="${i<T.energy?'on':''}">⚡</i>`; $('yEnergy').innerHTML=ep;
+  $('yMag').textContent=`Magazine ${T.mag}/${T.magCap}`;
+  const ys=[]; if(T.hex) ys.push(`🔮 ${T.hex}`); if(T.temper>1) ys.push(`⚒️ next ×${T.temper}`); const wc=wardCount(T); if(wc) ys.push(`🧿 ${wc}`); if(T.surge>1) ys.push(`✨×${fmt2(T.surge)}`); if(T.tollLeft>0) ys.push(`🤴 toll ${T.tollLeft}`);
+  $('yStat').textContent=ys.join(' ');
+  $('yPiles').textContent=`Draw ${T.draw.length} · Discard ${T.disc.length}`;
+  // hand
+  let hh=''; T.hand.forEach((cd,i)=>{ const cost=cardCost(T,cd), can=cost<=T.energy;
+    if(cd.b){ const d=BASTIONS[cd.k]; hh+=`<div class="card isb ${can?'':'no'} ${deploying===i?'sel':''}" data-i="${i}"><span class="cost">${cost}</span><div class="cic">${d.i}</div><div class="cname">${esc(d.n)}</div><button class="mode" data-i="${i}" data-m="0">Deploy<br>${baseText(cd.k,c)}</button></div>`; return; }
+    const d=CARDS[cd.k];
+    if(d.sticky){ const rent=cd.k==='deed'?.25:cd.k==='charter'?.75:0; hh+=`<div class="card stuck ${can?'':'no'}" data-i="${i}"><span class="cost">${cost}</span><div class="cic">${d.i}</div><div class="cname">${esc(d.n)}</div><button class="mode" data-i="${i}" data-m="0">File it${rent?`<br>🪙 ${fmt(fightCoin(T.f)*rent)}`:cd.k==='ward'?'<br>cuts attacks':''}</button></div>`; return; }
+    hh+=`<div class="card ${can?'':'no'}" data-i="${i}"><span class="cost">${cost}</span><div class="cic">${d.i}</div><div class="cname">${esc(d.n)}</div>`+d.m.map((m,mi)=>`<button class="mode" data-i="${i}" data-m="${mi}">${modeText(m,c)}</button>`).join('')+`</div>`; });
+  $('hand').innerHTML=hh; $('hand').dataset.n=T.hand.length;
+  $('fEnd').disabled=busy;
+  coach();
 }
-function showGameOver(text){
-  $('overText').textContent=text;
-  $('over').classList.add('on'); $('overBtn').focus();
+function coach(){
+  const box=$('coach'); let msg='';
+  if(P.trips===0){ if(T.turn===1&&T.f===1&&!T.played) msg='Tap a card to play it. Cartridges and Flint make Powder. Powder runs left to right, and a full Bastion fires, once a turn.';
+    else if(T.turn===2&&T.f===1) msg='The red frame marks who the next attack hits: the leftmost Bastion first. One swap a turn is free. Tap two slots.';
+    else if(T.f===2&&T.turn===1) msg='Health and Bastion damage carry through the whole trip. Losing is normal here: you keep 70% of your coin and all your upgrades.'; }
+  else if(!P.seen.stuck&&T.hand.some(c=>CARDS[c.k]&&CARDS[c.k].sticky)){ msg='Stuck cards stay in your hand and take up room until you pay 1⚡ to file them. Filing a Deed pays rent.'; }
+  box.textContent=msg; box.hidden=!msg;
 }
+function handClick(e){
+  const m=e.target.closest('.mode'), card=e.target.closest('.card'); if(busy||!card) return;
+  const i=+card.dataset.i, mi=m?+m.dataset.m:0; const c=T.hand[i]; if(!c) return;
+  if(cardCost(T,c)>T.energy){ shake(card); return; }
+  if(c.b){ deploying=deploying===i?null:i; swapSel=null; renderFight(); return; }
+  if(CARDS[c.k].sticky&&!P.seen.stuck){ P.seen.stuck=1; }
+  deploying=null; playCard(T,i,mi); afterAction();
+}
+function boardClick(e){
+  const s=e.target.closest('.slot'); if(!s||busy) return; const i=+s.dataset.slot;
+  if(deploying!=null){ const d=deploying; deploying=null; playCard(T,d,0,i); afterAction(); return; }
+  if(swapSel==null){ if(!T.board[i]&&false) return; swapSel=i; renderFight(); return; }
+  if(swapSel===i){ swapSel=null; renderFight(); return; }
+  const a=swapSel; swapSel=null;
+  if(!swapBases(T,a,i)){ renderFight(); shake(s); return; } afterAction();
+}
+function afterAction(){ renderFight(); playEvents(); persist(); maybeWon(); }
+function maybeWon(){ if(T&&T.phase==='won') setTimeout(wonSheet,650); else if(T&&T.phase==='lost') setTimeout(lostSheet,650); }
+function endTurnClick(){ if(busy||!T||T.phase!=='turn') return; deploying=null; swapSel=null; busy=true; $('fEnd').disabled=true;
+  $('enemy').classList.add('act'); setTimeout(()=>$('enemy').classList.remove('act'),300);
+  endTurn(T); const ms=playEvents(); setTimeout(()=>{ busy=false; renderFight(); persist(); maybeWon(); },Math.min(900,ms+120)); }
+function autoClick(){ if(busy||T.phase!=='turn') return; autoTurn(T); renderFight(); playEvents(); persist(); if(T.phase==='turn') setTimeout(endTurnClick,350); else maybeWon(); }
 
-/* ==========================================================
-   MODALS
-   ========================================================== */
-function closeVeil(){ $('veil').classList.remove('on'); $('pool').innerHTML=''; $('mOpts').innerHTML=''; $('mBtns').innerHTML=''; }
-function openVeil(title,sub,kind){
-  closeInspect();
-  $('mTitle').textContent=title; $('mSub').textContent=sub;
-  $('pool').innerHTML=''; $('mOpts').innerHTML=''; $('mBtns').innerHTML='';
-  $('pool').className=kind||'';
-  $('veil').classList.add('on'); $('veil').scrollTop=0;
+/* ---------- event playback ---------- */
+function floatAt(el,text,cls,size){ if(!el) return; const r=el.getBoundingClientRect(); const f=document.createElement('div'); f.className='float '+(cls||''); f.textContent=text; f.style.left=(r.left+r.width/2)+'px'; f.style.top=(r.top+r.height*.4)+'px'; if(size) f.style.fontSize=size+'rem'; $('fx').appendChild(f); f.addEventListener('animationend',()=>f.remove()); setTimeout(()=>f.remove(),1500); }
+function flash(el,cls){ if(!el) return; el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+function shake(el){ flash(el,'shk'); }
+function playEvents(){
+  const evs=T.ev; T.ev=[]; const shown=evs.filter(e=>['fire','hurt','hit','hitYou','win','absorb','baseDown','dodged','toll','carry','waste','rent','jam','drain','rubbleIn','hunker','dodge','lost','tick','refire','deploy'].includes(e.t));
+  const step=Math.min(170,1000/Math.max(1,shown.length)); let t=0;
+  for(const e of shown){ setTimeout(()=>oneEvent(e),t); t+=step; }
+  return t;
 }
-
-// back: label of a button that leaves the picker without choosing; it resolves to null.
-function chooseCards(pool,{min=0,max=1,title='Choose',sub='',badge=null,back=null}={}){
-  return new Promise(res=>{
-    if((!pool.length||max<=0)&&!back){ res([]); return; }
-    const chosen=new Set();
-    openVeil(title,sub+(UI.touch?' Press and hold a card to read it.':' Right-click a card to read it up close.'));
-    const p=$('pool');
-    const ok=document.createElement('button'); ok.className='mbtn go';
-    const upd=()=>{ ok.textContent=chosen.size?`Confirm ${chosen.size}`:(min===0?'Skip':'Confirm'); ok.disabled=chosen.size<min; };
-    pool.forEach(c=>{
-      const el=cardEl(c,{badge}); el.style.cursor='pointer'; el.tabIndex=0;
-      const tog=()=>{
-        if(chosen.has(c)) chosen.delete(c);
-        else{
-          if(chosen.size>=max){ if(max!==1) return; chosen.clear(); p.querySelectorAll('.selected').forEach(x=>x.classList.remove('selected')); }
-          chosen.add(c);
-        }
-        el.classList.toggle('selected',chosen.has(c)); upd(); };
-      el.onclick=()=>{ if(el._held){ el._held=false; return; } tog(); };
-      el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tog();}};
-      el.oncontextmenu=e=>{e.preventDefault();inspectCard(c);};
-      onLongPress(el,()=>inspectCard(c));
-      p.appendChild(el);
-    });
-    ok.onclick=()=>{closeVeil();res([...chosen]);};
-    if(back){ const b=document.createElement('button'); b.className='mbtn'; b.textContent=back; b.onclick=()=>{closeVeil();res(null);}; $('mBtns').appendChild(b); }
-    if(!pool.length){ p.innerHTML='<p class="hint">No cards to choose from.</p>'; ok.hidden=true; }
-    $('mBtns').appendChild(ok); upd();
-    ok.focus();
-  });
-}
-
-// Show one card large with a yes and a no; resolves true or false.
-function confirmCard(c,title,sub,yes='Confirm',no='Back'){
-  return new Promise(res=>{
-    openVeil(title,sub);
-    const el=cardEl(c); el.classList.add('big'); $('pool').appendChild(el);
-    for(const [label,v,cls] of [[no,false,''],[yes,true,'go']]){
-      const b=document.createElement('button'); b.className='mbtn '+cls; b.textContent=label;
-      b.onclick=()=>{closeVeil();res(v);}; $('mBtns').appendChild(b);
-      if(v) setTimeout(()=>b.focus(),0);
-    }
-  });
-}
-
-function chooseOption(title,sub,options){
-  return new Promise(res=>{
-    openVeil(title,sub);
-    const box=$('mOpts');
-    options.forEach(([k,label],i)=>{
-      const b=document.createElement('button'); b.className='opt'; b.textContent=label;
-      b.onclick=()=>{closeVeil();res(k);};
-      box.appendChild(b); if(i===0) setTimeout(()=>b.focus(),0);
-    });
-  });
-}
-
-function chooseJoker(keys,title,sub,{skip='Skip'}={}){
-  return new Promise(res=>{
-    openVeil(title,sub,'jokers');
-    const p=$('pool');
-    keys.forEach(k=>{
-      const el=jokerCardEl(k); el.tabIndex=0; el.setAttribute('role','button');
-      el.onclick=()=>{closeVeil();res(k);};
-      el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();closeVeil();res(k);}};
-      p.appendChild(el);
-    });
-    const b=document.createElement('button'); b.className='mbtn'; b.textContent=skip;
-    b.onclick=()=>{closeVeil();res(null);};
-    $('mBtns').appendChild(b);
-    setTimeout(()=>{ const f=p.querySelector('.jcard'); if(f) f.focus(); },0);
-  });
-}
-
-function chooseSplice(keys,title,sub){
-  return new Promise(res=>{
-    openVeil(title,sub,'jokers');
-    const p=$('pool');
-    keys.forEach(k=>{
-      const el=spliceCardEl(k); el.tabIndex=0; el.setAttribute('role','button');
-      el.onclick=()=>{closeVeil();res(k);};
-      el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();closeVeil();res(k);}};
-      p.appendChild(el);
-    });
-    const b=document.createElement('button'); b.className='mbtn'; b.textContent='Skip';
-    b.onclick=()=>{closeVeil();res(null);};
-    $('mBtns').appendChild(b);
-    setTimeout(()=>{ const f=p.querySelector('.jcard'); if(f) f.focus(); },0);
-  });
-}
-
-function viewPile(title,pile){
-  const list=pile.slice().sort((a,b)=>cname(a).localeCompare(cname(b)));
-  openVeil(title,plural(pile.length,'card')+' — tap a card to read it.');
-  const p=$('pool');
-  list.forEach(c=>{ const el=cardEl(c); el.tabIndex=0; el.style.cursor='zoom-in';
-    el.onclick=()=>inspectCard(c); el.onkeydown=e=>{if(e.key==='Enter')inspectCard(c);}; p.appendChild(el); });
-  const b=document.createElement('button'); b.className='mbtn'; b.textContent='Close'; b.onclick=closeVeil;
-  $('mBtns').appendChild(b); b.focus();
-}
-
-/* ---------- inspector: a large, readable view of one card / joker / threat ---------- */
-function openInspect(node,info,actions=[]){
-  const body=$('inspectBody'); body.innerHTML=''; body.appendChild(node);
-  $('inspectInfo').textContent=info||'';
-  const btns=$('inspectBtns'); btns.innerHTML='';
-  for(const [label,fn,cls,dis] of actions){
-    const b=document.createElement('button'); b.className='mbtn '+(cls||''); b.textContent=label; b.disabled=!!dis;
-    b.onclick=()=>{ closeInspect(); if(fn) fn(); }; btns.appendChild(b);
+function oneEvent(e){
+  const en=$('eArt'), sl=i=>$('sl'+i);
+  switch(e.t){
+    case 'fire': { flash(sl(e.i),'firing'); const c=e.dmg!=null?null:e.shield?`🛡️ ${fmt(e.shield)}`:e.blight?`☣️ ${fmt(e.blight)}`:e.coin?`🪙 ${fmt(e.coin)}`:e.powder?`+${e.powder} Powder`:e.draw?`Draw ${e.draw}`:e.temper?`×${e.temper}`:e.hex?'Curse':null; if(c) floatAt(sl(e.i),c,e.shield?'blue':e.coin?'gold':''); break; }
+    case 'hurt': { const E=T.enemy, rel=e.n/E.max; const size=rel>3?3:rel>1?2.4:rel>.3?1.8:1.3; floatAt(en,fmt(e.n),'red',size); flash(en,'hurt'); const bar=$('eBar'); if(bar) bar.style.width=Math.max(0,e.hp/E.max*100)+'%'; $('eHp').textContent=fmt(Math.max(0,e.hp)); break; }
+    case 'tick': floatAt(en,'☣️ '+fmt(e.n),'green',1.3); break;
+    case 'dodged': floatAt(en,'dodged!','dim',1.3); break;
+    case 'hit': floatAt(sl(e.i),e.gate?'−1 hit':'−'+fmt(e.n),'red'); flash(sl(e.i),'hurt'); break;
+    case 'hitYou': floatAt($('yHp'),'−'+fmt(e.n),'red',1.4); flash($('yHp').parentElement,'hurt'); break;
+    case 'absorb': floatAt($('yShield'),'🛡️ −'+fmt(e.n),'blue'); break;
+    case 'baseDown': floatAt($('board'),`${BASTIONS[e.k].n} falls! Back to your discard pile`,'red',.9); break;
+    case 'toll': floatAt($('board'),`The Toll King takes ${e.n} Powder`,'dim',.9); break;
+    case 'waste': floatAt($('yMag'),`${e.n} Powder wasted`,'dim',.85); break;
+    case 'rent': floatAt($('fCoin'),'🪙 +'+fmt(e.n),'gold'); break;
+    case 'carry': floatAt(en,`Overkill carries: ${fmt(e.n)}`,'gold',1.1); break;
+    case 'win': { const big=e.ratio>=1; banner(e.boss?'Boss down!':'Down!',big?`Overkill ×${fmt2(e.ratio+1)}`:'',Math.min(1+Math.log10(1+Math.max(0,e.ratio))*.5,2.2)); break; }
   }
-  const close=document.createElement('button'); close.className='mbtn'; close.textContent='Close'; close.onclick=closeInspect;
-  btns.appendChild(close);
-  $('inspect').classList.add('on');
-  (btns.querySelector('button:not(:disabled)')||close).focus();
 }
-function closeInspect(){ $('inspect').classList.remove('on'); }
+function banner(a,b,scale){ const f=document.createElement('div'); f.className='banner'; f.innerHTML=`<b>${esc(a)}</b>${b?`<span>${esc(b)}</span>`:''}`; f.style.setProperty('--s',scale||1); $('fx').appendChild(f); setTimeout(()=>f.remove(),1100); }
 
-function inspectCard(c,act,label){
-  const el=cardEl(c); el.classList.add('big');
-  const info=[];
-  if(c.t==='treasure'&&G) info.push(`Produces ${tval(c)} Coin right now.`);
-  if(G&&iced(c)){ const t=G.slots.find(t=>t&&t.id===c.ice); info.push(`🧊 Sealed in ice until ${t.n} leaves.`); }
-  if(label&&label.startsWith('Buy')) info.push('Bought cards go to the bottom of your draw pile.');
-  openInspect(el,info.join(' '),label?[[label,act,'go',!act]]:[]);
+/* ---------- between fights ---------- */
+function cacheLabel(o){ if(o.t==='card'){ const d=CARDS[o.k]; return `${d.i} <b>${esc(d.n)}</b><div class="dim">${d.sticky?esc(d.tip):d.m.map(m=>modeText(m,ctx())).join(' or ')}. Yours for this trip.</div>`; }
+  if(o.t==='surge') return `✨ <b>War chest</b><div class="dim">All payouts ×${TUNE.surge} for the rest of this trip.</div>`;
+  if(o.t==='mend') return `⛑️ <b>Field repairs</b><div class="dim">Heal half your health and mend every Bastion.</div>`;
+  return `💰 <b>Strongbox</b><div class="dim">${fmt(fightCoin(T.f)*2)} coin.</div>`; }
+function wonSheet(){
+  if(!T||T.phase!=='won') return;
+  const f=T.f;
+  if(T.cache){ sheet(`<h2>A cache on the road</h2><p class="dim">Take one.</p><div class="choices">${T.cache.map((o,i)=>`<button class="choice" data-cache="${i}">${cacheLabel(o)}</button>`).join('')}</div>`); return; }
+  const nf=f+1, ne=enemyFor(nf), boss=isBoss(nf)||nf===TUNE.finalBoss, r=turnPower*T.surge/(fightHp(nf)*ne.h*(boss?TUNE.bossHp:1));
+  const crest=T.beaten>P.beaten&&T.beaten===f;
+  sheet(`<h2>Fight ${f} won</h2><p>${crest?'<b class="gold">You took a Crest.</b> Spend it at home.<br>':''}Carrying <b class="gold">🪙 ${fmt(T.coin)}</b>. ❤️ ${fmt(T.hp)} of ${fmt(T.maxHp)}.</p>
+    <div class="nextup ${boss?'boss':''}"><span class="big">${ne.i}</span><div><b>${esc(ne.n)}</b>${boss?' · BOSS':''}<div class="dim">Fight ${nf}. Odds <b class="${r>=1?'ok':'bad'}">${oddsTxt(r)}</b>${nf>T.deepest?' · new ground pays double':''}</div>${ne.rule?`<div class="dim">${esc(ne.rule)}</div>`:''}</div></div>
+    <div class="choices row2"><button class="go" data-next="1">Onward</button><button class="ghost" data-home="1">Go home, keep all</button></div>`);
 }
-
-/* touch press-and-hold (iOS has no contextmenu); swallows the click that follows */
-function onLongPress(el,fn){
-  let timer=0, x=0, y=0;
-  const cancel=()=>clearTimeout(timer);
-  el.addEventListener('pointerdown',e=>{
-    if(e.pointerType==='mouse') return;
-    x=e.clientX; y=e.clientY; cancel();
-    timer=setTimeout(()=>{ el._held=true; fn(); },450);
-  });
-  el.addEventListener('pointermove',e=>{ if(Math.hypot(e.clientX-x,e.clientY-y)>10) cancel(); });
-  el.addEventListener('pointerup',cancel);
-  el.addEventListener('pointercancel',cancel);
+function lostSheet(){
+  if(!T||T.phase!=='lost') return;
+  const kept=T.coin*TUNE.defeatKeep, E=T.enemy;
+  sheet(`<h2>Beaten at fight ${T.f}</h2><p><b>${E.i} ${esc(E.n)}</b> had ${Math.ceil(E.hp/E.max*100)}% health left.</p><p>You bring home <b class="gold">🪙 ${fmt(kept)}</b>, and drop 🪙 ${fmt(T.coin-kept)} on the road. Every upgrade stays.</p><div class="choices"><button class="go" data-endtrip="defeat">Go home</button></div>`);
 }
-
-/* tap/click behaviour shared by hand and market cards */
-function bindCard(el,c,act,label){
-  el.tabIndex=0;
-  el.onclick=()=>{ if(act&&!inspectOnTap()) act(); else inspectCard(c,act,label); };
-  el.oncontextmenu=e=>{ e.preventDefault(); inspectCard(c,act,label); };
-  el.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); act?act():inspectCard(c,act,label); } };
+function sheetClick(e){
+  const b=e.target.closest('button'); if(!b) return;
+  if(b.dataset.cache!=null){ pickCache(T,+b.dataset.cache); renderFight(); persist(); wonSheet(); return; }
+  if(b.dataset.next){ closeSheet(); nextFight(T); renderFight(); playEvents(); persist(); maybeWon(); return; }
+  if(b.dataset.home){ endTripUI('retreat'); return; }
+  if(b.dataset.endtrip){ endTripUI(b.dataset.endtrip); return; }
+  if(b.dataset.keep!=null){ keepSpoil(P,b.dataset.keep||null); closeSheet(); renderKeep(); saveNow(P,null); return; }
+  if(b.dataset.close){ closeSheet(); if(b.dataset.after==='title') toTitle(); return; }
+  if(b.dataset.giveup){ closeSheet(); T.phase='lost'; lostSheet(); return; }
 }
-
-/* ==========================================================
-   RENDER
-   ========================================================== */
-// hand: in merge mode a card in your hand shows only what it costs to play, top left.
-function cardEl(c,{badge,hand}={}){
-  const d=DB[c.key], el=document.createElement('div');
-  el.className=`card t-${d.t}${d.r?' r':''}${c.lv?` lv${Math.min(3,c.lv)}`:''}${G&&iced(c)?' frozen iced':c.frozen?' frozen':''}`;
-  const kind=d.r?'Reaction':({treasure:'Treasure',action:'Action',ward:'Ward',victory:'Junk',junk:'Junk',curse:'Junk'}[d.t]||d.t);
-  const stars=c.lv?(c.lv<=3?'★'.repeat(c.lv):`★${c.lv}`):'';
-  // splices: one chip per keyword with a count (scars in red), empty slots in splice mode,
-  // and one text line per keyword for the big view — so a card with 30 splices still fits
-  let chips='', lines='';
-  if(c.mods.length||(splice()&&!isJunk(c))){
-    const groups=[];
-    for(const k of c.mods){ const g=groups.find(x=>x.k===k); if(g) g.n++; else groups.push({k,n:1}); }
-    chips=groups.map(({k,n})=>`<i class="${SPLICES[k].scar?'scar':''}">${SPLICES[k].art}${n>1?`<b>${n}</b>`:''}</i>`).join('');
-    const open=splice()&&!isJunk(c)?Math.max(0,TUNE.spliceSlots(c)-slotsUsed(c)):0;
-    chips+=open>3?`<i class="open"><b>${open}</b></i>`:'<i class="open"></i>'.repeat(open);
-    lines=groups.map(({k,n})=>`<span class="mline${SPLICES[k].scar?' scar':''}">${SPLICES[k].art} ${spliceText(k,c)}${n>1?` <b>×${n}</b>`:''}</span>`).join('');
-    if(c.mods.length) el.classList.add('spliced');
-  }
-  el.innerHTML=`<div class="banner">${cname(c)}</div>
-    <div class="art"><span>${cart(c)||'✦'}</span>${chips?`<div class="mods">${chips}</div>`:''}</div>
-    <div class="tx"><span>${ctext(c)}</span>${lines}</div>
-    <div class="foot"><span>${kind}</span><span class="stars">${stars}</span></div>`;
-  const handOnly=hand&&merge();
-  if(!handOnly){ const cost=document.createElement('div'); cost.className='cost'; cost.textContent=costOf(c); el.appendChild(cost); }
-  // merge mode: what it costs to play, in ⚡ (Wards are never played)
-  if(d.merge&&(d.t==='action'||handOnly&&d.t==='treasure')){
-    const e=document.createElement('div'); e.className='ecost'+(handOnly?' top':''); e.textContent=actCost(c); el.appendChild(e); }
-  const bt=badge&&badge(c);
-  if(bt){ const b=document.createElement('div'); b.className='badge'; b.textContent=bt; el.appendChild(b); }
-  return el;
+function endTripUI(how){
+  const beat=T.beaten>=TUNE.finalBoss&&!P.won;
+  const l=endTrip(P,T,how); T=null; closeSheet(); tab='spend'; boardSel=null; show('keep'); renderKeep(); saveNow(P,null);
+  if(beat) sheet(`<h2>🏦 Paid in full</h2><p>The Foreclosure is down, at a number nobody in town can read aloud. The road keeps going if you do.</p><div class="choices"><button class="go" data-close="1">Back to the Keep</button></div>`);
+  else if(P.keep.length) sheet(`<h2>Keep one spoil?</h2><p class="dim">It joins your deck for good. Thin decks draw better, so leaving it is fine.</p><div class="choices">${P.keep.slice(0,4).map(k=>`<button class="choice" data-keep="${k}">${CARDS[k].i} <b>${esc(CARDS[k].n)}</b><div class="dim">${CARDS[k].sticky?esc(CARDS[k].tip):CARDS[k].m.map(m=>modeText(m,ctx())).join(' or ')}</div></button>`).join('')}<button class="ghost" data-keep="">Leave them</button></div>`);
 }
 
-function jokerCardEl(k,status){
-  const j=JOKERS[k], el=document.createElement('div');
-  el.className=`jcard ${j.r}`;
-  el.innerHTML=`<div class="jr">${j.r}</div><div class="jart">${j.art}</div><div class="jn">${j.n}</div><div class="jtx">${jtx(k)}</div>${status?`<div class="jst">Now: ${status}</div>`:''}`;
-  return el;
+/* ---------- title ---------- */
+function toTitle(){ if(P) saveNow(P,T); renderTitle(); show('title'); }
+function renderTitle(){
+  const s=P&&(P.trips||T);
+  $('tPlay').textContent=s?'Continue':'Play';
+  $('tBest').textContent=s?`Deepest fight ${P.deepest} · power ${fmt(estPower(P).dmg)} · ${P.trips} trips`:'';
+  $('tWipe').hidden=!s;
 }
+function howTo(){ sheet(`<h2>How to play</h2><ul class="how">
+  <li><b>Cards cost ⚡.</b> You get 3 a turn and draw 5 cards.</li>
+  <li><b>Powder</b> runs into your board from the left. A full Bastion fires, once a turn, and starts filling again. Part-fills carry over.</li>
+  <li><b>Attacks hit the leftmost Bastion</b> unless they say otherwise. Damage past it carries on, and what is left lands on you. A fallen Bastion goes to your discard pile.</li>
+  <li><b>One swap a turn is free.</b> Tap two slots. It changes who gets fed first and who gets hit first.</li>
+  <li><b>Stuck cards</b> (Deeds, Wards, Rubble) stay in hand until you pay 1⚡ to file them.</li>
+  <li><b>Go home</b> after any win and keep all your coin. If you are beaten you keep 70%. Your upgrades are never lost.</li>
+  <li><b>At home</b>, spend. You come back at the fights you can now flatten, and walk into the next wall.</li></ul>
+  <div class="choices"><button class="go" data-close="1">Got it</button></div>`); }
 
-function spliceCardEl(k){
-  const S=SPLICES[k], el=document.createElement('div');
-  el.className=`jcard splice ${S.r}`;
-  el.innerHTML=`<div class="jr">${S.r} splice</div><div class="jart">${S.art}</div><div class="jn">${S.n}</div><div class="jtx">${spliceText(k)}${S.once?'':'<br><small>Stacks.</small>'}${S.only?`<br><small>Actions only.</small>`:''}</div>`;
-  return el;
+/* ---------- start ---------- */
+function boot(){
+  const s=loadSave(); if(s){ P=s.P; T=s.T; } else P=newProfile((Date.now()&0xffffff)|1);
+  renderTitle();
+  $('tPlay').onclick=()=>{ if(T&&T.phase){ refreshPower(); turnPower=P.hist.length?P.hist[P.hist.length-1]:power; show('fight'); renderFight(); if(T.phase==='won') wonSheet(); if(T.phase==='lost') lostSheet(); } else { show('keep'); renderKeep(); if(P.keep.length) keepSpoil(P,null); } };
+  $('tHow').onclick=howTo;
+  $('tClassic').onclick=()=>{ location.href='classic/index.html'; };
+  $('tWipe').onclick=()=>{ sheet(`<h2>Erase this save?</h2><p>Your whole climb goes. There is no undo.</p><div class="choices row2"><button class="ghost" data-close="1">Keep it</button><button class="ghost danger" id="wipeYes">Erase</button></div>`); $('wipeYes').onclick=()=>{ wipeSave(); P=newProfile((Date.now()&0xffffff)|1); T=null; closeSheet(); renderTitle(); }; };
+  $('kTabs').onclick=e=>{ const b=e.target.closest('button'); if(b){ tab=b.dataset.t; boardSel=null; renderKeep(); } };
+  $('kBody').onclick=keepAct;
+  $('kGo').onclick=setOut;
+  $('kFm').onclick=()=>{ startAt=Math.max(1,(startAt||1)-1); renderKeep(); };
+  $('kFp').onclick=()=>{ startAt=Math.min(Math.max(1,dropIn(P,power)),(startAt||1)+1); renderKeep(); };
+  $('kMenu').onclick=toTitle;
+  $('hand').onclick=handClick; $('board').onclick=boardClick;
+  $('fEnd').onclick=endTurnClick; $('fAuto').onclick=autoClick;
+  $('fMenu').onclick=()=>{ if(busy) return; sheet(`<h2>Give up this trip?</h2><p class="dim">Counts as a defeat: you keep 70% of your coin. Your progress in this fight is saved if you just close the page.</p><div class="choices row2"><button class="ghost" data-close="1">Keep fighting</button><button class="ghost danger" data-giveup="1">Give up</button></div>`); };
+  $('sheet').onclick=sheetClick;
+  addEventListener('pagehide',()=>saveNow(P,T));
+  document.addEventListener('visibilitychange',()=>{ if(document.hidden) saveNow(P,T); });
 }
-
-function threatProgress(t){
-  const cm=coinMult()>1?' (×2)':'', um=unitMult()>1?' (×2)':'';
-  switch(t.kind){
-    case 'prog_coin':    return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} coin`, note:`${t.need-t.prog} owed${cm}`};
-    case 'once_coin':    return {pct:Math.min(1,G.coin/Math.max(1,coinFor(t.need))), left:`${t.need} coin at once${cm}`, note:`you hold ${G.coin}`};
-    case 'prog_action':  return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} ${actW()}`, note:`${t.need-t.prog} owed${um}`};
-    case 'prog_buy':     return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} Buys`, note:`${t.need-t.prog} owed${um}`};
-    case 'prog_discard': return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} cards fed`, note:`${t.need-t.prog} wanted`};
-    case 'sacrifice':    return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} cards trashed`, note:`${t.need-t.prog} wanted`};
-    case 'panic':        return {pct:0, left:'instant', note:`costs ${plural(t.curses,'Curse')}`};
-    case 'once_hybrid':  { const nc=Math.max(1,coinFor(t.needCoin)), na=Math.max(1,unitsFor(t.needAct));
-                           return {pct:Math.min(1,(Math.min(G.coin,nc)/nc*0.75)+(Math.min(G.actions,na)/na*0.25)),
-                                   left:`${t.needCoin} coin + ${actN(t.needAct)}`, note:`you hold ${G.coin} / ${G.actions}`}; }
-    case 'scavenge':     return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} fed`, note:'junk counts ×2'};
-    case 'banish':       { const n=t.need-t.prog;
-                           return {pct:Math.min(1,G.actionsPlayed/Math.max(1,n)), left:`${n} Actions in one turn`, note:`played ${G.actionsPlayed}`}; }
-    case 'leech':        return {pct:t.prog/t.need, left:`${t.prog} / ${t.need} draws eaten`, note:'play cards that draw'};
-    case 'upgrade':      return {pct:(t.gotT+t.gotA)/(t.needT+t.needA),
-                                 left:`Treasure ${t.gotT}/${t.needT} · Action ${t.gotA}/${t.needA}`, note:'trash from hand'};
-  }
-  return {pct:0,left:'',note:''};
-}
-function threatButton(t){
-  const rem=t.need-t.prog;
-  switch(t.kind){
-    case 'prog_coin':    return `Deposit ${Math.min(G.coin,coinFor(rem))} coin`;
-    case 'once_coin':    return `Pay ${coinFor(t.need)} coin`;
-    case 'prog_action':  return `Spend ${actN(Math.min(G.actions,unitsFor(rem)))}`;
-    case 'prog_buy':     return `Spend ${plural(Math.min(G.buys,unitsFor(rem)),'Buy')}`;
-    case 'prog_discard': return 'Feed cards';
-    case 'sacrifice':    return 'Sacrifice cards';
-    case 'panic':        return 'Shake on it';
-    case 'once_hybrid':  return `Pay ${coinFor(t.needCoin)} coin + ${actN(unitsFor(t.needAct))}`;
-    case 'upgrade':      return 'Trash into the rift';
-    case 'scavenge':     return 'Feed the nest';
-    case 'banish':       return 'Banish it';
-    case 'leech':        return 'Eats your draws';
-  }
-  return 'Act';
-}
-const attackWhen = t => t.cd<=1 ? 'at end of this turn' : `in ${t.cd} turns`;
-// The attack line under a threat; in splice mode it is the fuse.
-function atkLine(t){
-  if(!fused()) return `⚔ <b>${t.atk.name}</b> ${attackWhen(t)}: ${atkText(t)}.`;
-  const what=t.atk.k==='grow'||t.atk.k==='entomb'?'':t.atk.k==='price'?`you take ${junkName('jinx',t.curses)}, `:`${atkText(t)}, `;
-  const scar=splice()?`scars ${t.scarBest?'your finest card':'a card'}, `:'';
-  return `💥 <b>Detonates</b> ${attackWhen(t)}: ${what}${scar}−${t.elite?2:1} ❤.`;
-}
-function rewardLine(t){
-  if(merge()) return `<div class="treward">✨ Clear it: take one of ${TUNE.spoils+(t.elite?1:0)} free cards</div>`;
-  if(!splice()) return '';
-  const swift=t.age<=1;
-  return `<div class="treward">✨ Clear it: splice a keyword${swift?` · <b>swift bonus</b> ${t.age===0?'this turn or next':'this turn'}`:''}</div>`;
-}
-
-function threatInfoEl(t){
-  const p=threatProgress(t), el=document.createElement('div');
-  el.className='tinfo'+(t.elite?' elite':'');
-  el.innerHTML=`<div class="thead"><div class="tart">${t.art}</div><div><div class="tname">${t.n}</div><div class="tkind">${t.label}</div></div></div>
-    <p>${t.desc(t)}</p>
-    <div class="tatk${t.cd<=1?' imminent':''}">${atkLine(t)}</div>
-    ${rewardLine(t)}
-    <p class="tnum"><span>${p.left}</span><span>${p.note}</span></p>
-    ${!fused()&&t.age>=TUNE.enrageAfter?'<p class="warn">Enraged: it attacks every turn until cleared.</p>':''}`;
-  return el;
-}
-
-function chip(id,long,short,cls){
-  const e=$(id); e.innerHTML=`<span class="long">${long}</span><span class="short">${short}</span>`;
-  e.className='chip'+(cls?' '+cls:'');
-}
-
-function render(){
-  if(!G) return;
-  const live=!busy&&!G.over&&G.phase==='turn';
-
-  // top bar
-  chip('cWave',`Wave ${G.wave}`,`W${G.wave}`,'wave');
-  chip('cTurn',`Turn ${G.turnInWave}`,`T${G.turnInWave}`);
-  chip('cHearts',`❤ ${G.hearts} / ${TUNE.hearts}`,`❤ ${G.hearts}`,G.hearts<=2?'now':'hearts');
-  $('cHearts').hidden=!fused();
-  const remaining=G.queue.length+G.slots.filter(s=>s).length;
-  chip('cQueue',`Threats ${remaining} / ${G.waveTotal}`,`☠ ${remaining}/${G.waveTotal}`);
-  if(merge()) chip('cTier',`🔨 ${plural(G.merges,'merge')}`,`🔨 ${G.merges}`);
-  else chip('cTier',`Market tier: ${tierName(TUNE.maxTier(G.wave))}`,`Tier ${tierName(TUNE.maxTier(G.wave))}`);
-  const every=TUNE.spawnEvery(G.wave), untilSpawn=G.slots.every(s=>!s)?0:every-(G.turnInWave%every||every);
-  if(!G.queue.length) chip('cNext','No more threats this wave','⏳ —');
-  else chip('cNext', untilSpawn===0?'Next threat at end of this turn':`Next threat in ${plural(untilSpawn,'turn')}`,
-                     `⏳ ${untilSpawn===0?'now':untilSpawn}`, untilSpawn===0?'now':untilSpawn===1?'soon':'');
-
-  // jokers
-  const J=$('jokers'); J.innerHTML='<span class="jlabel">CHARMS</span>';
-  for(let i=0;i<TUNE.jokerSlots;i++){
-    const j=G.jokers[i], el=document.createElement('button');
-    if(!j){ el.className='joker empty'; el.disabled=true; el.setAttribute('aria-label','Empty charm slot'); J.appendChild(el); continue; }
-    const d=JOKERS[j.key], st=jokerStatus(j);
-    el.className='joker '+d.r;
-    el.setAttribute('aria-label',`${d.n}: ${jtx(j.key)}`);
-    el.innerHTML=`<span class="ja">${d.art}</span><span class="jname">${d.n}</span>${st?`<span class="js">${st}</span>`:''}
-      <span class="jtip"><b>${d.n}</b> · <i>${d.r}</i><br>${jtx(j.key)}</span>`;
-    el.onclick=()=>openInspect(jokerCardEl(j.key,st),'');
-    J.appendChild(el);
-  }
-
-  // market
-  const m=$('market'); m.innerHTML=''; let affordable=0;
-  G.market.forEach((c,i)=>{
-    const slot=document.createElement('div'); slot.className='slot'+(i<2?' leaving':'');
-    if(c){
-      const el=cardEl(c), price=costOf(c);
-      const afford=G.buys>0&&G.coin>=price&&live; if(afford) affordable++;
-      el.classList.toggle('buyable',afford); el.classList.toggle('dead',!afford);
-      bindCard(el,c,afford?()=>buyCard(i):null,`Buy for ${price}`);
-      slot.appendChild(el);
-      // A Patron's upgrades: the card pops, the tag counts the levels it gained.
-      const up=UI.ups.get(c);
-      if(up){ el.classList.add('upgraded'); el.style.setProperty('--pop',Math.min(1.35,1.12+.06*up));
-        const tag=document.createElement('div'); tag.className='up-tag'; tag.textContent=`▲ +${up}`; slot.appendChild(tag); }
-      if(i<2){ const tag=document.createElement('div'); tag.className='leaving-tag'; tag.textContent='leaves'; slot.appendChild(tag); }
-    }
-    m.appendChild(slot);
-  });
-  UI.ups.clear();
-  $('tabBadge').textContent=affordable?affordable:'';
-  $('tabThreats').classList.toggle('on',UI.tab==='threats');
-  $('tabMarket').classList.toggle('on',UI.tab==='market');
-
-  // threats
-  const T=$('threats'); T.innerHTML='';
-  G.slots.forEach((t,i)=>{
-    const box=document.createElement('div');
-    if(!t){ box.className='tslot empty'; box.textContent=`Slot ${i+1} — clear`; T.appendChild(box); return; }
-    const p=threatProgress(t), ready=threatReady(t)&&live;
-    box.className='tslot'+(ready?' ready':'')+(t.fresh?' new':'')+(t.elite?' elite':'')+(UI.hits.has(t.id)?' hit':'');
-    box.innerHTML=`
-      <button class="thead" title="Read this threat"><span class="tart">${t.art}</span>
-        <span class="tnames"><span class="tname">${t.n}</span><span class="tkind">${t.label}</span></span><span class="ti">ⓘ</span></button>
-      <div class="tdesc">${t.desc(t)}</div>
-      <div class="tatk${t.cd<=1?' imminent':''}">${atkLine(t)}</div>
-      ${rewardLine(t)}
-      <div class="tnum"><span>${p.left}</span><span class="dim">${p.note}</span></div>
-      <div class="tbar"><div class="tfill ${t.bar}" style="width:${Math.round(clamp(p.pct,0,1)*100)}%"></div></div>`;
-    box.querySelector('.thead').onclick=()=>openInspect(threatInfoEl(t),'',[[threatButton(t),()=>clickThreat(t),'go',!(threatReady(t)&&live)]]);
-    const pips=[];
-    if(t.elite) pips.push('<span class="pip elite">ELITE</span>');
-    if(!fused()&&t.age>=TUNE.enrageAfter) pips.push('<span class="pip">ENRAGED</span>');
-    if(pips.length){ const d=document.createElement('div'); d.className='pips'; d.innerHTML=pips.join(''); box.appendChild(d); }
-    const b=document.createElement('button');
-    b.className='tbtn2'+(t.kind==='panic'?' blood':ready?' go':'');
-    b.textContent=threatButton(t); b.disabled=!ready;
-    b.onclick=()=>clickThreat(t);
-    box.appendChild(b);
-    T.appendChild(box);
-  });
-
-  UI.hits.clear();
-
-  // resources
-  const r=(id,v,label,icon)=>{const e=$(id); e.innerHTML=`${icon}<span class="lbl"> ${label}</span> <b>${v}</b>`; e.classList.toggle('spent',v<=0);};
-  r('rAct',G.actions,merge()?'Energy':'Actions','⚡'); r('rBuy',G.buys,'Buys','🛒');
-  $('rCoin').innerHTML=`🪙<span class="lbl"> Coin</span> <b>${G.coin}</b>`;
-  if(G.coin>UI.lastCoin){ floatText($('rCoin'),`+${G.coin-UI.lastCoin}`,'coin'); pulseClass($('rCoin'),'bump',300); }
-  UI.lastCoin=G.coin;
-  $('pDeck').innerHTML=`<span class="long">Draw </span><span class="short">📚 </span>${G.deck.length}`;
-  $('pDisc').innerHTML=`<span class="long">Discard </span><span class="short">🗑 </span>${G.discard.length}`;
-  $('pTreas').disabled=!live||!G.hand.some(c=>c.t==='treasure');
-  $('btnDeck').textContent=`Deck (${deckSize()})`;
-  $('endturn').disabled=!live;
-
-  // hand — overlap cards just enough to fit the width; past a third covered, it becomes a slider
-  const h=$('hand'), hw=$('handwrap'), keep=hw.scrollLeft; h.innerHTML='';
-  G.hand.forEach(c=>{
-    const el=cardEl(c,{hand:true}), ok=canPlay(c)&&live;
-    el.classList.toggle('playable',ok); el.classList.toggle('dead',!ok);
-    bindCard(el,c,ok?()=>playCard(c):null,'Play');
-    h.appendChild(el);
-  });
-  let slide=false;
-  if(h.children.length){
-    const cw=h.children[0].offsetWidth, n=h.children.length;
-    const avail=hw.clientWidth-12;
-    slide=(cw-avail/n)/cw>.35;
-    const m=slide?-cw*.04:Math.min(-cw*.12,(avail/n-cw)/2);
-    for(const el of h.children) el.style.margin=`0 ${m}px`;
-  }
-  hw.classList.toggle('slide',slide);
-  hw.scrollLeft=slide?keep:0;
-  scheduleSave();
-}
-
-/* ==========================================================
-   MENU / SETTINGS
-   ========================================================== */
-function openMenu(){ syncSettings(); $('menu').classList.add('on'); $('mClose').focus(); }
-function closeMenu(){ $('menu').classList.remove('on'); }
-function toggleLedger(force){
-  const s=$('side'), on=force??!s.classList.contains('open');
-  s.classList.toggle('open',on);
-  if(on){ const l=$('log'); l.scrollTop=l.scrollHeight; }
-}
-async function confirmNewRun(){
-  closeMenu();
-  if(busy) return;
-  if(G&&!G.over&&G.turn>1){
-    busy=true; render();
-    const k=await chooseOption('Abandon this run?',`You are on wave ${G.wave}. Your deck and jokers will be lost.`,
-      [['n','Keep playing'],['y','Start a new run']]);
-    busy=false;
-    if(k!=='y'){ render(); return; }
-  }
-  newRun();
-}
-function setTab(tab){ UI.tab=tab; document.body.classList.toggle('tab-market',UI.layout==='short'&&tab==='market'); render(); }
-
-/* ---------- wiring ---------- */
-$('endturn').onclick=endTurn;
-$('pTreas').onclick=playAllTreasures;
-$('btnDeck').onclick=()=>viewPile('Your whole deck',allCards());
-$('btnTrash').onclick=()=>viewPile('Trash',G.trash);
-$('btnNew').onclick=confirmNewRun;
-$('btnLedger').onclick=()=>toggleLedger();
-$('sideClose').onclick=()=>toggleLedger(false);
-$('logSave').onclick=saveLog;
-$('overSave').onclick=saveLog;
-$('btnMenu').onclick=openMenu;
-$('pDeck').onclick=()=>viewPile('Draw pile (sorted)',G.deck);
-$('pDisc').onclick=()=>viewPile('Discard pile',G.discard);
-$('tabThreats').onclick=()=>setTab('threats');
-$('tabMarket').onclick=()=>setTab('market');
-$('overBtn').onclick=()=>newRun(G.mode);
-// A saved run waits on the title screen: Continue resumes it; starting a new run replaces it, after asking.
-async function startMode(mode){
-  $('title').classList.remove('on');
-  if(readSave()){
-    const k=await chooseOption('Start a new run?',`Your saved run (${saveSummary()}) will be lost.`,[['y','Start a new run'],['n','Back']]);
-    if(k!=='y'){ $('title').classList.add('on'); return; }
-  }
-  SAVE.armed=true; newRun(mode);
-}
-async function continueRun(){
-  if(!loadGame()){ refreshTitle(); return; }
-  $('title').classList.remove('on'); SAVE.armed=true; render();
-  if(G.camp){ busy=true; try{ await campFlow(); } finally{ busy=false; render(); } }   // saved between waves
-}
-function refreshTitle(){ const s=saveSummary(); $('tContinue').hidden=!s; $('tContinue').textContent=s?`Continue · ${s}`:''; }
-$('tContinue').onclick=continueRun;
-$('tPlay').onclick=()=>startMode('merge');
-// Classic is a frozen copy of the game from 22 October 2026, in classic/.
-$('tClassic').onclick=()=>{ location.href='classic/index.html'; };
-$('tHow').onclick=()=>$('howto').classList.add('on');
-$('hClose').onclick=()=>$('howto').classList.remove('on');
-$('mHow').onclick=()=>{ closeMenu(); $('howto').classList.add('on'); };
-
-$('menu').onclick=e=>{ if(e.target.id==='menu') closeMenu(); };
-$('mClose').onclick=closeMenu;
-$('sRange').oninput=e=>setUserScale(+e.target.value/100);
-$('sDown').onclick=()=>setUserScale(UI.user-.1);
-$('sUp').onclick=()=>setUserScale(UI.user+.1);
-$('sAuto').onclick=()=>setUserScale(1);
-$('sTap').onchange=e=>{ UI.tapInspect=e.target.checked; savePrefs(); };
-$('mDeck').onclick=()=>{ closeMenu(); viewPile('Your whole deck',allCards()); };
-$('mTrash').onclick=()=>{ closeMenu(); viewPile('Trash',G.trash); };
-$('mLedger').onclick=()=>{ closeMenu(); if(!UI.side) toggleLedger(true); };
-$('mSave').onclick=()=>{ closeMenu(); saveLog(); };
-$('mNew').onclick=confirmNewRun;
-$('inspect').onclick=e=>{ if(e.target.id==='inspect') closeInspect(); };
-
-document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){ closeInspect(); closeMenu(); toggleLedger(false); $('howto').classList.remove('on'); return; }
-  if($('title').classList.contains('on')||$('howto').classList.contains('on')) return;
-  if($('veil').classList.contains('on')||$('inspect').classList.contains('on')||$('menu').classList.contains('on')||busy) return;
-  if(e.target.tagName==='INPUT') return;
-  if(e.key==='e') endTurn();
-  if(e.key==='t') playAllTreasures();
-  if(e.key==='+'||e.key==='=') setUserScale(UI.user+.1);
-  if(e.key==='-') setUserScale(UI.user-.1);
-});
-
-let rq=0;
-const relayout=()=>{ cancelAnimationFrame(rq); rq=requestAnimationFrame(()=>{ applyLayout(); render(); }); };
-addEventListener('resize',relayout);
-addEventListener('orientationchange',relayout);
-if(window.visualViewport) visualViewport.addEventListener('resize',relayout);
-if(mqCoarse.addEventListener) mqCoarse.addEventListener('change',relayout);
-
-loadPrefs();
-applyLayout();
-newRun();
-refreshTitle();
-{ const b=loadBest(); $('tBest').textContent=b?`Best run: ${plural(b,'wave')} cleared`:'No runs yet — good luck, steward!'; }
+boot();

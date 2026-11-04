@@ -1,59 +1,42 @@
 "use strict";
 /* ==========================================================
-   Coinkeep — automatic saving, in localStorage.
-   The run is saved whenever the game is waiting for you (and
-   at the two stops between waves), so closing the page loses
-   nothing. Randomness is seeded and its state saved with the
-   run, so reloading replays exactly what would have happened:
-   there is nothing to reroll. When the town falls the save is
-   deleted.
+   Coinkeep: Forays. Saving, in localStorage. The profile and
+   any trip in progress are saved after every action. Losing
+   never deletes anything. Numbers are checked on the way out
+   and on the way in: JSON turns Infinity and NaN into null.
    ========================================================== */
-const SAVE_KEY = slotKey('coinkeep.save');         // each published version has its own (game.js, SLOT)
-const SAVE_VERSION = 1;
-const SAVE = { armed:false, timer:0 };        // armed once a run is started or continued from the title screen
+const SAVE_KEY = slotKey('coinkeep.forays');
+const SAVE_VERSION = 2;
+const SAVE = {timer:0};
 
-function saveNow(){
-  if(!SAVE.armed||!G||G.over) return;
+function cleanNums(o){
+  if(Array.isArray(o)){ o.forEach((v,i)=>{ if(v&&typeof v==='object') cleanNums(v); else if(typeof v==='number'&&!Number.isFinite(v)) o[i]=v>0?1e300:0; }); return o; }
+  for(const k in o){ const v=o[k]; if(v&&typeof v==='object') cleanNums(v); else if(typeof v==='number'&&!Number.isFinite(v)) o[k]=v>0?1e300:0; }
+  return o;
+}
+function saveNow(P,T){
   clearTimeout(SAVE.timer); SAVE.timer=0;
-  try{ localStorage.setItem(SAVE_KEY,JSON.stringify({v:SAVE_VERSION,G,ledger:LEDGER,uid,tid})); }catch(e){}
+  try{ const t=T?Object.assign({},T,{ev:[]}):null; localStorage.setItem(SAVE_KEY,JSON.stringify(cleanNums({v:SAVE_VERSION,P,T:t}))); }catch(e){}
 }
-// Called after every render: saves a moment later, once the game is idle.
-function scheduleSave(){
-  if(!SAVE.armed||!G||G.over||busy||G.phase!=='turn') return;
-  clearTimeout(SAVE.timer); SAVE.timer=setTimeout(()=>{ if(!busy&&G.phase==='turn') saveNow(); },400);
-}
-function deleteSave(){ clearTimeout(SAVE.timer); SAVE.timer=0; try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
+function scheduleSave(P,T){ clearTimeout(SAVE.timer); SAVE.timer=setTimeout(()=>saveNow(P,T),250); }
+function wipeSave(){ clearTimeout(SAVE.timer); SAVE.timer=0; try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
 
-function readSave(){
+// A profile needs these to be whole. Anything else broken falls back to its starting value.
+function saneProfile(p){
+  const fresh=newProfile(p&&p.seed||Date.now()&0xffffff);
+  if(!p||typeof p!=='object') return fresh;
+  for(const k in fresh) if(p[k]==null||typeof p[k]!==typeof fresh[k]) p[k]=fresh[k];
+  for(const k of ['coin','crests','deepest','beaten','trips','defeats']) if(!Number.isFinite(p[k])||p[k]<0) p[k]=0;
+  for(const k in TRACKS) if(!Number.isFinite(p.lv[k])||p.lv[k]<0) p.lv[k]=0;
+  p.layout=p.layout.filter(k=>k==null||(BASTIONS[k]&&p.bases[k])); fixLayout(p);
+  return p;
+}
+function loadSave(){
   try{ const s=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');
-    return s&&s.v===SAVE_VERSION&&s.G&&!s.G.over ? s : null; }catch(e){ return null; }
+    if(!s||s.v!==SAVE_VERSION) return null;
+    const P=saneProfile(s.P); let T=s.T;
+    if(T&&!(T.enemy&&Array.isArray(T.board)&&Array.isArray(T.hand)&&Number.isFinite(T.hp)&&Number.isFinite(T.enemy.hp))) T=null;
+    if(T) T.ev=[];
+    return {P,T};
+  }catch(e){ return null; }
 }
-// What the title screen says about a saved run, or null.
-function saveSummary(){
-  const s=readSave(); if(!s) return null;
-  const mode={merge:'',splice:'Splice · ',classic:'Classic · '}[s.G.mode]||'';
-  return `${mode}Wave ${s.G.wave}, turn ${s.G.turnInWave}${s.G.hearts!=null&&s.G.mode!=='classic'?` · ❤ ${s.G.hearts}`:''}`;
-}
-
-// Put a saved run back. Functions don't survive JSON: threats get their descriptions back from THREATS,
-// and merge mode's fused cards get their card definitions rebuilt from their keys.
-function loadGame(){
-  const s=readSave(); if(!s) return false;
-  try{
-    const g=s.G;
-    for(const t of [...g.slots,...g.queue]) if(t) t.desc=THREATS[t.key].desc;
-    const cards=[...g.deck,...g.hand,...g.discard,...g.inPlay,...g.trash,...g.market.filter(Boolean)];
-    for(const c of cards) if(!DB[c.key]&&typeof ensureFusion==='function') ensureFusion(c.key);
-    if(cards.some(c=>!DB[c.key])) throw new Error('unknown card');
-    g.acting=0;
-    G=g; uid=s.uid; tid=s.tid; busy=false;
-    LEDGER.length=0; LEDGER.push(...s.ledger);
-    const l=$('log'); l.innerHTML='';
-    for(const [m,cls] of LEDGER.slice(-200)){ const d=document.createElement('div'); if(cls) d.className=cls; d.textContent=m; l.appendChild(d); }
-    l.scrollTop=l.scrollHeight;
-    return true;
-  }catch(e){ deleteSave(); return false; }
-}
-
-addEventListener('pagehide',()=>{ if(G&&!busy&&G.phase==='turn') saveNow(); });
-document.addEventListener('visibilitychange',()=>{ if(document.hidden&&G&&!busy&&G.phase==='turn') saveNow(); });
