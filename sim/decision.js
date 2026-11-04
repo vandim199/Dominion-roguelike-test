@@ -62,7 +62,7 @@ if(PART==='all'||PART==='layout'){
   res.sort((a,b)=>b.mean-a.mean);
   console.log('Top 3 orders by mean win %:'); for(const r of res.slice(0,3)) console.log(`- ${r.p.join(' > ')}: ${(r.mean*100).toFixed(0)}%`);
   console.log(`- Worst, ${res[res.length-1].p.join(' > ')}: ${(res[res.length-1].mean*100).toFixed(0)}%\n\nBest order per enemy:`);
-  const bestCount={}; for(const e of EK){ const m=Math.max(...res.map(r=>r.per[e])); const bs=res.filter(r=>r.per[e]===m); bestCount[bs[0].p.join('>')]=(bestCount[bs[0].p.join('>')]||0)+1; console.log(`- ${e}: ${bs[0].p.join(' > ')} ${(m*100).toFixed(0)}%; top overall order gets ${(res[0].per[e]*100).toFixed(0)}%`); }
+  const bestCount={}; for(const e of EK){ const m=Math.max(...res.map(r=>r.per[e])); const bs=res.filter(r=>r.per[e]===m); bestCount[bs[0].p.join('>')]=(bestCount[bs[0].p.join('>')]||0)+1; const shown=v=>Math.max(0,Math.ceil(v*SEEDS-1e-9))/SEEDS; console.log(`- ${e}: ${bs[0].p.join(' > ')} ${(shown(m)*100).toFixed(0)}%; top overall order gets ${(shown(res[0].per[e])*100).toFixed(0)}%`); }
   const mx=Math.max(...Object.values(bestCount)); console.log(`\nDistinct best orders across ${EK.length} enemies: ${Object.keys(bestCount).length}. Most often best: ${mx}/${EK.length} (${(mx/EK.length*100).toFixed(0)}%). Spread between best and worst overall: ${((res[0].mean-res[res.length-1].mean)*100).toFixed(0)} points.`);
 }
 if(PART==='all'||PART==='builds'){

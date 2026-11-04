@@ -84,7 +84,9 @@ h1,h2,h3{font-family:var(--head);font-weight:600;margin:0}
 #kGo{flex:0 0 auto}
 
 /* fight */
-#fight{gap:.3rem}
+#fight{gap:.3rem;overflow-y:auto}
+#fight>*{flex-shrink:0}
+#fight>.hand{flex:1 0 auto}
 .fbar{display:flex;gap:.3rem;align-items:center}
 .fbar .ghost{min-height:2rem;padding:.2rem .6rem}
 .coach{background:var(--violet);color:#160a33;border-radius:.6rem;padding:.3rem .6rem;font-size:.82rem}
@@ -143,7 +145,7 @@ h1,h2,h3{font-family:var(--head);font-weight:600;margin:0}
 .pips i.on{opacity:1}
 .ystat{font-size:.78rem}
 .piles{font-size:.68rem;color:var(--dim);white-space:nowrap}
-.hand{flex:1;display:flex;gap:.25rem;min-height:0;align-items:stretch;overflow-x:auto;padding:.1rem 0}
+.hand{flex:1;display:flex;gap:.25rem;min-height:9.5rem;align-items:stretch;overflow-x:auto;padding:.1rem 0}
 .card{flex:1 1 0;min-width:4.05rem;max-width:8.5rem;background:var(--card);color:var(--card-ink);border-radius:.65rem;padding:.2rem .22rem .25rem;display:flex;flex-direction:column;position:relative;gap:.12rem;box-shadow:0 .15rem 0 #b9ad92;max-height:15rem}
 .card.isb{background:#DDF6F0}
 .card.stuck{background:#E4DDD0}

@@ -1,52 +1,37 @@
-# Coinkeep
+# Coinkeep: Forays
 
-A pocket roguelike deckbuilder. You're the steward of a little hilltop town, and trouble arrives in endless waves: tax collectors, ogres, pirates, blizzards, ghosts. Build one deck for the whole run and use it to pay off, outlast or blow up every threat. Between waves you pick charms that bend the rules and visit the Inn to upgrade, copy or trash cards.
+A vanilla-JS deckbuilder and incremental game for browser and phone. This is the `wild/forays-claude` branch, one take on reworking Coinkeep. Your hand makes Powder, your board of Bastions burns it left to right, and each trip out ends when the road gets too strong. Then you go home, spend, and come back with more zeroes.
 
-## Playing
+## Run it
 
-Open `index.html` in a browser, or serve the folder (e.g. GitHub Pages, or `python -m http.server`). No build step. It can be added to a phone's home screen (web app manifest included).
+Open `index.html` through any static server, such as `python -m http.server`. There is no build step. It can also be added to a phone's home screen. The older frozen game is in `classic/`, linked from the title screen.
 
-Works on desktop, tablets and phones in either orientation. Use **⚙ Settings** to change the UI size (or `+` / `−` on a keyboard). On touch screens, tap a card to read it before playing or buying it, and press and hold a card in a picker to read it.
+## How it plays
 
-**Saving is automatic.** The run is saved in the browser (localStorage) whenever the game is waiting for you, and between waves before the charm draft and the Inn. **Continue** on the title screen picks it up, log included. Randomness is seeded and saved with the run, so reloading can't reroll a draw, a shuffle or an offer. The save is deleted when the town falls. Starting a new run while one is saved asks first. The Classic version keeps its own save.
+- **Turn:** 3 energy and 5 cards. Powder cards feed the board. A full Bastion fires once a turn and starts filling again. Part-fills carry over.
+- **Enemies** show their next two actions. Attacks hit the leftmost Bastion unless they say otherwise. Damage carries on down the line and then to you. A fallen Bastion goes to your discard pile.
+- **One swap a turn is free.** It changes who gets fed first and who gets hit first.
+- **Stuck cards** (Deeds, Wards, Rubble) stay in hand until you pay 1 energy to file them.
+- **Going home:** after any win you can leave with all your coin. If you are beaten you keep 70%. Upgrades are never lost.
+- **At home:** three upgrade tracks every card reads from, Deeds that open slots and raise all payouts, a shop that scales with your depth, and Crests from bosses that buy rule changes.
 
-**📜 Log → ⬇ Save** (also in Settings and on the game-over screen) downloads the whole run's log as a text file, not just the last 200 lines on screen.
-
-## Modes
-
-**Play** is merge mode. Cards are played with ⚡ Energy (1 a turn; each card's play cost is in its blue pip). Your Anvil merges a pair of identical cards from anywhere in your deck (discard pile and cards already played this turn first, then draw pile, then hand) into one a level higher, which goes to your discard pile. A card's play cost never changes as it levels; its effect goes up by one: Copper → Silver → Gold (+1, +2, +3 Coin), Spark +1/+2/+3 ⚡ for 0, Scout +1/+2/+3 Cards for 1 ⚡. The market sells the Anvil, but rarely (`TUNE.rareWeight`); the Twin Hammers charm lets it merge 2 pairs. Each of a Patron's upgrades picks any market card, so one card can go up several levels at once. The market stocks each card one level below the best you've merged it to (`TUNE.marketLag`), and cards that cost more ⚡ to play arrive in later waves (`TUNE.energyFrom`). The Ward stays in your hand and only works once it's in your discard pile. At the Inn between waves, **Merge** combines two different cards into one that does both and costs their average ⚡, rounded up (a fusion is a card of its own, so two copies of one can be merged by the Anvil, raising every part a level). Every Inn service has a Back button. In your hand a card shows only its ⚡ cost; the market and the close-up view show its price too. Threats have fuses: one that runs out detonates, attacks and costs a heart. Clearing one offers a free level-one card. The cards are `mdef`s in `js/data.js`; merge mode's threat curves are `TUNE.merge`.
-
-**Classic mode** opens `classic/`, a frozen copy of the game as it was on 22 October 2026 (commit 1e687d5), before Energy and merging. Its own title screen offers that version's Play (splice mode) and Classic. It keeps its own best-run record and has a link back. Changes to `js/` don't touch it. The current code still has classic and splice mode too (the simulator's `--mode classic` / `--mode splice`), but they are no longer on the title screen.
-
-## Published versions
-
-GitHub Pages is built by `.github/workflows/pages.yml` (Settings → Pages → Source must be **GitHub Actions**). It publishes `main` at the site's root and every `wild/*` branch under `v/<branch>/` (`wild/mult` → `v/wild-mult/`), and writes `versions.json`, which the title screen's **Versions** row (`js/versions.js`) lists, so every version is a tap away. A push to `main` or to any `wild/*` branch rebuilds the whole site; a new `wild/*` branch appears on its own. Each version keeps its own save and best run (`SLOT` in `js/game.js`). Opened as a local file, the Versions row stays hidden.
-
-## Simulator
-
-`sim/` plays the game headless with bots, so balance changes can be measured instead of guessed. It needs Node.js and loads `js/data.js` and `js/game.js` exactly as they are, so edit the game and rerun:
-
-```
-node sim/sim.js                          # all bots, 100 runs each, merge mode
-node sim/sim.js --bot engine --runs 500  # one bot, more runs
-node sim/sim.js --mode classic           # or splice
-node sim/sim.js --bot money --log run.txt --json runs.json
-```
-
-Bots: **engine** (Sparks, Scouts and the other Actions, kept within its ⚡ budget; villages and draw in classic), **money** (mostly Coins, merged; Big Money in classic) and **random** (a floor any strategy should beat). Both heuristic bots merge every pair an Anvil lets them. Runs are seeded: the same `--seed` plays the same game. A run ends when the town falls, after `--waves` waves (30), after `--turns` turns (2000, "stalled") or when the deck passes `--deckcap` cards (400, "runaway deck").
-
-The report shows, per bot: waves cleared; how runs end and which threat ended them; per wave, the coin, spare Actions, cards seen and how often a turn drew the whole deck, next to what the wave's coin threats and the market ask (as turns of income); each threat's clear and detonation rate; and for every card, charm and splice, how often it was taken and how those runs did.
+Progress saves automatically, per published version, and survives a reload, including mid-fight.
 
 ## Files
 
-- `index.html` — page structure, title screen, how-to-play
-- `css/style.css` — styles; all sizes in `rem`, so the UI scale is the root font-size
-- `js/data.js` — tuning, cards, charms and threats
-- `js/game.js` — rules: waves, turns, threats, attacks, the Inn
-- `js/ui.js` — rendering, modals, inspector, effects, layout and scaling, settings
-- `js/save.js` — automatic saving and loading
-- `js/versions.js` — the title screen's version switcher on the published site
-- `manifest.webmanifest`, `icon.svg` — install-to-home-screen metadata
-- `classic/` — the 22 October 2026 version, frozen, behind the Classic mode button
-- `sim/sim.js` — the simulator: options, sandbox, report
-- `sim/bots.js` — runs inside the sandbox: stand-ins for `ui.js`, the bots, the recording
+- `js/data.js`: content and all tuning numbers (`TUNE`), plus the number formatter
+- `js/game.js`: the rules, with no DOM. The browser and the simulator share it
+- `js/ui.js`, `js/save.js`, `css/style.css`, `index.html`: the screens and saving
+- `js/versions.js`: the version switcher on the title screen
+- `sim/decision.js`: fight test (bots, layouts, builds, feed timing, swaps)
+- `sim/loop.js`, `sim/results.js`: whole-loop bot and the pacing tables
+- `docs/TAKE.md`: design and decision log. `docs/RESULTS.md`: measurements
+
+## Simulate
+
+```
+node sim/decision.js --seeds 24
+node sim/results.js --seeds 8
+node sim/loop.js --seeds 1 --trace --to 1e12
+TUNE='{"cLv":2.2}' node sim/loop.js --seeds 3     # try a number without editing data.js
+```
