@@ -1,6 +1,6 @@
 "use strict";
 /* ==========================================================
-   Coinkeep: Forays. Static data, tuning and small helpers.
+   Coinkeep: Forays (tap the deck). Static data, tuning and small helpers.
    Runs in the browser and, through sim/load.js, in Node.
    ========================================================== */
 
@@ -16,77 +16,90 @@ function fmt(n){ n=+n||0; const a=Math.abs(n), s=n<0?'-':'';
   if(a>=1e15) return s+a.toExponential(1).replace('e+','e');
   for(const [d,u] of [[1e3,'K'],[1e6,'M'],[1e9,'B'],[1e12,'T']]){ const x=a/d; if(x<999.95) return s+(x<100?x.toFixed(1):Math.round(x))+u; }
   return s+a.toExponential(1).replace('e+','e'); }
-// Seeded randomness: the state is a plain number, so it saves and clones with the fight.
+// Seeded randomness: the state is a plain number, so it saves and clones with the trip.
 function rng32(o,k){ o[k]=(o[k]+0x6D2B79F5)|0; let t=o[k]; t=Math.imul(t^(t>>>15),t|1); t^=t+Math.imul(t^(t>>>7),t|61); return ((t^(t>>>14))>>>0)/4294967296; }
 function hash01(a,b){ const o={s:(Math.imul(a|0,2654435761)^Math.imul(b|0,40503))|0}; rng32(o,'s'); return rng32(o,'s'); }
 
 const TUNE = {
-  hp0:20, hpG:1.30,  atk0:17, atkG:1.19,  coin0:70, coinG:1.255,   // enemy per fight
+  hp0:60, hpG:1.34,  atk0:17, atkG:1.19,  coin0:70, coinG:1.255,   // enemy per fight
   bossEvery:12, bossHp:2.6, bossCoin:4, caravanEvery:7, caravanPrice:2,
   valG:1.40, mileX:3, mileEvery:10, defG:1.42,                   // value of a card or bastion per level
-  cost0:3, pieceCostX:2.5, costG:1.72, hearthCost:10, hearthG:1.60, baseHp:60,
-  wheelCost:30, wheelG:5, magCost:60, magG:5, ledgerCost:300, ledgerG:60, ledgerX:1.25,
-  marchR:8, marchMachine:1, marchCoin:.1, defeatKeep:.7, enrageAfter:6, enrageX:1.4, healAfter:.2, repairAfter:.25,
-  magBase:2, swapCost:1, handBase:5, energyBase:3, deckMin:8, deckMax:12, finalFight:118,
-  sockAt:[5,20,40],
-  feed:'stoke',      // 'stoke' any card burns for Powder; 'powdercards' only Powder cards feed; 'wheel' only the wheel feeds
-  junk:'deed',       // 'deed' a Title Deed in the pack opens each slot past two; 'none' slots are free; 'hold' deeds also boost while held
+  cost0:30, pieceCostX:2.5, costG:2.0, hearthCost:100, hearthG:1.60, baseHp:60,
+  wheelCost:300, wheelG:5, autoCost:1200, autoG:6, autoStep:.5, ledgerCost:3000, ledgerG:60, ledgerX:1.25,
+  marchR:2, marchCoin:.1, defeatKeep:.7, enrageAfter:6, enrageX:1.4, healAfter:.2, repairAfter:.25,
+  deckMin:5, deckMax:15, finalFight:107, sockAt:[5,20,40],
+  startDeck:['fork','fork','fork','helm','helm','scoop','keg','errand'], startBoard:['cannon','stake'],
+  // Real time. A "turn" is one enemy swing.
+  swing:4,            // seconds between enemy swings
+  shuffle:.5,         // seconds the deck is out of reach when it reshuffles
+  hopper:12,          // Powder held while no bastion can take it
+  blightPay:.25, blightKeep:.8,   // every second: blight burns for this share, then fades to this share
+  comboCap:100, comboStep:.02, comboGrace:1.5, comboFade:.4,   // +1 per card or firing; at the cap everything pays x3; fades after a pause
+  critChance:.05, critX:5, crossX:2, runPay:true, runCap:5, bashG:1.1,
+  whetCap:729, chargeX:2, sallyCap:8, barrelG:1.35, barrelMax:30, coinCap:1,
+  powSecs:12, powTap:4,   // Power is the damage this deck does in 12 seconds at 4 taps a second, from an empty board
+  junk:'deed',        // 'deed' a Title Deed in the pack opens each slot past two; 'none' slots are free
 };
 
-/* Cards. fx entries: [kind, base]. dmg, poison scale by value; block by defence; the rest are flat.
-   stoke: Powder when burned (default 1). piece:true is a bastion: cost is energy to deploy, need is Powder to fire. */
+/* Kinds of effect that count as an attack: Whetstones and chains are spent on these, and only these. */
+const ATK = {dmg:1,sally:1,ram:1,horn:1,barrel:1,bash:1,plague:1,arsenal:1,poison:1};
+
+/* Cards. fx entries: [kind, base]. Every card plays for free when drawn. piece:true is a bastion: it lands on your field, and need is the Powder it takes to fire. */
 const CARDS = {
-  fork:   {name:'Pitchfork',     art:'🔱', cost:1, fx:[['dmg',6]],  text:'Deal {dmg}.'},
-  helm:   {name:'Bucket Helm',   art:'🪣', cost:1, fx:[['block',5]], text:'Gain {block} block.'},
-  scoop:  {name:'Powder Scoop',  art:'🥄', cost:1, fx:[['powder',3]], text:'+3 Powder.'},
-  keg:    {name:'Keg Toss',      art:'🛢️', cost:1, fx:[['dmg',4],['powder',1]], text:'Deal {dmg}. +1 Powder.'},
-  errand: {name:'Errand Boy',    art:'🏃', cost:1, fx:[['draw',2]], text:'Draw 2.'},
-  sally:  {name:'Sally Forth',   art:'⚔️', cost:2, fx:[['dmg',16]], text:'Deal {dmg}.'},
-  pavise: {name:'Pavise',        art:'🛡️', cost:2, fx:[['block',15]], text:'Gain {block} block.'},
-  second: {name:'Second Wind',   art:'🌬️', cost:0, stoke:0, fx:[['energy',1]], text:'+1 energy. Burns for nothing.'},
-  mend:   {name:'Masons',        art:'🧱', cost:1, fx:[['repair',.35],['block',2]], text:'Repair every bastion 35%. Gain {block} block.'},
-  whet:   {name:'Whetstone',     art:'🪨', cost:1, fx:[['whet',3]], text:'The next bastion to fire or attack card you play pays triple.'},
-  funnel: {name:'Funnel',        art:'🔻', cost:0, fx:[['aim',3]], text:'The next 3 Powder go to the rightmost bastion that can fire.'},
-  vial:   {name:'Blight Vial',   art:'🧪', cost:1, fx:[['poison',11]], text:'Apply {poison} blight. Blight halves each turn.'},
-  doll:   {name:'Hex Doll',      art:'🎎', cost:1, fx:[['hex',2]], text:'The next 2 enemy hits are halved.'},
-  tithe:  {name:'Tithe Box',     art:'📦', cost:1, fx:[['coin',.3]], text:'Gain coin: {coin} of this bounty.'},
-  rope:   {name:'Bell Rope',     art:'🔔', cost:2, fx:[['trigger',1]], text:'The leftmost bastion that can fire does, for free.'},
-  ram:    {name:'Battering Ram', art:'🪵', cost:3, fx:[['dmg',48]], text:'Deal {dmg}.'},
-  cart:   {name:'Handcart',      art:'🛒', cost:0, fx:[['rotate',1],['draw',1]], text:'Move your leftmost bastion to the far right. Draw 1.'},
-  anvil:  {name:'Field Anvil',   art:'⚒️', cost:1, fx:[['anvil',3]], text:'Your strongest other card in hand pays triple for this fight.'},
-  deed:   {name:'Title Deed',    art:'📜', cost:0, junk:true, stoke:0, fx:[], text:'Cannot be played and burns for nothing. While packed it opens one board slot past two.'},
-  ward:   {name:'Boundary Ward', art:'🪬', cost:0, junk:true, stays:true, stoke:0, fx:[], text:'Cannot be played, stays in hand. Once burned, the enemy loses 3% of max health each turn while it lies in the discard.'},
-  rubble: {name:'Rubble',        art:'🪨', cost:0, junk:true, stoke:0, temp:true, fx:[], text:'Cannot be played. Burn it to clear it, for no Powder.'},
+  fork:   {name:'Pitchfork',     art:'🔱', fx:[['dmg',6]],  text:'Deal {dmg}.'},
+  helm:   {name:'Bucket Helm',   art:'🪣', fx:[['block',5]], text:'Gain {block} block.'},
+  scoop:  {name:'Powder Scoop',  art:'🥄', fx:[['powder',3]], text:'+{powder} Powder.'},
+  keg:    {name:'Keg Toss',      art:'🛢️', fx:[['dmg',4],['powder',1]], text:'Deal {dmg}. +{powder} Powder.'},
+  errand: {name:'Errand Boy',    art:'🏃', fx:[['draw',2]], text:'Plays the next {draw} cards as well.'},
+  sally:  {name:'Sally Forth',   art:'⚔️', fx:[['sally',5]], text:'Deal {sally} for each attack in a row, this one included (up to 8).'},
+  ram:    {name:'Battering Ram', art:'🪵', fx:[['ram',5]], text:'Deal {ram} for each bastion on your field.'},
+  horn:   {name:'War Horn',      art:'📣', fx:[['horn',.3]], text:'Deal {horn} for each point of Combo.'},
+  barrel: {name:'Rolling Barrel',art:'🛞', fx:[['barrel',4]], text:'Deal {barrel}. Pays a third more each time you play it this fight.'},
+  bash:   {name:'Shield Bash',   art:'🥊', fx:[['bash',.5]], text:'Deal {bash} of your block, and keep the block.'},
+  whet:   {name:'Whetstone',     art:'🪨', fx:[['whet',3]], text:'Your next attack or firing gun pays triple. Stacks.'},
+  anvil:  {name:'Field Anvil',   art:'⚒️', fx:[['anvil',1]], text:'The next card you draw pays double for the rest of this fight.'},
+  rope:   {name:'Bell Rope',     art:'🔔', fx:[['rope',1]], text:'The bastion Powder is heading for fires now, free.'},
+  trail:  {name:'Powder Trail',  art:'🧨', fx:[['trail',1]], text:'+1 Powder into every bastion at once.'},
+  vial:   {name:'Blight Vial',   art:'🧪', fx:[['poison',11]], text:'Apply {poison} blight. Blight burns every second and fades.'},
+  plague: {name:'Plague Bell',   art:'☠️', fx:[['plague',2]], text:'Deal {plague} the enemy\'s blight, then halve the blight.'},
+  doll:   {name:'Hex Doll',      art:'🎎', fx:[['hex',2]], text:'The next 2 enemy hits are halved.'},
+  mend:   {name:'Masons',        art:'🧱', fx:[['repair',.35],['block',2]], text:'Repair every bastion 35%. Gain {block} block.'},
+  tithe:  {name:'Tithe Box',     art:'📦', fx:[['coin',.03]], text:'Gain coin: {coin} of this bounty.'},
+  drum:   {name:'War Drum',      art:'🥁', fx:[['combo',6]], text:'+{combo} Combo.'},
+  wind:   {name:'Second Wind',   art:'🌬️', fx:[['heal',.03]], text:'Heal {heal} of your health.'},
+  deed:   {name:'Title Deed',    art:'📜', junk:true, fx:[], text:'Does nothing when drawn. While packed it opens one board slot past two.'},
+  rubble: {name:'Rubble',        art:'🪨', junk:true, temp:true, fx:[], text:'Does nothing. Clogs your deck once, then it is gone.'},
   // Bastions
-  cannon: {name:'Cannon',        art:'💣', piece:true, cost:2, need:3, hp:30, fx:[['dmg',14]], text:'Deal {dmg}.'},
-  mortar: {name:'Mortar',        art:'🎯', piece:true, cost:3, need:7, hp:20, fx:[['dmg',46]], text:'Deal {dmg}.'},
-  stake:  {name:'Palisade',      art:'🪓', piece:true, cost:1, need:2, hp:40, fx:[['block',7]], text:'Gain {block} block.'},
-  gate:   {name:'Gatehouse',     art:'🏰', piece:true, cost:2, need:3, hp:90, taunt:true, fx:[['block',6],['selfrepair',.3]], text:'Takes aimed hits first. Gain {block} block and repair 30%.'},
-  apoth:  {name:'Apothecary',    art:'⚗️', piece:true, cost:2, need:3, hp:24, fx:[['poison',18]], text:'Apply {poison} blight.'},
-  hut:    {name:'Witch Hut',     art:'🛖', piece:true, cost:2, need:4, hp:24, fx:[['hex',2],['dmg',8]], text:'Next 2 enemy hits halved. Deal {dmg}.'},
-  mint:   {name:'Mint',          art:'🪙', piece:true, cost:2, need:4, hp:24, fx:[['coin',.4]], text:'Gain coin: {coin} of this bounty.'},
-  post:   {name:'Courier Post',  art:'📯', piece:true, cost:2, need:4, hp:24, fx:[['draw',2]], text:'Draw 2.'},
-  granary:{name:'Granary',       art:'🌾', piece:true, cost:2, need:5, hp:30, fx:[['energy',2]], text:'+2 energy.'},
-  bellows:{name:'Bellows',       art:'🪗', piece:true, cost:1, need:2, hp:20, fx:[['powder',3]], text:'+3 Powder, which runs on down the line.'},
+  cannon: {name:'Cannon',        art:'💣', piece:true, need:3, hp:30, fx:[['dmg',42]], text:'Deal {dmg}.'},
+  mortar: {name:'Mortar',        art:'🎯', piece:true, need:7, hp:20, fx:[['dmg',138]], text:'Deal {dmg}.'},
+  stake:  {name:'Palisade',      art:'🪓', piece:true, need:2, hp:40, fx:[['block',7]], text:'Gain {block} block.'},
+  gate:   {name:'Gatehouse',     art:'🏰', piece:true, need:3, hp:90, taunt:true, fx:[['block',6],['selfrepair',.3]], text:'Takes aimed hits first. Gain {block} block and repair 30%.'},
+  apoth:  {name:'Apothecary',    art:'⚗️', piece:true, need:3, hp:24, fx:[['poison',54]], text:'Apply {poison} blight.'},
+  hut:    {name:'Witch Hut',     art:'🛖', piece:true, need:4, hp:24, fx:[['hex',2],['dmg',24]], text:'Next 2 enemy hits halved. Deal {dmg}.'},
+  mint:   {name:'Mint',          art:'🪙', piece:true, need:4, hp:24, fx:[['coin',.04]], text:'Gain coin: {coin} of this bounty.'},
+  post:   {name:'Courier Post',  art:'📯', piece:true, need:4, hp:24, fx:[['draw',2]], text:'Plays the next {draw} cards from your deck.'},
+  tower:  {name:'Drum Tower',    art:'🗼', piece:true, need:3, hp:30, fx:[['combo',8]], text:'+{combo} Combo.'},
+  bellows:{name:'Bellows',       art:'🪗', piece:true, need:2, hp:20, fx:[['double',1]], text:'The next gun to fire or attack card you draw pays double.'},
+  forge:  {name:'Forge',         art:'🏭', piece:true, need:5, hp:30, fx:[['forge',.25]], text:'Your attack cards pay {forge} more for this fight. Stacks.'},
+  arsenal:{name:'Arsenal',       art:'🗡️', piece:true, need:3, hp:24, fx:[['arsenal',.75]], text:'Repeats your last attack card at {arsenal} of its hit.'},
 };
-const SHOP_POOL = ['sally','pavise','second','mend','whet','funnel','vial','doll','tithe','rope','ram','cart','anvil','keg','errand','mortar','gate','apoth','hut','mint','post','granary','bellows'];
+const SHOP_POOL = ['fork','scoop','sally','ram','horn','barrel','bash','whet','anvil','rope','trail','vial','plague','doll','mend','tithe','drum','wind','keg','errand','mortar','gate','apoth','hut','mint','post','tower','bellows','forge','arsenal'];
 
 // Sockets: three on every card, opened at levels 5, 20 and 40. Free to change at home. No perk twice on one card.
 const PERKS = {
   keen:   {name:'Keen',   for:'both',  text:'Pays triple.'},
-  light:  {name:'Light',  for:'both',  text:'Card: costs 1 less energy. Bastion: needs 1 less Powder.'},
-  fuel:   {name:'Fuel',   for:'card',  text:'Burns for 2 more Powder.'},
-  echo:   {name:'Echo',   for:'card',  text:'Its effect happens twice.'},
-  swift:  {name:'Swift',  for:'card',  text:'Draw a card when played.'},
-  flurry: {name:'Flurry', for:'card',  text:'Pays times the number of cards played this turn, itself included.'},
+  echo:   {name:'Echo',   for:'both',  text:'Its effect happens twice.'},
+  light:  {name:'Light',  for:'piece', text:'Needs 1 less Powder.'},
+  fuel:   {name:'Fuel',   for:'card',  text:'+2 Powder when drawn.'},
+  swift:  {name:'Swift',  for:'card',  text:'Also plays the next card.'},
+  flurry: {name:'Flurry', for:'card',  text:'Pays more the higher your Combo: up to ×3 at 100.'},
   bulwark:{name:'Bulwark',for:'piece', text:'Eight times the health.'},
-  twin:   {name:'Twin',   for:'piece', text:'Can fire twice a turn.'},
-  relay:  {name:'Relay',  for:'piece', text:'Passes 1 Powder on when it fires.'},
-  primed: {name:'Primed', for:'piece', text:'Starts every fight one Powder short of firing.'},
-  charge: {name:'Charge', for:'piece', text:'The next bastion to fire or attack card you play this turn pays triple. Chains multiply.'},
+  relay:  {name:'Relay',  for:'piece', text:'+1 Powder when it fires.'},
+  primed: {name:'Primed', for:'piece', text:'Fires the moment it lands.'},
+  charge: {name:'Charge', for:'piece', text:'The next gun to fire or attack card pays double. Chains multiply, until the Powder loops round.'},
 };
 
-/* Enemies. intent(turn) gives a list of actions: {hit:mult,at:'left'|'right'|'you'|'all'}, {drain:1}, {seal:1}, {rubble:n}. */
+/* Enemies. intent(n) gives what swing n does: {hit:mult,at:'left'|'right'|'you'|'all'}, {drain:1}, {seal:1}, {rubble:n}. */
 const ENEMIES = {
   rat:   {name:'Packrat',       art:'🐀', hp:.9, min:0, intent:t=>[{hit:1,at:'left'}]},
   raider:{name:'Hedge Raider',  art:'🗡️', hp:1,  min:0, intent:t=>[{hit:.6,at:'left'},{hit:.6,at:'left'}]},
@@ -100,6 +113,8 @@ const ENEMIES = {
   toller:{name:'The Toll Collector', art:'🧛', boss:true, hp:1, intent:t=>[{seal:1},{hit:1.3,at:'left'}]},
   bishop:{name:'The Iron Bishop',    art:'🗿', boss:true, hp:1, intent:t=>t%3?[{hit:.7,at:'all'}]:[{hit:2.4,at:'you'}]},
   king:  {name:'The Hollow King',    art:'👑', boss:true, hp:1, grow:1.25, intent:t=>t%2?[{hit:1,at:'left'}]:[{drain:1},{hit:1,at:'you'}]},
+  // The target Power is measured against. It never appears in the game.
+  dummy: {name:'Dummy', art:'🎯', hp:1, min:1e9, intent:t=>[]},
 };
 const ENEMY_POOL = ['rat','raider','archer','ogre','sapper','warden','cutpurse','shaman'];
 const BOSS_ORDER = ['toller','bishop','king'];
@@ -110,11 +125,12 @@ const REWARDS = {
   slot2:  {name:'Second grant',   text:'One more board slot, and a Title Deed to hold it.', on:P=>grantSlot(P), after:'slot1'},
   slot3:  {name:'Third grant',    text:'One more board slot, and a Title Deed to hold it.', on:P=>grantSlot(P), after:'slot2'},
   slot4:  {name:'Royal charter',  text:'One more board slot, and a Title Deed to hold it.', on:P=>grantSlot(P), after:'slot3'},
-  energy1:{name:'Strong tea',     text:'+1 energy every turn.', on:P=>{P.energy++;}},
-  energy2:{name:'Stronger tea',   text:'+1 energy every turn.', on:P=>{P.energy++;}, after:'energy1'},
-  hand1:  {name:'Wide satchel',   text:'+1 card in hand every turn.', on:P=>{P.hand++;}},
-  hand2:  {name:'Wider satchel',  text:'+1 card in hand every turn.', on:P=>{P.hand++;}, after:'hand1'},
-  sluice: {name:'Sluice gate',    text:'The wheel turns 3 Powder faster, free.', on:P=>{P.wheel+=3;}},
-  magz:   {name:'Powder cellar',  text:'The Magazine holds 6 more.', on:P=>{P.mag+=6;}},
+  hot1:   {name:'Hot blood',      text:'Combo goes 50 higher: up to ×4.', on:P=>{P.comboCap+=50;}},
+  hot2:   {name:'Boiling blood',  text:'Combo goes 50 higher again: up to ×5.', on:P=>{P.comboCap+=50;}, after:'hot1'},
+  crit1:  {name:'Lucky horseshoe',text:'Every card and firing is 5% more likely to crit.', on:P=>{P.crit+=.05;}},
+  crit2:  {name:'Luckier horseshoe',text:'Every card and firing is 5% more likely to crit.', on:P=>{P.crit+=.05;}, after:'crit1'},
+  riffle: {name:'Card sharp',     text:'Reshuffling takes half as long.', on:P=>{P.shuffleX*=.5;}},
+  sluice: {name:'Sluice gate',    text:'The wheel turns 3 Powder a second faster, free.', on:P=>{P.wheel+=3;}},
+  page:   {name:'Trained page',   text:'The Page draws 1 more card a second, free.', on:P=>{P.auto+=1;}},
   socket: {name:'Master jeweller',text:'Every card opens a fourth socket at level 60.', on:P=>{P.extraSock=1;}},
 };

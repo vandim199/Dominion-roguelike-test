@@ -3,126 +3,120 @@
 Reproduce with:
 
 ```
-FN=12 LN=5 SAMPLES=16 node sim/results.js all
-node sim/results.js ko
-node sim/feedtest.js 10 deeds
-node sim/feedtest.js 10 junk
+node sim/check.js
+node sim/results.js pacing 24
+node sim/results.js skill 12
+node sim/results.js tap 12
+node sim/results.js decks
+node sim/results.js share 8
+TUNEX='{"crossX":1}' node sim/results.js rules 12
 ```
 
-Full output is in `docs/results_raw.txt`. Everything here was measured on the shipped rules unless marked. Nobody has played this game yet. All minutes assume 15 seconds per played turn, 3 s per fight's modals, 5 s per march, 10 s per caravan and 25 s per home visit, none of which is measured from a person.
+Full output is in `docs/results_raw.txt`. All of it is from bots on the shipped rules. Nobody has played this version. Fights run on the game's own clock at 4 taps a second unless marked. Time outside fights is assumed: 25 s per home visit, 5 s per march, 10 s per caravan, 1 s between fights. The careful bot also rebuilds its deck instantly and never hesitates, so a person will be slower than every figure here.
 
-**R** is estimated three-turn damage divided by enemy health. It is offence only. The game's on-screen odds and the bands in section 2 use a stricter heuristic, `oddsAt`, which also counts toughness, front-bastion fragility and bosses.
+**Power** is the damage a deck does in 12 seconds at 4 taps a second, from an empty board, against a dummy. A burst is a home visit that at least doubles Power, or a boss reward. With 12 seeds, differences of a few minutes are noise.
 
-## 1. Decision test
+## 1. Pacing
 
-12 seeds across 9 enemies per cell (108 fights). `think` samples 60 whole turns per turn on a copy of the fight, with the unseen draw reshuffled. `fixed` plays attacks first and burns the rest, and also powers the Auto button.
-
-| Build | R | Win: random / fixed / think | HP lost: random / fixed / think | Turns to kill in wins: random / fixed / think |
-|---|---|---|---|---|
-| Early (L6) | 0.7 | 17 / 89 / 95% | 85 / 19 / 17% | 7.9 / 4.7 / 4.5 |
-| | 1 | 56 / 100 / 100% | 51 / 5 / 5% | 6.1 / 3.2 / 3.1 |
-| | 1.5 | 90 / 100 / 100% | 18 / 0 / 0% | 4.8 / 2.1 / 2.2 |
-| | 3 | 100 / 100 / 100% | 1 / 0 / 0% | 3.1 / 1.1 / 1.1 |
-| Mid (L22) | 0.7 | 60 / 80 / 85% | 40 / 21 / 18% | 5.9 / 5.4 / 3.8 |
-| | 1 | 80 / 88 / 98% | 22 / 15 / 8% | 4.7 / 4.1 / 3.0 |
-| | 1.5 | 88 / 100 / 100% | 15 / 5 / 0% | 3.6 / 3.1 / 2.0 |
-| | 3 | 100 / 100 / 100% | 1 / 0 / 0% | 2.3 / 2.0 / 1.3 |
-| Late (L38) | 0.7 | 0 / 0 / 16% | 100 / 100 / 88% | none / none / 4.1 |
-| | 1 | 0 / 2 / 32% | 100 / 99 / 69% | none / 5.5 / 3.9 |
-| | 1.5 | 6 / 15 / 72% | 96 / 87 / 29% | 6.0 / 6.9 / 3.5 |
-| | 3 | 51 / 89 / 100% | 50 / 13 / 0% | 4.4 / 5.4 / 1.7 |
-
-**Pass mark: think at least 20% better than fixed in close fights.**
-- Late: pass, by a wide margin.
-- Mid: pass on damage (47% less at R=1) and speed (26% faster at R=1), but win rate is only 10 points better.
-- Early: **fail.** Fixed is about as good as think. Play-everything is close to correct for roughly the first few trips.
-
-Cards played and burned per turn: in the mid and late builds, think burns 2.4 to 3.5 a turn while fixed burns 1.2 or fewer, so the extra skill is coming from the feed.
-
-**Knock-outs at R=1 on the mid build** (fixed win / think win, HP lost by fixed / by think):
-
-| Variant | Win | HP lost |
-|---|---|---|
-| As shipped | 88 / 98% | 15 / 8% |
-| Bot may not swap | 88 / 97% | 15 / 9% |
-| Burn is flat 1, not cost + 1 | 100 / 100% | 4 / 4% |
-| Only Powder cards feed | 100 / 100% | 2 / 2% |
-| Wheel only feeds, hand never burns | 94 / 100% | 10 / 6% |
-| No Magazine | 88 / 98% | 15 / 8% |
-
-Enemy health is set from each variant's own R estimate, so read the gap inside each row and not win rates across rows.
-
-**Pass mark: no layout best more than about 60% across enemy sets** (think bot, R=1, same absolute enemy for every layout, six layouts).
-- Mid: **fail.** Palisade-first is best in 76% of pairings and for 8 of 9 enemies.
-- Late: pass, narrowly. Hex chain 52%, Gatehouse chain 28%, Bellows chain 13%. The best layout varies across enemies (Hex, Gatehouse, big guns first).
-
-A separate test of builds, as opposed to layouts, was not run. The closest evidence is the whole-loop spread in hand share below.
-
-**Junk.** Same absolute enemy, mid build (90 fights a row; differences of a few points are noise):
-- Slots with Deeds that burn for nothing, wheel 8: 0 Deeds 90% win and 14% HP lost, 1 Deed 100% and 4%, 2 Deeds 100% and 1%, 3 Deeds 100% and 1%, 4 Deeds 98% and 3%.
-- At wheel 1 and 3 the trend is weaker and not monotonic.
-- Two useless dead cards with slots free: 100% and 1% with none, 97% and 9% with two.
-- Think-fixed gap at R=1 (R-normalised): Deeds 12 points, no Deeds 16, Wards 17, Hold Deeds 4.
-
-## 2. Whole-loop pacing
-
-Careful upgrades, think fight bot (16 samples), 5 seeds, fresh start to 1e15.
+Careful bot, 24 seeds.
 
 | Measure | Result |
 |---|---|
-| Minutes to 1e6 | 24 (19-29) |
-| Minutes to 1e9 | 38 (33-42) |
-| Minutes to 1e12 | 56 (51-79) |
-| Minutes to 1e15 | 65 (63-102) |
-| Minutes between power bursts | median 2.2, p10 0.4, p90 5.5 (n=132) |
-| Time at odds 2 or more / 1 to 2 / below 1 | 33% / 43% / 21% |
-| Trips, defeats, retreats (median) | 25 (20-42), 8, 17 |
-| Median trip length | 1.9 min |
-| Power jump per trip (median) | x2.3 |
-| Hand share of damage (median trip) | 28%, varying widely by seed and build |
-| Non-finite checks failed through 1e15 | 0 |
+| Minutes to 1e6 | 9 (7-12) |
+| Minutes to 1e9 | 21 (11-30) |
+| Minutes to 1e12 | 26 (18-113) |
+| Minutes to 1e15 | 37 (21-80), 2 seeds not inside 240 minutes |
+| Minutes between bursts | median 1.7, p10 0.6, p90 4.3 (n=411) |
+| Gaps inside 1 to 5 minutes | 67% |
+| Trips, defeats (median) | 17, 4 |
+| Median trip, median fight | 1.0 min, 6 s |
+| Non-finite numbers | 0 |
 
-A burst is a home visit where spending multiplies power by at least 1.5, or a boss reward. The bands are medians across seeds, so they do not sum to 100%. Finite-number checks ran after every fight. A separate stress case at level 300 (power 3.8e62) stayed finite and survived a JSON round trip.
+## 2. Is the deck the real decision?
 
-**Retreat policy** (minutes to 1e12): leave at odds below 1.2, 50 min. Below 1, 59. Below 0.75 (the default), 56. Below 0.5, 79. Never leave, 89. Dying does not out-earn leaving. Pure march-and-go-home farming did not reach 1e9 within its 200 minute cap.
+Same fight rules and tap rate, 12 seeds, against a baseline of 26 minutes to 1e12. "Never" means not inside 240 minutes, so medians on those rows understate the gap.
 
-## 3. Optimisation depth
-
-Same fight bot. Naive = cheapest purchase first, random sockets, first caravan card, never retreats.
-
-| Bot | Minutes to 1e12 |
-|---|---|
-| Careful | 56 (51-79) |
-| Naive | 198 (141 to never within the 400 minute cap) |
-
-**Careful play is x3.52 faster at the median.** Per seed: 2.75, never, never, 2.60, 2.49, where "never" means naive missed 1e12 inside the cap, so the true ratio on those seeds is unknown.
-
-Fight skill, with careful upgrades: fixed fight bot x2.37 slower than think (133 minutes against 56).
-
-**Knock-outs.** Under the shipped rules some bots fell into a loop of about 600 zero-fight trips, which is a bot artefact, so the table below requires every trip to fight once. The baseline under this rule is slower too (77 minutes to 1e12, 91 to 1e15).
-
-| Removed | Minutes to 1e12 | Ratio | Minutes to 1e15 |
+| Bot | Minutes to 1e12 | Ratio per seed (median) | Never |
 |---|---|---|---|
-| Sockets | 351 | x4.55 | never in cap |
-| Charge perk | 82 | x1.06 | 245 |
-| Buying the Wheel | 79 | x1.03 | 119 |
+| Careful | 26 (18-68) | | 0 |
+| Naive: cheapest purchase first, random sockets, packs everything | 156 (27-176) | x3.19 | 5 of 12 |
+| Levels well, but never changes its pack or bastions | 82 (42-240) | x3.12 | 3 of 12 |
+| No sockets | 117 (64-148) | x3.38 | 4 of 12 |
+| Never buys the Wheel | 31 (23-70) | x1.23 | 0 |
+| Never hires the Page | 32 (20-70) | x1.18 | 1 of 12 |
+| No Charge perk | 26 (18-68) | x1.00 | 0 |
 
-Under the free-retreat rule, never buying the Wheel was x1.41 to 1e12. Charge and the Wheel matter mostly late: at 1e15, x2.7 and x1.3.
+The bot almost never picks Charge, so that row says little about the perk.
 
-## 4. Honest verdict
+**Eight deck ideas, same coin.** Each deck is fixed, and the bot spends the budget on it. The number is the deepest fight it wins from a fresh start more than half the time. Enemy health grows x1.34 a fight, so 10 fights is about x19.
 
-**What bots cannot tell us.** Whether any of this is fun. Whether a person can read a Charge chain on a phone. Whether 15 seconds a turn is right: chain turns are arithmetic and may take much longer, which would stretch every figure above. Whether the March's spectacle lands. Whether repeating enemies gets boring. Whether the Deed annoys people.
+| Deck | 100K coin | 1B coin | 10T coin |
+|---|---|---|---|
+| Snowball (Barrels, Anvil, Whetstone) | 31 | 71 | 104 |
+| Blight (Vials, Plague Bell, Apothecary) | 31 | 71 | 100 |
+| Crossfire mix (Forks, Kegs, Forge, Arsenal, Cannon) | 25 | 64 | 95 |
+| Guns and Powder (Scoops, Bellows, Mortar, Cannon) | 31 | 64 | 83 |
+| Block and bash | 31 | 59 | 83 |
+| Fork swarm | 31 | 59 | 82 |
+| Wide field (Rams, four bastions) | 25 | 57 | 81 |
+| Combo horn (Horns, Drums, Tower) | 31 | 57 | 79 |
+
+Early on the decks are close. Late on they are not: Snowball and Blight lead, and the gap to the bottom at 10T is about x1500 in enemy health.
+
+## 3. Are any cards useless?
+
+This was the complaint that started this version. Each finished deck from the careful bot (8 seeds) was test-fired with one part taken out. The number is how far its damage falls.
+
+| Deck at Power | Attack cards out | Bastions out | Other cards out (Powder, block, draw, Whetstones) |
+|---|---|---|---|
+| 1M | x2.1 | x246 | x2.7 |
+| 1B | x5311 | x56 | x9.1 |
+| 1T | x1.0T | x56 | x25 |
+
+Every part carries weight at every stage after the start.
+
+But **bots specialise**. Share of damage done by cards, over a whole game, 24 seeds: 1 1 1 2 3 3 3 4 7 7 10 14 17 20 99 100 100 100 100 100 100 100 100 100. That is 14 gun-heavy decks and 10 card-heavy decks and nothing between. An Arsenal counts as a bastion here, although it repeats a card's hit. So neither road is solved, but the two do not blend the way I intended.
+
+## 4. Thumb speed
+
+| Taps a second | Minutes to 1e12 (12 seeds) |
+|---|---|
+| 1.5 | 42 (25-175) |
+| 2.5 | 36 (18-103) |
+| 4 | 26 (18-68) |
+| 6 | 31 (16-44) |
+| 8 | 31 (15-101) |
+
+Inside a fight, speed clearly pays. The starting deck first loses more than half its fights at fight 7 on 1.5 taps a second, fight 12 on 4 and fight 15 on 8. Its 12-second damage at 8 taps is x1.6 that of 4 taps. Over a whole climb, going past 4 taps shows no gain in this test, so mashing is a reward and not a requirement. With the Page and Wheel bought, two of four decks at 1e9 still did about half their damage with no tapping at all. The other two did 8% or less.
+
+## 5. Each combo rule switched off
+
+12 seeds. Baseline 26 (18-68).
+
+| Rule off | Minutes to 1e12 | Reading |
+|---|---|---|
+| Combo | 58 (30-110), 1 never | Real power, about x2 |
+| Crits | 34 (17-90) | Small |
+| Crossfire | 32 (18-181) | Small, and it does not make bots mix. It stays as spectacle |
+| Same card in a row | 29 (22-195) | Nothing measurable: pure spectacle |
+| Title Deeds (slots free) | 31 (18-56) | Nothing measurable |
+| Shuffle pause 0 s | 18 (12-23) | The strongest pacing knob |
+| Shuffle pause 1.5 s (shipped 0.5) | 45 (21-217) | |
+| Swing every 3 s (shipped 4) | 36 (22-133) | |
+| Swing every 6 s | 28 (18-49) | |
+
+## 6. Honest verdict
+
+**What bots cannot tell us.** Whether tapping feels good, which was the whole point of this version. Whether the effects are exciting or noisy on a phone. Whether a person can tell why a deck is good. How long a thumb lasts: a trip is about a minute, and holding the deck draws three cards a second to spare it.
 
 **What is weak.**
-- **The early game has no decision test pass.** For the first few trips, playing everything is about as good as thinking. The feed only matters once there is more than one bastion to feed. That is also the stretch where a person decides whether to keep playing.
-- **Pacing is uneven.** 1e6 takes 24 minutes and 1e12 to 1e15 takes only 9 at the median, so the late game accelerates. The seed spread is large (1e12 in 51 to 79 minutes), and the trip log shows both a x60 single-trip jump and a run of four trips at x1 to x2.3 against the same wall.
-- **R is not uniform.** R=1 is safe at L6 and lethal at L38. On-screen odds are a heuristic with hand-chosen terms, and the bot still sometimes dies at odds it was told were fine, mostly at bosses.
-- **Mid-game layout is close to solved.** Palisade first dominates (76%).
-- **Sockets may converge.** The careful bot nearly always ends on Keen and Charge. The socket list has fewer real choices than it appears, and the knock-out says Charge barely matters before 1e12.
-- **The Wheel is optional.** It is one viable road rather than the backbone you imagined, as a hand build reaches 1e12 at about the same time.
-- **Deeds rest on thin evidence.** The effect on win rate is near noise, and only the HP cost is clear.
-- **The careful bot is not an optimal player,** so x3.52 is a lower estimate of what skill could reach, and the naive bot's never-retreat rule accounts for part of its slowness.
-- **Tuning overfits the bots,** and the fight bot's sample count changes results. Whole-loop runs used 16 samples and the decision test 60.
-- **Content is small:** 19 usable cards, 10 bastions, 8 enemies, 3 bosses, with emoji for art.
+- **It may be too fast.** 26 minutes to a trillion is half what Forays-merged took, and the median burst gap of 1.7 minutes is near the low end of your 1 to 5. A person will be slower than the bot. I would judge this after playing.
+- **Long walls still happen.** One seed in 24 took 113 minutes to 1e12. On a Shield Bash deck, it went 12 trips in a row with under x1.15 power. Costs double each level while value grows x1.56, so a deck that has run out of multipliers stalls. Switching decks is cheap (a fresh card catches up for about the price of one top level), but the bot does not see that, and a person may not either.
+- **Late decks are not balanced.** Snowball and Blight lead by a wide margin at 10T.
+- **Bots do not mix.** Crossfire was built to reward mixing, and they still go all guns or all cards.
+- **The Wheel and Page matter little** (x1.23 and x1.18), and the Title Deed's cost does not show.
+- **The Power number flatters Snowball**, which shows 103M at a budget where other decks show 100K to 500K, for the same fight. The March and the odds no longer rely on it, but the headline does.
+- **Odds are step-like.** Fights are low in variance, so the next-fight odds tend to read 100% then 0%. "Press on" is rarely a close call.
+- **No choices inside a fight**, by design. Layout and pack are set at home, and the only live decisions are how fast to tap and when to go home.
 
-**Browser check.** Run in the built-in browser against a local server for this worktree (the named launch entry resolved to the main repo, so I served port 8772 by hand). Checked: title to home, march animation, fight through real buttons, Burn preview and Charge display, caravan, defeat report, home purchases and all quick-buy modes, reload mid-fight resuming the exact state, New game erasing the save, no horizontal overflow at 375x812 and centred at 1100x800, no script errors (only `versions.json` 404s, which are expected locally). I took screenshots at phone width. The real `v/wild-forays-yours/` URL and the version switcher row with data were not exercised. I drove these by script and judged appearance from a few screenshots, so this does not stand in for someone playing on a phone.
+**Browser check.** Run at 375x812 on a local server. On the final build, a scripted thumb that never retreats ran three trips: two defeats, two marches, three caravans and one boss reward. On earlier builds of this session, real clicks and a scripted thumb also covered running mid-fight, buying, sockets, layout, packing and billion-scale numbers. No script errors and no NaN or undefined on screen in any of it. Hold-to-draw, the space bar and resuming after a reload all work. The layout was also measured at 1100x800 and is centred. The browser pane was hidden throughout, so CSS animations did not run: I checked the layout by forcing them to their end state and never saw them play. Sounds ran without errors, and nobody has heard them. The live page was fetched, not played.

@@ -1,50 +1,63 @@
 "use strict";
 /* ==========================================================
-   Coinkeep: Forays. The rules, with no DOM.
+   Coinkeep: Forays (tap the deck). The rules, with no DOM.
    P is the permanent profile. T is the trip, with T.F the current fight.
    Both are plain JSON. The UI and the sim call the same functions.
+   A fight runs in real time: tapDeck() plays the top card, tick(dt) moves the clock.
    ========================================================== */
 
 /* ---------- profile ---------- */
 function newProfile(seed){
-  const P={v:1,seed:seed|0,coin:0,deepest:-1,wheel:1,hearth:0,mag:0,ledger:0,slots:2,energy:TUNE.energyBase,hand:TUNE.handBase,extraSock:0,
+  const P={v:2,seed:seed|0,coin:0,deepest:-1,wheel:1,hearth:0,auto:0,autoBuys:0,ledger:0,slots:TUNE.startBoard.length,extraSock:0,comboCap:TUNE.comboCap,crit:TUNE.critChance,shuffleX:1,
     nid:1,cards:[],layout:[],caravans:{},bosses:{},rewards:[],trips:0,defeats:0,retreats:0,secs:0,bestRate:0,nemesis:null,last:null,bursts:0};
-  for(const k of ['fork','fork','fork','helm','helm','scoop','keg','errand']) addCard(P,k,0,true);
-  P.layout=[addCard(P,'cannon',0,true).id,addCard(P,'stake',0,true).id];
+  for(const k of TUNE.startDeck) addCard(P,k,0,true);
+  P.layout=TUNE.startBoard.map(k=>addCard(P,k,0,true).id);
   return P;
 }
 function addCard(P,key,lvl,packed){ const c={id:P.nid++,key,lvl:lvl||0,sock:[],packed:!!packed}; P.cards.push(c); return c; }
 function grantSlot(P){ P.slots++; addCard(P,'deed',0,packedCount(P)<TUNE.deckMax); }
-const cardOf=(P,id)=>{ for(const c of P.cards) if(c.id===id) return c; return RUBBLE; };
 const RUBBLE={id:-1,key:'rubble',lvl:0,sock:[]};
+const cardOf=(P,id)=>{ for(const c of P.cards) if(c.id===id) return c; return RUBBLE; };
 const has=(c,k)=>c.sock.includes(k);
 const isPiece=c=>!!CARDS[c.key].piece;
+const isAtkCard=key=>CARDS[key].fx.some(([k])=>ATK[k]);
 function deedsPacked(P){ let n=0; for(const c of P.cards) if(c.key==='deed'&&c.packed) n++; return n; }
-function slotsOpen(P){ return TUNE.junk==='none'?P.slots:Math.min(P.slots,2+deedsPacked(P)); }
-const onBoard=(P,id)=>P.layout.indexOf(id)>=0&&P.layout.indexOf(id)<slotsOpen(P);
-function packList(P){ return P.cards.filter(c=>c.packed&&!onBoard(P,c.id)); }
+function slotsOpen(P){ return TUNE.junk==='none'?P.slots:Math.min(P.slots,TUNE.startBoard.length+deedsPacked(P)); }
+const onBoard=(P,id)=>{ const i=P.layout.indexOf(id); return i>=0&&i<slotsOpen(P); };
+// The pack is the cards you chose. The deck you tap is the pack plus the bastions in your open slots.
+function packList(P){ return P.cards.filter(c=>c.packed&&!isPiece(c)); }
 function packedCount(P){ return packList(P).length; }
+function deckIds(P){ return packList(P).map(c=>c.id).concat(P.layout.slice(0,slotsOpen(P)).filter(Boolean)); }
 
 /* ---------- values ---------- */
 const valMult=c=>Math.pow(TUNE.valG,c.lvl)*Math.pow(TUNE.mileX,Math.floor(c.lvl/TUNE.mileEvery))*(has(c,'keen')?3:1);
 const defMult=c=>Math.pow(TUNE.defG,c.lvl)*(has(c,'keen')?2:1);
 function fxAmount(c,kind,base){
-  if(kind==='dmg'||kind==='poison') return base*valMult(c);
-  if(kind==='block') return base*defMult(c);
-  if(kind==='coin') return base*(1+.04*c.lvl)*(has(c,'keen')?2:1);
-  return base;
+  const keen=has(c,'keen')?3:1;
+  switch(kind){
+    case 'dmg': case 'poison': case 'sally': case 'ram': case 'horn': case 'barrel': return base*valMult(c);
+    case 'block': return base*defMult(c);
+    case 'coin': return base*(1+.04*c.lvl)*(has(c,'keen')?2:1);
+    case 'powder': return base+Math.floor(c.lvl/10);   // Powder stays scarce, or the board drowns the hand
+    case 'draw': return base+Math.floor(c.lvl/10);
+    case 'combo': return base+Math.floor(c.lvl/3);
+    case 'bash': return base*Math.pow(TUNE.bashG,c.lvl)*keen;   // block grows slower than attacks, so Shield Bash compounds to keep up
+    case 'plague': case 'arsenal': case 'forge': return base*(1+.1*c.lvl)*keen;
+    case 'heal': return base*(1+.04*c.lvl);
+    default: return base;
+  }
 }
 const pieceHp=c=>CARDS[c.key].hp*defMult(c)*(has(c,'bulwark')?8:1);
 const pieceNeed=c=>Math.max(1,CARDS[c.key].need-(has(c,'light')?1:0));
-const cardCost=c=>Math.max(0,CARDS[c.key].cost-(!isPiece(c)&&has(c,'light')?1:0));
-const stokeOf=c=>{ const d=CARDS[c.key]; return (d.stoke==null?(TUNE.burnFlat?1:d.cost+1):d.stoke)+(has(c,'fuel')?2:0); };
 const maxHpOf=P=>TUNE.baseHp*Math.pow(TUNE.defG,P.hearth);
 function socketsOpen(P,c){ let n=0; for(const a of TUNE.sockAt) if(c.lvl>=a) n++; if(P.extraSock&&c.lvl>=60) n++; return n; }
 function describe(c){
   let s=CARDS[c.key].text;
-  for(const [k,b] of CARDS[c.key].fx) s=s.replace('{'+k+'}',k==='coin'?Math.round(fxAmount(c,k,b)*100)+'%':fmt(fxAmount(c,k,b)));
+  for(const [k,b] of CARDS[c.key].fx){ const a=fxAmount(c,k,b);
+    s=s.replace('{'+k+'}',k==='coin'||k==='bash'||k==='arsenal'||k==='forge'||k==='heal'?fmt(a*100)+'%':k==='plague'?'×'+a.toFixed(1):fmt(a)); }
   return s;
 }
+const comboMult=(P,T)=>1+T.combo*TUNE.comboStep;
 
 /* ---------- enemy curve ---------- */
 const isBossF=f=>f%TUNE.bossEvery===TUNE.bossEvery-1;
@@ -60,71 +73,33 @@ const enemyAtk=f=>TUNE.atk0*Math.pow(TUNE.atkG,f);
 const coinMult=P=>Math.pow(TUNE.ledgerX,P.ledger);
 const bounty=(P,f)=>TUNE.coin0*Math.pow(TUNE.coinG,f)*(isBossF(f)?TUNE.bossCoin:1)*coinMult(P);
 
-/* Power estimate: damage over three turns if the Powder falls as expected. R = this / enemy health.
-   It walks the real feed for a few turns, because a Charge chain pays only when it completes inside one turn. */
-function feedWalk(P,X,top,hf){
-  const ps=[]; for(const id of P.layout.slice(0,slotsOpen(P))){ if(!id) continue; const c=cardOf(P,id), d=CARDS[c.key]; if(!d) continue;
-    let pay=0; for(const [k,b] of d.fx){ if(k==='dmg') pay+=fxAmount(c,k,b); else if(k==='poison') pay+=fxAmount(c,k,b)*1.5; }
-    ps.push({need:pieceNeed(c),max:has(c,'twin')?2:1,pay,scaled:d.fx.some(([k])=>k==='dmg'||k==='block'||k==='poison'),charge:has(c,'charge'),relay:has(c,'relay'),fill:0}); }
-  let total=0,carry=0,mag=0; const W=6,magCap=TUNE.magBase+P.mag;
-  for(let t=0;t<W;t++){
-    let rem=X+carry+mag; mag=0; carry=rem-Math.floor(rem); rem=Math.floor(rem); let whet=1;
-    for(const p of ps){ let fires=0; while(rem>0&&fires<p.max){ const take=Math.min(rem,p.need-p.fill); p.fill+=take; rem-=take; if(p.fill<p.need) break; p.fill=0; fires++;
-        total+=p.pay*(p.scaled?whet:1); if(p.scaled) whet=p.charge?whet*3:1; if(p.relay) rem+=1; } }
-    mag=Math.min(rem,magCap);
-    if(whet>1) total+=top*hf*(whet-1);
-  }
-  return total/W;
-}
-function estPower(P){
-  const deck=packList(P); const hf=Math.min(1,P.hand/Math.max(1,deck.length));
-  const opts=[]; let stokeSum=0,stokeN=0;
-  for(const c of deck){ const d=CARDS[c.key]; stokeSum+=stokeOf(c); stokeN++; if(d.piece||d.junk) continue;
-    let dmg=0; for(const [k,b] of d.fx) if(k==='dmg') dmg+=fxAmount(c,k,b); else if(k==='poison') dmg+=fxAmount(c,k,b)*1.5;
-    if(has(c,'echo')) dmg*=2; if(has(c,'flurry')) dmg*=2; opts.push({dmg,cost:cardCost(c)}); }
-  opts.sort((a,b)=>b.dmg/Math.max(.5,b.cost)-a.dmg/Math.max(.5,a.cost));
-  let E=P.energy,hand=0,plays=0,top=0;
-  for(const o of opts){ if(o.cost<=P.energy&&o.dmg>top) top=o.dmg; if(E<=0) continue; const fr=o.cost?Math.min(hf,E/o.cost):hf; hand+=o.dmg*fr; E-=o.cost*fr; plays+=fr; }
-  const avg=stokeN?stokeSum/stokeN:1, feed=TUNE.feed;
-  const extra=feed==='wheel'?3:0;
-  // Two ways to run a turn: play what energy allows and burn the rest, or burn nearly everything for the board.
-  const mixed=hand+feedWalk(P,P.wheel+extra+(feed==='stoke'?Math.max(0,P.hand-plays)*avg*.8:0),top,hf);
-  const burn=feed==='stoke'?feedWalk(P,P.wheel+Math.max(0,P.hand-1)*avg*.8,top,hf):0;
-  return num(3*Math.max(mixed,burn));
-}
-const ratioAt=(P,f)=>estPower(P)/enemyHp(P,f);
-/* Odds shown to the player: offence alone overstates a late fight, because a bastion that dies each turn cuts the chain and a boss rule (a seal, a sweep) costs links.
-   A heuristic: the lesser of offence (halved for bosses, reduced when the front bastion falls to one hit) and toughness against about four hits. */
-function toughness(P){ let d=maxHpOf(P); for(const c of P.cards){ const on=onBoard(P,c.id); if(!c.packed&&!on) continue; for(const [k,x] of CARDS[c.key].fx) if(k==='block') d+=fxAmount(c,k,x)*.8; if(on) d+=pieceHp(c)*.3; } return d; }
-function oddsAt(P,f){ const boss=isBossF(f), hit=enemyAtk(f)*(boss?1.3:1); let off=ratioAt(P,f)/(boss?2:1);
-  const ids=P.layout.slice(0,slotsOpen(P)).filter(Boolean); if(ids.length){ const cs=ids.map(id=>cardOf(P,id)), front=cs.find(c=>CARDS[c.key].taunt)||cs[0], fh=pieceHp(front); if(hit>fh) off/=Math.sqrt(hit/fh); }
-  return Math.min(off,toughness(P)/(hit*4)); }
-// The deepest fight a march reaches right now, for the home screen's preview.
-// A march sweeps what your machine clears on Wheel Powder alone in about three turns, or anything you utterly outclass.
-const machineDmg=P=>3*feedWalk(P,P.wheel,0,0);
-function canMarch(P,f,p,m){ const hp=enemyHp(P,f); return p/hp>=TUNE.marchR||m/hp>=TUNE.marchMachine; }
-function marchReach(P){ const p=estPower(P), m=machineDmg(P); let f=0; while(f<400&&canMarch(P,f,p,m)&&(!isBossF(f)||P.bosses[f])&&(!isCaravanF(f)||P.caravans[f])) f++; return f; }
-
 /* ---------- trip ---------- */
-function startTrip(P){
-  P.trips++;
+function makeTrip(P,seed){
   const maxHp=maxHpOf(P);
-  const T={f:0,hp:maxHp,maxHp,coin:0,board:[],phase:'prefight',F:null,ev:[],stat:{turns:0,fights:0,marched:0,dmgHand:0,dmgBoard:0,taken:0,waste:0,blocked:0,lost:0,start:P.secs},marchList:[],rngSeed:(P.seed*31+P.trips*7919)|0};
-  for(const id of P.layout.slice(0,slotsOpen(P))){ if(!id) continue; T.board.push(newPiece(P,id)); }
-  tripAdvance(P,T);
+  const T={f:0,hp:maxHp,maxHp,coin:0,board:[],phase:'prefight',F:null,ev:[],offer:null,marchList:[],
+    draw:deckIds(P),disc:[],q:0,pend:0,pumping:false,mag:0,cursor:0,combo:0,idle:0,shuffle:0,whet:1,chain:1,anvil:0,run:0,lastKey:null,atkRun:0,lastAtk:0,xfrom:null,
+    stat:{fights:0,marched:0,dmgHand:0,dmgBoard:0,taken:0,waste:0,blocked:0,blockGain:0,lost:0,plays:0,fires:0,start:P.secs,powder:0},
+    rng:(seed==null?(P.seed*31+P.trips*7919):seed)|0};
+  shuffle(T,T.draw);
   return T;
 }
-function newPiece(P,id){ const c=cardOf(P,id); const hp=pieceHp(c); return {id,hp,maxHp:hp,fill:0,fires:0,sealed:false}; }
+function startTrip(P){ P.trips++; const T=makeTrip(P); tripAdvance(P,T); return T; }
+function newPiece(P,id){ const c=cardOf(P,id), hp=pieceHp(c); return {id,hp,maxHp:hp,fill:0,sealed:false}; }
+const shuffle=(T,a)=>{ for(let i=a.length-1;i>0;i--){ const j=Math.floor(rng32(T,'rng')*(i+1)); const t=a[i];a[i]=a[j];a[j]=t; } };
 // March past what you already outclass, stopping at an unseen caravan, an unbeaten boss, or the first real fight.
+// Outclass means it would die well before its first swing, from an empty board. Power alone will not do: a deck that snowballs has a huge 12 seconds and a slow first 4.
+const marchPower=P=>testFire(P,{secs:TUNE.swing}).dmg;
+function canMarch(P,f,p){ return p/enemyHp(P,f)>=TUNE.marchR; }
+function marchReach(P){ if(!P.trips) return 0; const p=marchPower(P); let f=0; while(f<400&&canMarch(P,f,p)&&(!isBossF(f)||P.bosses[f])&&(!isCaravanF(f)||P.caravans[f])) f++; return f; }
 function tripAdvance(P,T){
-  const p=estPower(P), m=machineDmg(P); T.marchList=[];
+  const p=marchPower(P); T.marchList=[];
   for(;;){
     if(isCaravanF(T.f)&&!P.caravans[T.f]){ T.phase='caravan'; T.offer=caravanOffer(P,T.f); return; }
     const boss=isBossF(T.f);
     if(boss&&!P.bosses[T.f]) break;
-    if(!canMarch(P,T.f,p,m)) break;
+    if(P.trips<=1||!canMarch(P,T.f,p)) break;   // your first trip you walk yourself
     const b=bounty(P,T.f), hp=enemyHp(P,T.f);
-    const paid=b*TUNE.marchCoin; T.coin=num(T.coin+paid); T.marchList.push({f:T.f,key:enemyKey(P,T.f),hp,over:p/3/hp,coin:paid}); T.stat.marched++;
+    const paid=b*TUNE.marchCoin; T.coin=num(T.coin+paid); T.marchList.push({f:T.f,key:enemyKey(P,T.f),hp,over:p/hp,coin:paid}); T.stat.marched++;
     if(T.f>P.deepest) P.deepest=T.f;
     T.f++;
   }
@@ -141,90 +116,128 @@ function caravanBuy(P,T,i){
   const o=T.offer; if(!o||i<0||i>=o.items.length) return false;
   const have=T.coin+P.coin; if(have<o.price) return false;
   const fromTrip=Math.min(T.coin,o.price); T.coin-=fromTrip; P.coin-=o.price-fromTrip;
-  const it=o.items[i]; addCard(P,it.key,it.lvl,false);
+  const it=o.items[i], c=addCard(P,it.key,it.lvl,false); T.joined=false;
+  if(isPiece(c)){ const on=P.layout.slice(0,slotsOpen(P)).length; if(on<slotsOpen(P)){ P.layout.splice(on,0,c.id); T.disc.push(c.id); T.joined=true; } }
+  else if(packedCount(P)<TUNE.deckMax){ c.packed=true; T.disc.push(c.id); T.joined=true; }
   P.caravans[T.f]=1; T.offer=null; P.bursts++; tripAdvance(P,T); return true;
 }
 function caravanLeave(P,T){ P.caravans[T.f]=1; T.offer=null; tripAdvance(P,T); }
 
+/* ---------- fight ---------- */
 function beginFight(P,T,ov){
-  const f=T.f, key=ov?ov.key:enemyKey(P,f), def=ENEMIES[key], hp0=ov?ov.hp:enemyHp(P,f);
-  const deck=packList(P).filter(c=>!T.board.some(b=>b.id===c.id)).map(c=>c.id);
-  const F={key,f,enemy:{hp:hp0,maxHp:hp0,poison:0,hex:0,wardUp:0,atk:ov?ov.atk:enemyAtk(f)},turn:0,energy:0,block:0,mag:0,aim:0,whet:0,queue:0,pumping:false,
-    draw:deck,hand:[],disc:[],boost:{},over:null,intent:[],rng:(T.rngSeed+f*131+T.stat.fights*17)|0,fightStart:T.stat.turns};
+  const f=T.f, key=ov?ov.key:enemyKey(P,f), hp0=ov?ov.hp:enemyHp(P,f);
+  const F={key,f,enemy:{hp:hp0,maxHp:hp0,poison:0,hex:0,wardUp:ENEMIES[key].ward||0,atk:ov?ov.atk:enemyAtk(f)},turn:1,t:0,live:false,block:0,boost:{},barrel:{},forge:0,coinGot:0,
+    over:null,intent:[],swing:TUNE.swing,wheelAcc:0,autoAcc:0,blightAcc:0};
   T.F=F; T.phase='fight'; T.stat.fights++;
-  shuffle(F,F.draw);
-  for(const b of T.board){ b.fires=0; b.sealed=false; b.fill=has(cardOf(P,b.id),'primed')?pieceNeed(cardOf(P,b.id))-1:b.fill; }
-  startTurn(P,T);
-}
-function shuffle(F,a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(rng32(F,'rng')*(i+1)); const t=a[i];a[i]=a[j];a[j]=t; } }
-function drawCards(F,n,reshuffle){
-  while(n>0){
-    if(!F.draw.length){ if(!reshuffle||!F.disc.length) return; F.draw=F.disc.filter(id=>id!==-1); F.disc=[]; shuffle(F,F.draw); if(!F.draw.length) return; }
-    F.hand.push(F.draw.pop()); n--;
-  }
-}
-function startTurn(P,T){
-  const F=T.F, def=ENEMIES[F.key];
-  F.turn++; F.energy=P.energy; F.block=0; F.whet=0; F.aim=0; F.plays=0; T.stat.turns++;
-  F.enemy.wardUp=def.ward||0;
-  for(const b of T.board){ b.fires=0; b.sealed=false; }
-  const kept=F.hand.length; drawCards(F,Math.max(0,P.hand-kept),true);
-  F.intent=def.intent(F.turn);
+  if(T.shuffle>0) finishShuffle(T);
+  for(const b of T.board) b.sealed=false;
+  F.intent=ENEMIES[key].intent(F.turn);
   for(const a of F.intent) if(a.seal&&T.board.length) T.board[0].sealed=true;
-  const m=F.mag; F.mag=0; addPowder(P,T,m+P.wheel+(TUNE.feed==='wheel'?3:0),'wheel');
 }
-function feedTarget(P,T){
-  const F=T.F, ok=b=>!b.sealed&&b.fires<(has(cardOf(P,b.id),'twin')?2:1);
-  if(F.aim>0){ for(let i=T.board.length-1;i>=0;i--) if(ok(T.board[i])){ F.aim--; return T.board[i]; } }
-  for(const b of T.board) if(ok(b)) return b;
-  return null;
+function startShuffle(P,T){ if(!T.disc.length||T.shuffle>0) return; T.shuffle=TUNE.shuffle*P.shuffleX; if(T.ev) T.ev.push({t:'shuffle'}); if(T.shuffle<=0) finishShuffle(T); }
+function finishShuffle(T){ T.shuffle=0; T.draw=T.draw.concat(T.disc); T.disc=[]; shuffle(T,T.draw); if(T.ev) T.ev.push({t:'shuffled'}); }
+function addCombo(P,T,n){ const b=T.combo; T.combo=Math.min(P.comboCap,T.combo+n); T.idle=0; if(T.ev) for(const m of [25,50,75,100,150]) if(b<m&&T.combo>=m) T.ev.push({t:'heat',m}); }
+
+/* Tap: the top card plays for free, and whatever it sets off runs to the end. */
+function tapDeck(P,T){
+  const F=T.F; if(!F||F.over||T.shuffle>0) return false;
+  F.live=true;
+  if(!T.draw.length){ startShuffle(P,T); return false; }
+  T.pend++; pump(P,T); return true;
 }
-function addPowder(P,T,n,src){
-  const F=T.F; F.queue+=n; if(F.pumping) return; F.pumping=true;
-  while(F.queue>0){
-    F.queue--; if(F.over) continue;
-    const b=feedTarget(P,T);
-    if(!b){ if(F.mag<TUNE.magBase+P.mag) F.mag++; else { T.stat.waste++; if(T.ev) T.ev.push({t:'waste'}); } continue; }
-    b.fill++; if(T.ev) T.ev.push({t:'feed',id:b.id});
-    if(b.fill>=pieceNeed(cardOf(P,b.id))){ b.fill=0; b.fires++; firePiece(P,T,b); }
+/* The one loop everything runs through. Powder first, then the cards a chain has asked for.
+   Both run out: a firing always returns less Powder than it took, and free plays stop when the deck does. */
+function pump(P,T){
+  if(T.pumping) return; T.pumping=true; const F=T.F; let guard=0;
+  while(!F.over&&guard++<20000&&(T.q>0||T.pend>0)){
+    if(T.q>0){ T.q--; feedOne(P,T); continue; }
+    T.pend--; if(T.draw.length) playOne(P,T,T.draw.pop()); else T.pend=0;
   }
-  F.pumping=false;
+  if(F.over){ T.q=0; T.pend=0; }
+  T.pumping=false;
+  if(!F.over&&!T.draw.length) startShuffle(P,T);
+}
+function feedOne(P,T){
+  const B=T.board; let n=B.length; T.stat.powder++;
+  while(n>0&&B[T.cursor%B.length].sealed){ T.cursor=(T.cursor+1)%B.length; n--; }
+  if(!n){ if(T.mag<TUNE.hopper) T.mag++; else { T.stat.waste++; if(T.ev) T.ev.push({t:'waste'}); } return; }
+  T.cursor%=B.length; const b=B[T.cursor];
+  b.fill++; if(T.ev) T.ev.push({t:'feed',id:b.id});
+  if(b.fill>=pieceNeed(cardOf(P,b.id))){ b.fill=0; const next=(T.cursor+1)%B.length; T.cursor=next; firePiece(P,T,b); if(next===0&&T.cursor===0) T.chain=1; }
 }
 function firePiece(P,T,b){
-  const F=T.F, c=cardOf(P,b.id), d=CARDS[c.key], scaled=d.fx.some(([k])=>k==='dmg'||k==='block'||k==='poison'); let mul=scaled?(F.whet||1):1; if(scaled) F.whet=0;
-  if(TUNE.junk==='hold') for(const id of F.hand) if(cardOf(P,id).key==='deed') mul*=1.5;
-  if(T.ev) T.ev.push({t:'fire',id:b.id});
-  for(const [k,a] of d.fx) applyFx(P,T,k,a,c,mul,'board',b);
-  if(has(c,'charge')&&scaled) F.whet=mul*3;
-  if(has(c,'relay')) addPowder(P,T,1,'relay');
+  const F=T.F, c=cardOf(P,b.id), d=CARDS[c.key]; if(F.over) return;
+  addCombo(P,T,1); T.stat.fires++;
+  const atk=d.fx.some(([k])=>ATK[k]), chain0=T.chain; let m=1; if(atk){ m=T.chain*T.whet; T.chain=1; T.whet=1; }
+  let cross=false; if(atk){ cross=T.xfrom==='hand'; T.xfrom='gun'; }   // Crossfire: a gun right after an attack card pays double, and the other way round
+  const crit=rng32(T,'rng')<P.crit, mul=m*(cross?TUNE.crossX:1)*(crit?TUNE.critX:1)*comboMult(P,T);
+  if(T.ev) T.ev.push({t:'fire',id:b.id,crit,m,cross});
+  for(let r=has(c,'echo')?2:1;r>0;r--) for(const [k,a] of d.fx) applyFx(P,T,k,a,c,mul,1,'board',b);
+  if(has(c,'charge')&&atk) T.chain=chain0*TUNE.chargeX;
+  if(has(c,'relay')&&pieceNeed(c)>1) T.q+=1;
 }
-function applyFx(P,T,kind,base,c,mul,src,b){
+function playOne(P,T,id){
+  const F=T.F, c=cardOf(P,id), d=CARDS[c.key]; T.stat.plays++; T.idle=0;
+  if(d.piece) return landPiece(P,T,id);
+  if(d.junk){ T.run=0; T.lastKey=null; T.atkRun=0; if(!d.temp) T.disc.push(id); if(T.ev) T.ev.push({t:'play',key:c.key,dud:true}); return; }
+  addCombo(P,T,1);
+  T.run=TUNE.runPay&&T.lastKey===c.key?Math.min(TUNE.runCap,T.run+1):1; T.lastKey=c.key;
+  const atk=d.fx.some(([k])=>ATK[k]); T.atkRun=atk?T.atkRun+1:0;
+  if(T.anvil>0&&d.fx.length){ F.boost[id]=(F.boost[id]||1)*Math.pow(2,T.anvil); T.anvil=0; }
+  let mul=(F.boost[id]||1);
+  let cross=false; if(atk){ mul*=T.whet*T.chain; T.whet=1; T.chain=1; mul*=1+F.forge; cross=T.xfrom==='gun'; T.xfrom='hand'; if(cross) mul*=TUNE.crossX; }
+  if(has(c,'flurry')) mul*=1+T.combo/50;
+  const crit=rng32(T,'rng')<P.crit; if(crit) mul*=TUNE.critX;
+  const cm=comboMult(P,T), total=mul*cm*T.run;
+  if(T.ev) T.ev.push({t:'play',key:c.key,id,run:T.run,crit,cross,mul:total/cm/(crit?TUNE.critX:1)});
+  for(let r=has(c,'echo')?2:1;r>0;r--) for(const [k,a] of d.fx) applyFx(P,T,k,a,c,total,T.run*(crit?TUNE.critX:1),'hand');
+  if(has(c,'swift')) T.pend++;
+  if(has(c,'fuel')) T.q+=2;
+  T.disc.push(id);
+}
+function landPiece(P,T,id){
+  const c=cardOf(P,id), B=T.board, at0=P.layout.indexOf(id); let at=B.findIndex(x=>P.layout.indexOf(x.id)>at0); if(at<0) at=B.length;
+  const b=newPiece(P,id); B.splice(at,0,b); if(B.length>1&&at<=T.cursor) T.cursor++;
+  addCombo(P,T,1); if(T.ev) T.ev.push({t:'land',id});
+  if(T.mag>0){ T.q+=T.mag; T.mag=0; }
+  if(has(c,'primed')) firePiece(P,T,b);
+}
+function applyFx(P,T,kind,base,c,mul,flat,src,b){
   const F=T.F; if(F.over) return;
-  const amt=fxAmount(c,kind,base)*(mul||1);
+  const amt=fxAmount(c,kind,base), e=F.enemy;
   switch(kind){
-    case 'dmg': hitEnemy(P,T,amt,src,c); break;
-    case 'block': F.block=num(F.block+amt); if(T.ev) T.ev.push({t:'block',n:amt}); break;
-    case 'poison': F.enemy.poison=num(F.enemy.poison+amt); if(T.ev) T.ev.push({t:'poison',n:amt}); break;
-    case 'hex': F.enemy.hex+=amt/(mul||1); break;
-    case 'coin': { const g=bounty(P,F.f)*amt; T.coin=num(T.coin+g); if(T.ev) T.ev.push({t:'coin',n:g}); break; }
-    case 'powder': addPowder(P,T,amt/(mul||1),src); break;
-    case 'draw': drawCards(F,amt/(mul||1),false); break;
-    case 'energy': F.energy+=amt/(mul||1); break;
+    case 'dmg': hitEnemy(P,T,amt*mul,src); break;
+    case 'sally': hitEnemy(P,T,amt*Math.min(T.atkRun,TUNE.sallyCap)*mul,src); break;
+    case 'ram': hitEnemy(P,T,amt*T.board.length*mul,src); break;
+    case 'horn': hitEnemy(P,T,amt*T.combo*mul,src); break;
+    case 'barrel': { const n=F.barrel[c.id]||0; F.barrel[c.id]=Math.min(n+1,TUNE.barrelMax); hitEnemy(P,T,amt*Math.pow(TUNE.barrelG,n)*mul,src); break; }
+    case 'bash': if(F.block>0) hitEnemy(P,T,F.block*amt*mul/comboMult(P,T),src); break;
+    case 'plague': if(e.poison>0){ const n=e.poison*amt*mul/comboMult(P,T); e.poison/=2; hitEnemy(P,T,n,src); } break;
+    case 'arsenal': if(T.lastAtk>0) hitEnemy(P,T,T.lastAtk*amt*mul/comboMult(P,T),'board'); break;
+    case 'block': { const n=amt*mul; F.block=num(F.block+n); T.stat.blockGain=num(T.stat.blockGain+n); if(T.ev) T.ev.push({t:'block',n}); break; }
+    case 'poison': { const n=amt*mul; e.poison=num(e.poison+n); if(T.ev) T.ev.push({t:'poison',n}); break; }
+    case 'hex': e.hex+=amt; break;
+    case 'coin': { const room=Math.max(0,bounty(P,F.f)*TUNE.coinCap-F.coinGot), g=Math.min(room,bounty(P,F.f)*amt*flat); F.coinGot+=g; T.coin=num(T.coin+g); if(T.ev&&g>0) T.ev.push({t:'coin',n:g}); break; }
+    case 'powder': T.q+=amt*(src==='hand'?T.run:1); break;
+    case 'draw': T.pend+=amt; break;
     case 'repair': for(const x of T.board) x.hp=Math.min(x.maxHp,x.hp+x.maxHp*base); break;
     case 'selfrepair': b.hp=Math.min(b.maxHp,b.hp+b.maxHp*base); break;
-    case 'whet': F.whet=(F.whet||1)*3; break;
-    case 'aim': F.aim+=base; break;
-    case 'trigger': { const x=T.board.find(y=>!y.sealed&&y.fires<(has(cardOf(P,y.id),'twin')?2:1)); if(x){ x.fires++; firePiece(P,T,x); } break; }
-    case 'rotate': if(T.board.length>1) T.board.push(T.board.shift()); break;
-    case 'anvil': { let top=null,tv=0; for(const id of F.hand){ const o=cardOf(P,id); if(o.id===c.id||CARDS[o.key].junk||CARDS[o.key].piece) continue; const v=CARDS[o.key].fx.reduce((s,[k,x])=>s+((k==='dmg'||k==='block'||k==='poison')?fxAmount(o,k,x):0),0); if(v>tv){tv=v;top=o;} } if(top) F.boost[top.id]=(F.boost[top.id]||1)*3; break; }
+    case 'heal': T.hp=Math.min(T.maxHp,T.hp+T.maxHp*amt); break;
+    case 'whet': T.whet=Math.min(TUNE.whetCap,T.whet*3); break;
+    case 'anvil': T.anvil++; break;
+    case 'rope': if(T.board.length){ T.cursor%=T.board.length; let n=T.board.length; while(n-->0&&T.board[T.cursor].sealed) T.cursor=(T.cursor+1)%T.board.length; const x=T.board[T.cursor]; if(!x.sealed){ T.cursor=(T.cursor+1)%T.board.length; firePiece(P,T,x); } } break;
+    case 'trail': for(const x of T.board.slice()){ if(x.sealed) continue; x.fill++; if(x.fill>=pieceNeed(cardOf(P,x.id))){ x.fill=0; firePiece(P,T,x); } } break;
+    case 'combo': addCombo(P,T,amt); break;
+    case 'forge': F.forge+=amt; break;
+    case 'double': T.chain=Math.min(TUNE.whetCap,T.chain*2); break;
   }
 }
-function hitEnemy(P,T,amt,src,c){
+function hitEnemy(P,T,amt,src){
   const F=T.F, e=F.enemy;
   if(e.wardUp>0){ e.wardUp--; if(T.ev) T.ev.push({t:'warded'}); return; }
   e.hp=num(e.hp-amt);
-  if(src==='board') T.stat.dmgBoard=num(T.stat.dmgBoard+amt); else T.stat.dmgHand=num(T.stat.dmgHand+amt);
-  if(T.ev) T.ev.push({t:'dmg',n:amt,src,over:e.hp<=0?amt/Math.max(1,e.maxHp):0});
+  if(src==='board') T.stat.dmgBoard=num(T.stat.dmgBoard+amt); else { T.stat.dmgHand=num(T.stat.dmgHand+amt); T.lastAtk=amt; }
+  if(T.ev) T.ev.push({t:'dmg',n:amt,src,ratio:amt/Math.max(1,e.maxHp)});
   checkWin(P,T);
 }
 function checkWin(P,T){
@@ -237,6 +250,7 @@ function checkWin(P,T){
   T.f++; const offer=first&&!T.sim?rewardOffer(P,F.f):null; T.phase=first&&(T.sim||offer.length)?'bossreward':'postfight';
   if(offer) T.offer={rewards:offer}; if(first&&!T.sim&&F.f>=TUNE.finalFight) P.won=true;
   if(P.nemesis&&P.nemesis.f===F.f) T.nemesisFell=true;
+  if(T.ev) T.ev.push({t:'kill',key:F.key,coin:b,over:-F.enemy.hp/Math.max(1,F.enemy.maxHp)});
 }
 function rewardOffer(P,f){
   const ok=Object.keys(REWARDS).filter(k=>!P.rewards.includes(k)&&(!REWARDS[k].after||P.rewards.includes(REWARDS[k].after)));
@@ -247,67 +261,40 @@ function rewardOffer(P,f){
 }
 function takeReward(P,T,key){ P.rewards.push(key); REWARDS[key].on(P); T.offer=null; T.phase='postfight'; }
 
-/* ---------- player actions: {a:'play',i,at} {a:'burn',i} {a:'swap',i} {a:'end'} ---------- */
-function canPlay(P,T,i){
-  const F=T.F, c=cardOf(P,F.hand[i]), d=CARDS[c.key];
-  if(d.junk||F.energy<cardCost(c)) return false;
-  if(d.piece&&T.board.length>=slotsOpen(P)) return false;
-  return true;
-}
-function canBurn(P,T,i){ return TUNE.feed==='stoke'||CARDS[cardOf(P,T.F.hand[i]).key].junk; }
-function doAction(P,T,m){
-  const F=T.F; if(!F||F.over) return false;
-  if(m.a==='play'){
-    if(!canPlay(P,T,m.i)) return false;
-    const id=F.hand[m.i], c=cardOf(P,id), d=CARDS[c.key]; F.energy-=cardCost(c); F.hand.splice(m.i,1);
-    if(d.piece){ const at=m.at==null?T.board.length:clamp(m.at,0,T.board.length); T.board.splice(at,0,newPiece(P,id)); if(T.ev) T.ev.push({t:'deploy',id}); return true; }
-    F.plays++; T.stat.plays=(T.stat.plays||0)+1; let mul=(F.boost[id]||1)*(has(c,'flurry')?F.plays:1); const reps=has(c,'echo')?2:1;
-    if(F.whet>1&&d.fx.some(([k])=>k==='dmg'||k==='poison')){ mul*=F.whet; F.whet=0; } // a charge carries into your next attack card as well
-    for(let r=0;r<reps;r++) for(const [k,a] of d.fx) applyFx(P,T,k,a,c,mul,'hand');
-    if(has(c,'swift')) drawCards(F,1,false);
-    if(!d.temp) F.disc.push(id);
-  } else if(m.a==='burn'){
-    if(!canBurn(P,T,m.i)) return false;
-    const id=F.hand[m.i], c=cardOf(P,id), d=CARDS[c.key]; F.hand.splice(m.i,1);
-    if(!d.temp) F.disc.push(id);
-    T.stat.burns=(T.stat.burns||0)+1; const n=stokeOf(c); if(n) addPowder(P,T,n,'burn');
-    if(T.ev) T.ev.push({t:'burn',n});
-  } else if(m.a==='swap'){
-    if(F.energy<TUNE.swapCost||m.i<0||m.i+1>=T.board.length) return false;
-    F.energy-=TUNE.swapCost; const b=T.board; const t=b[m.i]; b[m.i]=b[m.i+1]; b[m.i+1]=t;
-  } else if(m.a==='end'){ endTurn(P,T); }
-  return true;
-}
-function endTurn(P,T){
-  const F=T.F, def=ENEMIES[F.key], e=F.enemy;
-  // Hand goes to the discard, except what stays (Wards) and what vanishes (Rubble stays too: it clogs until burned).
-  const keep=[]; for(const id of F.hand){ const c=cardOf(P,id), d=CARDS[c.key]; if(d.stays||d.temp) keep.push(id); else F.disc.push(id); }
-  F.hand=keep;
-  // Blight, then wards in the discard.
-  if(e.poison>0){ const n=e.poison; e.hp=num(e.hp-n); T.stat.dmgBoard=num(T.stat.dmgBoard+n); if(T.ev) T.ev.push({t:'dmg',n,src:'poison'}); e.poison=e.poison<1?0:e.poison/2; checkWin(P,T); if(F.over) return; }
-  let wards=0; for(const id of F.disc) if(cardOf(P,id).key==='ward') wards++;
-  if(wards){ e.hp=num(e.hp-e.maxHp*wards*(def.boss?.01:.03)); checkWin(P,T); if(F.over) return; }
-  // Enemy acts.
-  enemyActs(P,T);
-  if(F.over) return;
-  if(def.flee&&F.turn>=def.flee){ T.coin=T.coin*.9; F.over='fled'; T.f++; T.phase='postfight'; if(T.ev) T.ev.push({t:'fled'}); return; }
-  startTurn(P,T);
+/* The clock. Nothing moves until the first tap of a fight. */
+function tick(P,T,dt){
+  const F=T.F; if(!F||F.over||!F.live) return;
+  F.t+=dt; const e=F.enemy, def=ENEMIES[F.key];
+  if(T.shuffle>0){ T.shuffle-=dt; if(T.shuffle<=0) finishShuffle(T); }
+  F.wheelAcc+=P.wheel*dt; if(F.wheelAcc>=1){ const n=Math.floor(F.wheelAcc); F.wheelAcc-=n; T.q+=n; }
+  pump(P,T); if(F.over) return;
+  if(P.auto>0&&T.shuffle<=0){ F.autoAcc+=P.auto*dt; while(F.autoAcc>=1&&!F.over&&T.shuffle<=0){ F.autoAcc-=1; if(T.draw.length){ T.pend++; pump(P,T); } } if(F.over) return; }
+  F.blightAcc+=dt; if(F.blightAcc>=1){ F.blightAcc-=1; if(e.poison>0){ const n=e.poison*TUNE.blightPay; e.hp=num(e.hp-n); T.stat.dmgBoard=num(T.stat.dmgBoard+n); if(T.ev) T.ev.push({t:'dmg',n,src:'poison',ratio:n/Math.max(1,e.maxHp)}); e.poison=e.poison<1?0:e.poison*TUNE.blightKeep; checkWin(P,T); if(F.over) return; } }
+  T.idle+=dt; if(T.idle>TUNE.comboGrace&&T.combo>0){ T.combo=Math.max(0,T.combo-(T.combo*TUNE.comboFade+2)*dt); }
+  F.swing-=dt;
+  if(F.swing<=0){
+    enemyActs(P,T); if(F.over) return;
+    if(def.flee&&F.turn>=def.flee){ T.coin*=.9; F.over='fled'; T.f++; T.phase='postfight'; if(T.ev) T.ev.push({t:'fled'}); return; }
+    F.block=0; e.wardUp=def.ward||0; for(const b of T.board) b.sealed=false;
+    F.turn++; F.swing=TUNE.swing; F.intent=def.intent(F.turn);
+    for(const a of F.intent) if(a.seal&&T.board.length) T.board[0].sealed=true;
+  }
 }
 function enrage(F,def){ let m=1; if(F.turn>TUNE.enrageAfter) m*=Math.pow(TUNE.enrageX,F.turn-TUNE.enrageAfter); if(def.grow) m*=Math.pow(def.grow,F.turn-1); return m; }
 function intentHit(F,a){ return F.enemy.atk*a.hit*enrage(F,ENEMIES[F.key]); }
 function enemyActs(P,T){
-  const F=T.F, def=ENEMIES[F.key];
+  const F=T.F; if(T.ev) T.ev.push({t:'swing'});
   for(const a of F.intent){
-    if(a.drain){ if(T.board.length) T.board[0].fill=0; F.mag=0; if(T.ev) T.ev.push({t:'drain'}); }
-    if(a.rubble) for(let i=0;i<a.rubble;i++) F.hand.push(-1);
+    if(a.drain){ if(T.board.length) T.board[0].fill=0; T.mag=0; if(T.ev) T.ev.push({t:'drain'}); }
+    if(a.rubble) for(let i=0;i<a.rubble;i++) T.draw.push(-1);
     if(a.hit){
-      if(a.at==='all'){ for(const b of T.board.slice()) strike(P,T,intentHit(F,a),'one',b); strikeYou(P,T,intentHit(F,a)*.5); }
+      if(a.at==='all'){ for(const b of T.board.slice()) strike(P,T,intentHit(F,a),'one',b); const rest=absorb(T,F,intentHit(F,a)*.5); if(rest>0) strikeYou(P,T,rest); }
       else strike(P,T,intentHit(F,a),a.at);
     }
     if(T.hp<=0){ T.hp=0; F.over='loss'; T.phase='defeat'; if(T.ev) T.ev.push({t:'dead'}); return; }
   }
 }
-function absorb(T,F,amt){ if(F.enemy.hex>0){ F.enemy.hex--; amt/=2; } const b=Math.min(F.block,amt); F.block-=b; T.stat.blocked=num(T.stat.blocked+b); return amt-b; }
+function absorb(T,F,amt){ if(F.enemy.hex>0){ F.enemy.hex--; amt/=2; } const b=Math.min(F.block,amt); F.block-=b; T.stat.blocked=num(T.stat.blocked+b); if(T.ev&&b>0) T.ev.push({t:'blocked',n:b}); return amt-b; }
 function strike(P,T,amt,at,only){
   const F=T.F; let left=absorb(T,F,amt);
   while(left>0){
@@ -318,58 +305,64 @@ function strike(P,T,amt,at,only){
       if(at==='right') tgt=T.board[T.board.length-1];
     } else if(!T.board.includes(only)) return;
     const hit=Math.min(left,tgt.hp); tgt.hp-=hit; left-=hit; if(T.ev) T.ev.push({t:'hurt',id:tgt.id,n:hit});
-    if(tgt.hp<=0){ T.board.splice(T.board.indexOf(tgt),1); F.disc.push(tgt.id); T.stat.lost++; if(T.ev) T.ev.push({t:'lost',id:tgt.id}); }
+    if(tgt.hp<=0){ const i=T.board.indexOf(tgt); T.board.splice(i,1); if(i<T.cursor) T.cursor--; if(T.cursor>=T.board.length) T.cursor=0; T.disc.push(tgt.id); T.stat.lost++; if(T.ev) T.ev.push({t:'lost',id:tgt.id}); }
     if(only) return;
   }
 }
 function strikeYou(P,T,amt){ const F=T.F; T.hp=num(T.hp-amt); T.stat.taken=num(T.stat.taken+amt); if(T.ev) T.ev.push({t:'you',n:amt}); if(T.hp<=0){ T.hp=0; if(!F.over){ F.over='loss'; T.phase='defeat'; } } }
 
-/* End of trip. Retreat keeps everything; defeat keeps 70%. Nothing else is ever lost. */
+/* End of trip. Going home between fights keeps everything; defeat, or leaving mid-fight, keeps 70%. Nothing else is ever lost. */
 function endTrip(P,T,how){
-  const rate=how==='defeat'?TUNE.defeatKeep:1, got=num(T.coin*rate);
-  P.coin=num(P.coin+got); P.last={how,got,lost:T.coin-got,f:T.f,fights:T.stat.fights,marched:T.stat.marched,turns:T.stat.turns,lostPieces:T.stat.lost};
-  if(how==='defeat'){ P.defeats++; const F=T.F, key=F?F.key:enemyKey(P,T.f); P.nemesis={f:T.f,key,left:F?F.enemy.hp/F.enemy.maxHp:1}; P.last.needed=F?Math.max(1,enemyHp(P,T.f)/Math.max(1,estPower(P)/3)):1; }
+  const rate=how==='retreat'?1:TUNE.defeatKeep, got=num(T.coin*rate);
+  P.coin=num(P.coin+got); P.last={how,got,lost:T.coin-got,f:T.f,fights:T.stat.fights,marched:T.stat.marched,lostPieces:T.stat.lost,dmgHand:T.stat.dmgHand,dmgBoard:T.stat.dmgBoard};
+  if(how==='defeat'){ P.defeats++; const F=T.F, key=F?F.key:enemyKey(P,T.f); P.nemesis={f:T.f,key,left:F?Math.max(0,F.enemy.hp)/F.enemy.maxHp:1}; }
   else P.retreats++;
   P.lastSeen=P.secs;
   return P.last;
 }
 
+/* ---------- what a deck can do, measured on the real rules ---------- */
+function cloneT(T){ const F=T.F; return {...T,sim:true,ev:null,stat:{...T.stat},offer:null,marchList:[],pumping:false,board:T.board.map(b=>({...b})),draw:T.draw.slice(),disc:T.disc.slice(),
+  F:F?{...F,enemy:{...F.enemy},boost:{...F.boost},barrel:{...F.barrel}}:null}; }
+// Runs the fight T is standing at, tapping at rate per second. Returns the seconds it took.
+function runFight(P,T,rate,dt,cap){ const F=T.F; let acc=1; F.live=true;
+  while(!F.over&&F.t<cap){ acc+=rate*dt; while(acc>=1&&!F.over){ acc-=1; tapDeck(P,T); } if(!F.over) tick(P,T,dt); }
+  if(!F.over){ F.over='loss'; T.hp=0; T.phase='defeat'; }
+  return F.t; }
+// A test firing against a dummy that never hits back, from an empty board.
+function testFire(P,opt){ const o=opt||{}, secs=o.secs||TUNE.powSecs, rate=o.rate==null?TUNE.powTap:o.rate, dt=o.dt||.1, seeds=o.seeds||2; let dmg=0,hand=0,board=0,block=0,plays=0,fires=0,coin=0,powder=0;
+  for(let s=0;s<seeds;s++){ const T=makeTrip(P,1009+s*77); T.sim=true; T.ev=null; beginFight(P,T,{key:'dummy',hp:1e200,atk:0}); runFight(P,T,rate,dt,secs); const st=T.stat, e=T.F.enemy;
+    const leftover=e.poison*TUNE.blightPay/(1-TUNE.blightKeep);
+    hand+=st.dmgHand; board+=st.dmgBoard+leftover; dmg+=st.dmgHand+st.dmgBoard+leftover; block+=st.blockGain; plays+=st.plays; fires+=st.fires; coin+=T.coin; powder+=st.powder; }
+  return {dmg:num(dmg/seeds),hand:num(hand/seeds),board:num(board/seeds),block:num(block/seeds),plays:plays/seeds,fires:fires/seeds,coin:coin/seeds,powder:powder/seeds,secs}; }
+const estPower=P=>testFire(P).dmg;
+// Chance of winning this fight at a steady 4 taps a second: from T if given (the trip as it stands), else from a fresh start.
+function winChance(P,f,T0,K){ K=K||5; let wins=0;
+  for(let k=0;k<K;k++){ const T=T0?cloneT(T0):makeTrip(P,1); T.sim=true; T.ev=null; T.rng=(5003+k*911+f*17)|0; T.f=f; T.q=0; T.pend=0;
+    if(T0&&T.phase!=='fight') T.phase='prefight'; beginFight(P,T); runFight(P,T,TUNE.powTap,.2,90); if(T.F.over==='win'||T.F.over==='fled') wins++; }
+  return wins/K; }
+
 /* ---------- home purchases ---------- */
 function levelCost(c){ return TUNE.cost0*(CARDS[c.key].piece?TUNE.pieceCostX:1)*Math.pow(TUNE.costG,c.lvl); }
 const hearthCost=P=>TUNE.hearthCost*Math.pow(TUNE.hearthG,P.hearth);
 const wheelCost=P=>TUNE.wheelCost*Math.pow(TUNE.wheelG,P.wheelBuys||0);
-const magCost=P=>TUNE.magCost*Math.pow(TUNE.magG,P.magBuys||0);
+const autoCost=P=>TUNE.autoCost*Math.pow(TUNE.autoG,P.autoBuys||0);
 const ledgerCost=P=>TUNE.ledgerCost*Math.pow(TUNE.ledgerG,P.ledger);
-function buyLevel(P,id){ const c=cardOf(P,id), k=levelCost(c); if(P.coin<k||c.key==='deed'||c.key==='ward') return false; P.coin-=k; c.lvl++; return true; }
+function buyLevel(P,id){ const c=cardOf(P,id), k=levelCost(c); if(P.coin<k||c.key==='deed') return false; P.coin-=k; c.lvl++; return true; }
 function buyKeep(P,what){
-  const k={hearth:hearthCost,wheel:wheelCost,mag:magCost,ledger:ledgerCost}[what](P);
+  const k={hearth:hearthCost,wheel:wheelCost,auto:autoCost,ledger:ledgerCost}[what](P);
   if(P.coin<k) return false; P.coin-=k;
   if(what==='hearth') P.hearth++; else if(what==='wheel'){ P.wheel++; P.wheelBuys=(P.wheelBuys||0)+1; }
-  else if(what==='mag'){ P.mag++; P.magBuys=(P.magBuys||0)+1; } else P.ledger++;
+  else if(what==='auto'){ P.auto+=TUNE.autoStep; P.autoBuys=(P.autoBuys||0)+1; } else P.ledger++;
   return true;
 }
-function setSocket(P,id,idx,perk){ const c=cardOf(P,id); if(idx>=socketsOpen(P,c)) return false; if(perk&&c.sock.includes(perk)) return false;
-  if(perk&&!perkFits(perk,c)) return false; if(perk) c.sock[idx]=perk; else c.sock.splice(idx,1); c.sock=c.sock.filter(Boolean); return true; }
-function perkFits(perk,c){ const f=PERKS[perk].for; if(perk==='charge'&&!CARDS[c.key].fx.some(([k])=>k==='dmg'||k==='block'||k==='poison')) return false; return f==='both'||(f==='piece')===isPiece(c); }
-function togglePack(P,id){ const c=cardOf(P,id); if(onBoard(P,id)) return false;
+function perkFits(perk,c){ const f=PERKS[perk].for; if(perk==='charge'&&!CARDS[c.key].fx.some(([k])=>ATK[k])) return false; return f==='both'||(f==='piece')===isPiece(c); }
+function togglePack(P,id){ const c=cardOf(P,id); if(isPiece(c)) return false;
   const cnt=packedCount(P);
   if(c.packed){ if(cnt<=TUNE.deckMin) return false; c.packed=false; } else { if(cnt>=TUNE.deckMax) return false; c.packed=true; }
   return true; }
 // Board layout: move to a slot, or take off the board.
-function placePiece(P,id,slot){ const i=P.layout.indexOf(id); if(i>=0) P.layout.splice(i,1); if(slot!=null){ P.layout.splice(clamp(slot,0,P.layout.length),0,id); cardOf(P,id).packed=true; } return true; }
-
-/* ---------- the simple policy: the Auto button and the sim's fixed bot ---------- */
-function fixedMove(P,T){
-  const F=T.F, hand=F.hand; if(F.over) return null;
-  let best=-1,bv=-1;
-  for(let i=0;i<hand.length;i++){ if(!canPlay(P,T,i)) continue; const c=cardOf(P,hand[i]),d=CARDS[c.key];
-    let v=d.piece?1e308:0; for(const [k,x] of d.fx){ if(k==='dmg') v+=4; if(k==='poison') v+=3; if(k==='powder') v+=2; if(k==='draw'||k==='energy') v+=2.5; if(k==='block') v+=1; }
-    v+=.1*(i===0); if(v>bv&&v>0){ bv=v; best=i; } }
-  if(best>=0) return {a:'play',i:best};
-  for(let i=0;i<hand.length;i++) if(canBurn(P,T,i)&&(stokeOf(cardOf(P,hand[i]))>0||CARDS[cardOf(P,hand[i]).key].temp)) return {a:'burn',i};
-  return {a:'end'};
-}
-function fixedTurn(P,T){ const F=T.F, turn=F.turn; let n=0; while(T.F===F&&!F.over&&F.turn===turn&&n++<60){ const m=fixedMove(P,T); if(!m) break; doAction(P,T,m); if(m.a==='end') break; } }
+function placePiece(P,id,slot){ const i=P.layout.indexOf(id); if(i>=0) P.layout.splice(i,1); if(slot!=null) P.layout.splice(clamp(slot,0,P.layout.length),0,id); return true; }
 
 /* Scan any object for a non-finite number: the sim's guard, and the save's validator. */
 function allFinite(o){ if(typeof o==='number') return Number.isFinite(o); if(o&&typeof o==='object'){ for(const k in o) if(!allFinite(o[k])) return false; } return true; }

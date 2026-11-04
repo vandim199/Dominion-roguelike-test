@@ -1,97 +1,60 @@
 "use strict";
-/* Every measured number in docs/RESULTS.md comes from here.
-   node sim/results.js [decision|loop|depth|all] > docs/results_raw.txt */
-require('./load.js'); require('./bots.js');
-const {runGame}=require('./loop.js');
-const what=process.argv[2]||'all', FN=+process.env.FN||12, LN=+process.env.LN||5;
-const pc=x=>(100*x).toFixed(0)+'%', med=a=>{ const b=a.slice().sort((x,y)=>x-y); return b.length?b[Math.floor((b.length-1)/2)]:NaN; };
-const q=(a,p)=>{ const b=a.slice().sort((x,y)=>x-y); return b.length?b[Math.floor(p*(b.length-1))]:NaN; };
+/* The numbers in docs/RESULTS.md, on the real rules.
+   node sim/results.js pacing [seeds=12]   careful bot, fresh start to a trillion and on to 1e15
+   node sim/results.js skill  [seeds=8]    careful against naive, and game knock-outs
+   node sim/results.js tap    [seeds=8]    how much thumb speed is worth
+   node sim/results.js rules  [seeds=8]    each combo rule switched off in turn
+   node sim/results.js decks              eight deck ideas on the same budget
+   node sim/results.js share              how far each side of a finished deck carries it
+   Pass TUNEX='{"crossX":1}' to change any tuning value. */
+const {runGame,spendCareful,bestPerks,score,setOpt}=require('./loop.js');
+const med=a=>{ const b=a.filter(x=>x!=null&&isFinite(x)).sort((x,y)=>x-y); return b.length?b[Math.floor(b.length/2)]:null; };
+const Q=(a,p)=>{ const b=a.slice().sort((x,y)=>x-y); return b.length?b[Math.floor(p*(b.length-1))]:null; };
+const seedsOf=n=>[...Array(n).keys()].map(i=>(i+1)*97+3);
+const mins=(r,m)=>r.marks[m]==null?null:r.marks[m]/60;
+function runMany(n,kind,o){ return seedsOf(n).map(s=>runGame(s,kind,{capMin:o&&o.capMin||240,target:o&&o.target||1e15,...o})); }
+function summary(rs){ const never=m=>rs.filter(r=>mins(r,m)==null).length, row=m=>{ const v=rs.map(r=>mins(r,m)).filter(x=>x!=null); return v.length?`${med(v).toFixed(0)} (${Q(v,0).toFixed(0)}-${Q(v,1).toFixed(0)})${never(m)?` +${never(m)} never`:''}`:'never'; };
+  const gaps=[]; for(const r of rs) for(let i=1;i<r.bursts.length;i++) gaps.push((r.bursts[i]-r.bursts[i-1])/60);
+  const inWindow=gaps.filter(g=>g>=1&&g<=5).length/Math.max(1,gaps.length);
+  return {'to 1e6':row(1e6),'to 1e9':row(1e9),'to 1e12':row(1e12),'to 1e15':row(1e15),'burst gap med':(Q(gaps,.5)||0).toFixed(1),'p10':(Q(gaps,.1)||0).toFixed(1),'p90':(Q(gaps,.9)||0).toFixed(1),'gaps in 1-5 min':Math.round(100*inWindow)+'%',n:gaps.length,
+    trips:med(rs.map(r=>r.P.trips)),defeats:med(rs.map(r=>r.P.defeats)),'trip min':med(rs.flatMap(r=>r.tripMins)).toFixed(1),'fight s':med(rs.flatMap(r=>r.fightSecs)).toFixed(0),'hand share':rs.map(r=>Math.round(100*r.handShare)).sort((a,b)=>a-b).join(' '),nonFinite:rs.reduce((s,r)=>s+r.nonFinite,0)}; }
+const show=(name,o)=>console.log(`\n${name}\n`+Object.entries(o).map(([k,v])=>`  ${k}: ${v}`).join('\n'));
 
-/* ---- builds at three stages of the game, taken from what the careful bot actually ends up with ---- */
-const BUILDS={
-  early:{lvl:6,wheel:1,slots:2,deeds:0,board:['stake','cannon'],pack:['fork','fork','fork','helm','helm','scoop','keg','errand'],sock:{}},
-  mid:{lvl:22,hearth:22,wheel:3,slots:4,deeds:2,board:['stake','cannon','apoth','mortar'],pack:['fork','fork','sally','helm','pavise','scoop','keg','errand','vial','doll'],sock:{all:['keen','light']}},
-  late:{lvl:38,hearth:46,wheel:7,slots:6,deeds:4,energy:5,board:['stake','apoth','cannon','mortar','cannon','mortar'],pack:['ram','ram','fork','helm','helm','keg','second','errand'],sock:{piece:['charge','keen'],last:['keen','light'],card:['keen','echo']}},
+const what=process.argv[2]||'pacing', N=+process.argv[3];
+if(what==='pacing') show('Careful bot, 4 taps a second',summary(runMany(N||12,'careful')));
+if(what==='skill'){ const n=N||8, base=runMany(n,'careful',{target:1e12}), ratio=(rs)=>{ const v=rs.map((r,i)=>{ const a=mins(base[i],1e12), b=mins(r,1e12); return b==null?Infinity:b/a; }); return `x${(med(v)===Infinity?Infinity:med(v)).toFixed?med(v).toFixed(2):med(v)} per seed: ${v.map(x=>x===Infinity?'never':x.toFixed(1)).join(' ')}`; };
+  const run=(name,kind,o)=>{ const rs=runMany(n,kind,{target:1e12,...o}); show(name,{'to 1e12':summary(rs)['to 1e12'],ratio:ratio(rs),'burst gap med':summary(rs)['burst gap med']}); };
+  show('Baseline',{'to 1e12':summary(base)['to 1e12']});
+  run('Naive upgrades: cheapest first, random sockets, packs everything','naive',{});
+  run('Never changes its pack or bastions after the start (still levels)','careful',{noDeck:true});
+  run('No sockets','careful',{noSock:true}); run('No Charge','careful',{noCharge:true}); run('Never buys the Wheel','careful',{noWheel:true}); run('Never hires the Page','careful',{noAuto:true}); }
+if(what==='tap'){ const n=N||8; for(const rate of [1.5,2.5,4,6,8]){ const rs=runMany(n,'careful',{rate,target:1e12}), s=summary(rs); show(`${rate} taps a second`,{'to 1e12':s['to 1e12'],'trip min':s['trip min'],'hand share':s['hand share']}); } }
+if(what==='rules'){ const n=N||8, s=summary(runMany(n,'careful',{target:1e12})); show(`Rules as set by TUNEX=${process.env.TUNEX||'{}'}`,{'to 1e12':s['to 1e12'],'gaps in 1-5':s['gaps in 1-5 min'],'hand share':s['hand share']}); }
+
+/* ---- eight deck ideas, same coin, same collection ---- */
+const DECKS={
+  'Fork swarm':     {pack:['fork','fork','fork','fork','sally','keg','errand','helm'],board:['cannon','stake']},
+  'Guns and Powder':{pack:['scoop','scoop','scoop','keg','trail','rope','helm'],board:['bellows','mortar','cannon','stake']},
+  'Combo horn':     {pack:['horn','horn','drum','errand','fork','fork','helm'],board:['tower','cannon','stake']},
+  'Block and bash': {pack:['helm','helm','helm','bash','bash','mend','fork'],board:['stake','gate']},
+  'Blight':         {pack:['vial','vial','vial','plague','plague','scoop','helm'],board:['apoth','stake']},
+  'Snowball':       {pack:['barrel','barrel','anvil','whet','errand','helm'],board:['cannon','stake']},
+  'Wide field':     {pack:['ram','ram','ram','scoop','keg','helm'],board:['stake','apoth','cannon','gate']},
+  'Crossfire mix':  {pack:['fork','fork','keg','keg','scoop','whet','helm'],board:['forge','arsenal','cannon','stake']},
 };
-function build(name,seed,boardOverride){
-  const b=BUILDS[name], P=newProfile(seed); P.wheel=b.wheel; P.hearth=b.hearth||b.lvl; P.slots=b.slots; P.energy=b.energy||3; P.cards=[]; P.layout=[]; P.nid=1;
-  const open=(c,l)=>{ c.sock=(l||[]).slice(0,socketsOpen(P,c)); };
-  for(const k of b.pack){ const c=addCard(P,k,b.lvl,true); open(c,b.sock.card||b.sock.all); }
-  for(let i=0;i<b.deeds;i++) addCard(P,'deed',0,true);
-  const board=boardOverride||b.board; board.forEach((k,i)=>{ const c=addCard(P,k,b.lvl,true); open(c,i===board.length-1?(b.sock.last||b.sock.all):(b.sock.piece||b.sock.all)); P.layout.push(c.id); });
-  return P;
-}
-function runFight(P,key,R,bot,seed,opts,hpBase){
-  P.seed=seed; P.trips=seed; const T=startTrip(P); T.coin=0; T.f=7;
-  const hp=(hpBase||estPower(P))/R, f=Math.log(hp/TUNE.hp0)/Math.log(TUNE.hpG), rs={s:seed*101|0};
-  beginFight(P,T,{key,hp,atk:TUNE.atk0*Math.pow(TUNE.atkG,f)});
-  const F=T.F; let g=0; while(!F.over&&g++<20) playTurn(P,T,bot,rs,opts);
-  return {win:F.over==='win'?1:0,turns:F.turn,taken:Math.max(0,1-T.hp/T.maxHp),lost:T.stat.lost,left:Math.max(0,F.enemy.hp/F.enemy.maxHp),plays:T.stat.plays||0,burns:T.stat.burns||0,hand:T.stat.dmgHand,board:T.stat.dmgBoard};
-}
-const SET=['rat','raider','archer','ogre','sapper','warden','shaman','toller','bishop'];
-function cell(name,bot,R,keys,opts,n,bo){ let c=0,w=0,t=0,d=0,kt=0,pl=0,bu=0,hs=0; for(const key of keys) for(let s=1;s<=(n||FN);s++){ const r=runFight(build(name,s,bo),key,R,bot,s*13+7,opts); c++; w+=r.win; d+=r.taken; t+=r.turns; pl+=r.plays; bu+=r.burns; hs+=r.hand/Math.max(1,r.hand+r.board); if(r.win) kt+=r.turns; }
-  return {win:w/c,taken:d/c,turns:t/c,ttk:w?kt/w:NaN,plays:pl/t,burns:bu/t,handShare:hs/c}; }
-function decision(){
-  console.log('## 1. Decision test ('+FN+' seeds x '+SET.length+' enemies per cell; think = 60 sampled turns)');
-  for(const name of Object.keys(BUILDS)){
-    console.log(`\n### Build: ${name} (L${BUILDS[name].lvl})\n| R | bot | win | HP lost | turns to kill (wins) | plays/turn | burns/turn | hand share of damage |\n|---|---|---|---|---|---|---|---|`);
-    for(const R of [.7,1,1.5,3]) for(const bot of ['random','fixed','think']){ const x=cell(name,bot,R,SET); console.log(`| ${R} | ${bot} | ${pc(x.win)} | ${pc(x.taken)} | ${x.ttk.toFixed(2)} | ${x.plays.toFixed(1)} | ${x.burns.toFixed(1)} | ${pc(x.handShare)} |`); }
-  }
-  // Knock-outs on the mid build
-  console.log('\n### Knock-outs, mid and late builds, R=1 (think vs fixed)\n| variant | fixed win | think win | fixed HP lost | think HP lost |\n|---|---|---|---|---|');
-  const ko=(label,name,fn,undo,opts)=>{ fn(); const a=cell(name,'fixed',1,SET),b=cell(name,'think',1,SET,opts); undo(); console.log(`| ${label} (${name}) | ${pc(a.win)} | ${pc(b.win)} | ${pc(a.taken)} | ${pc(b.taken)} |`); };
-  const nil=()=>{};
-  for(const n of ['mid','late']) ko('as shipped',n,nil,nil);
-  ko('no board swap (shipped has none in UI; bot could swap above)','mid',nil,nil,{swap:false});
-  ko('burn flat 1 Powder, not cost+1','mid',()=>{TUNE.burnFlat=true;},()=>{TUNE.burnFlat=false;});
-  ko('only Powder cards feed','mid',()=>{TUNE.feed='powdercards';},()=>{TUNE.feed='stoke';});
-  ko('wheel only feeds (+3), hand never burns','mid',()=>{TUNE.feed='wheel';},()=>{TUNE.feed='stoke';});
-  ko('no Magazine','mid',()=>{TUNE.magBase=0;},()=>{TUNE.magBase=2;});
-  // Layouts and builds across enemy sets
-  const layouts={mid:{stake_first:['stake','cannon','apoth','mortar'],guns_first:['cannon','mortar','apoth','stake'],gatehouse:['gate','cannon','mortar','apoth'],hex:['hut','stake','cannon','mortar'],bellows:['bellows','cannon','apoth','mortar'],post:['post','stake','cannon','mortar']},
-    late:{chain:['stake','apoth','cannon','mortar','cannon','mortar'],gate_chain:['gate','apoth','cannon','mortar','cannon','mortar'],bellows_chain:['bellows','stake','cannon','apoth','mortar','mortar'],hex_chain:['hut','stake','cannon','apoth','mortar','mortar'],big_first:['mortar','mortar','cannon','cannon','apoth','stake'],economy:['post','granary','stake','cannon','mortar','mortar']}};
-  for(const name of ['mid','late']){ const names=Object.keys(layouts[name]), wins={}, per={}; names.forEach(n=>wins[n]=0); let tot=0;
-    for(const key of SET){ const loc={}; for(let s=1;s<=Math.ceil(FN/2);s++){ let best=null,bv=-1e9; for(const n of names){ const r=runFight(build(name,s,layouts[name][n]),key,1,'think',s*13+7,undefined,estPower(build(name,s))); const v=(r.win?100:0)-r.taken*50-r.turns-r.left*50; if(v>bv){bv=v;best=n;} } wins[best]++; loc[best]=(loc[best]||0)+1; tot++; }
-      per[key]=Object.entries(loc).sort((a,b)=>b[1]-a[1])[0][0]; }
-    console.log(`\n### Layouts, ${name} build, R=1: same absolute enemy for all layouts, share of enemy-and-seed pairings where each layout did best\n`+names.map(n=>`${n} ${pc(wins[n]/tot)}`).join(', ')+'\nbest per enemy: '+JSON.stringify(per));
-  }
-}
-function summarize(label,rs){
-  const min=m=>rs.map(r=>r.marks[m]==null?Infinity:r.marks[m]/60), gaps=[]; for(const r of rs) for(let i=1;i<r.bursts.length;i++) gaps.push((r.bursts[i]-r.bursts[i-1])/60);
-  const band=k=>med(rs.map(r=>r.bands[k]/(r.bands.hi+r.bands.mid+r.bands.lo||1)));
-  console.log(`\n### ${label} (${rs.length} seeds)`);
-  console.log(`minutes to 1e6 ${med(min(1e6)).toFixed(0)} (${Math.min(...min(1e6)).toFixed(0)}-${Math.max(...min(1e6)).toFixed(0)}), 1e9 ${med(min(1e9)).toFixed(0)} (${Math.min(...min(1e9)).toFixed(0)}-${Math.max(...min(1e9)).toFixed(0)}), 1e12 ${med(min(1e12)).toFixed(0)} (${Math.min(...min(1e12)).toFixed(0)}-${Math.max(...min(1e12)).toFixed(0)}), 1e15 ${med(min(1e15)).toFixed(0)} (${Math.min(...min(1e15)).toFixed(0)}-${Math.max(...min(1e15)).toFixed(0)})`);
-  console.log(`minutes between bursts: median ${q(gaps,.5).toFixed(1)}, p10 ${q(gaps,.1).toFixed(1)}, p90 ${q(gaps,.9).toFixed(1)} (n=${gaps.length})`);
-  console.log(`time at R>=2 ${pc(band('hi'))}, R 1-2 ${pc(band('mid'))}, R<1 ${pc(band('lo'))}`);
-  console.log(`trips ${med(rs.map(r=>r.P.trips))} (${Math.min(...rs.map(r=>r.P.trips))}-${Math.max(...rs.map(r=>r.P.trips))}), defeats ${med(rs.map(r=>r.P.defeats))}, retreats ${med(rs.map(r=>r.P.retreats))}, non-finite checks failed ${rs.reduce((s,r)=>s+r.nonFinite,0)}`);
-  console.log(`median across trips of hand share of damage ${pc(med(rs.map(r=>med(r.handBy.map(x=>x.share)))))}, plays/turn ${med(rs.map(r=>r.plays/Math.max(1,r.turns))).toFixed(1)}, burns/turn ${med(rs.map(r=>r.burns/Math.max(1,r.turns))).toFixed(1)}, trip length min median ${med(rs.flatMap(r=>r.tripMins)).toFixed(1)}, power jump per trip median x${med(rs.flatMap(r=>r.log.map(l=>+l.jump))).toFixed(1)}`);
-  return rs;
-}
-const games=(kind,o={})=>{ const out=[]; for(let s=1;s<=LN;s++) out.push(runGame(s*97+3,kind,{capMin:400,target:1e15,samples:+process.env.SAMPLES||16,...o})); return out; };
-if(what==='decision'||what==='all') decision();
-{ // Stress: far past the game's end, every number must stay finite, in the rules and through a save round trip.
-  const P=build('late',5); for(const c of P.cards) if(c.key!=='deed') c.lvl=300; P.hearth=320; P.coin=1e200; const T=startTrip(P); T.f=1000; beginFight(P,T,{key:'bishop',hp:estPower(P)*2,atk:enemyAtk(1000)}); for(let i=0;i<6&&!T.F.over;i++) fixedTurn(P,T);
-  console.log('Stress at level 300: power '+fmt(estPower(P))+', finite after six turns: '+(allFinite(P)&&allFinite(T))+', JSON round trip equal: '+(JSON.stringify(JSON.parse(JSON.stringify(T)))===JSON.stringify(T))); }
-if(what==='ko'){ const t=r=>r.map(x=>x.marks[1e12]==null?Infinity:x.marks[1e12]/60); console.log('Knock-outs with every trip required to fight at least once, so a weak bot cannot sit in a march-and-go-home loop:'); const c=summarize('careful, must fight',games('careful',{mustFight:true})); for(const [n,o] of [['no sockets',{noSock:true}],['no Charge',{noCharge:true}],['never buys the Wheel',{noWheel:true}]]){ const r=summarize(n+', must fight',games('careful',{mustFight:true,...o})); console.log(n+' / careful, minutes to 1e12: x'+(med(t(r))/med(t(c))).toFixed(2)); } }
-if(what==='quick'){ const t=r=>r.map(x=>x.marks[1e12]==null?Infinity:x.marks[1e12]/60); const c=summarize('careful',games('careful')); for(const [n,o] of [['noWheel',{noWheel:true}],['noCharge',{noCharge:true}]]){ const r=summarize(n,games('careful',o)); console.log(n+' x'+(med(t(r))/med(t(c))).toFixed(2)); } }
-if(what==='loop'||what==='depth'||what==='all'){
-  console.log('\n## 2. Whole-loop pacing, 15 s per played turn');
-  const car=summarize('careful upgrades, think fight bot',games('careful'));
-  console.log('\nOne run, trip by trip:'); for(const l of car[0].log) console.log(JSON.stringify(l).replace(/"/g,''));
-  console.log('\n## 3. Optimisation depth');
-  const nav=summarize('naive upgrades (cheapest first, random sockets, first caravan card, never retreats), same fight bot',games('naive'));
-  const t=r=>r.map(x=>x.marks[1e12]==null?Infinity:x.marks[1e12]/60);
-  console.log(`\nMedian minutes to 1e12: careful ${med(t(car)).toFixed(0)}, naive ${med(t(nav)).toFixed(0)}, ratio x${(med(t(nav))/med(t(car))).toFixed(2)}. Per seed: ${t(car).map((c,i)=>(t(nav)[i]/c).toFixed(2)).join(', ')}`);
-  const fx=summarize('careful upgrades, fixed fight bot (how much does in-fight thinking matter over the whole loop?)',games('careful',{fightBot:'fixed'}));
-  console.log(`\nfixed fight bot / think fight bot, minutes to 1e12: x${(med(t(fx))/med(t(car))).toFixed(2)}`);
-  const ns=summarize('careful upgrades but no sockets at all',games('careful',{noSock:true}));
-  console.log(`\nno sockets / careful, minutes to 1e12: x${(med(t(ns))/med(t(car))).toFixed(2)}`);
-  const nc=summarize('careful upgrades but no Charge perk',games('careful',{noCharge:true}));
-  console.log(`\nno Charge / careful, minutes to 1e12: x${(med(t(nc))/med(t(car))).toFixed(2)}`);
-  const nd=summarize('careful upgrades but never buys the Wheel',games('careful',{noWheel:true}));
-  console.log(`\nno Wheel buying / careful, minutes to 1e12: x${(med(t(nd))/med(t(car))).toFixed(2)}`);
-  // Retreat policy: dying must never out-earn leaving.
-  console.log('\n### Retreat policy, careful upgrades: minutes to 1e12 by when the bot chooses to leave');
-  for(const R of [1.2,1,.75,.5,0]){ const rs=games('careful',{retreatR:R||.0001,neverRetreat:R===0}); console.log(`retreat when next R< ${R}: minutes to 1e12 ${med(t(rs)).toFixed(0)}, trips ${med(rs.map(r=>r.P.trips))}, defeats ${med(rs.map(r=>r.P.defeats))}`); }
-  { const rs=games('careful',{farm:true,capMin:200}); console.log(`march-and-go-home farming (fights only when nothing can be marched; 200 min cap): minutes to 1e12 ${med(t(rs)).toFixed(0)}, 1e9 ${med(rs.map(r=>r.marks[1e9]==null?Infinity:r.marks[1e9]/60)).toFixed(0)}, trips ${med(rs.map(r=>r.P.trips))}`); }
-}
+function deckBuild(name,coin){ const d=DECKS[name], P=newProfile(11); P.cards=[]; P.nid=1;
+  for(const k of d.pack) addCard(P,k,0,true); P.layout=d.board.map(k=>addCard(P,k,0,true).id);
+  P.slots=Math.max(2,d.board.length); for(let i=2;i<P.slots;i++) addCard(P,'deed',0,true); P.coin=coin; setOpt({noDeck:true}); spendCareful(P); return P; }
+function reach(P){ let f=0; for(let g=0;g<300;g++){ if(winChance(P,f,null,3)<.5) break; f++; } return f; }
+if(what==='decks') for(const coin of [1e5,1e9,1e13]){ console.log(`\nBudget ${fmt(coin)} coin. Deepest fight won from a fresh start more than half the time, and the Power behind it:`);
+  const rows=Object.keys(DECKS).map(name=>{ const P=deckBuild(name,coin), st=testFire(P); return {name,f:reach(P),dmg:st.dmg,hand:st.hand/(st.hand+st.board||1)}; }).sort((a,b)=>b.f-a.f||b.dmg-a.dmg);
+  for(const r of rows) console.log(`  ${r.name.padEnd(17)} fight ${String(r.f).padStart(3)}  power ${fmt(r.dmg).padStart(7)}  cards ${Math.round(100*r.hand)}%`); }
+
+/* ---- does each half of a finished deck matter? ---- */
+if(what==='share'){ const n=N||6, rows=[]; for(const target of [1e6,1e9,1e12]) for(const s of seedsOf(n)){ const r=runGame(s,'careful',{capMin:240,target}), P=r.P, st=testFire(P), base=st.dmg, snap=JSON.stringify(P);
+    const q=JSON.parse(snap); for(const c of q.cards) if(!isPiece(c)&&isAtkCard(c.key)) c.packed=false; const noAtk=testFire(q).dmg;
+    const w=JSON.parse(snap); w.layout=[]; const noBoard=testFire(w).dmg;
+    const v=JSON.parse(snap); for(const c of v.cards) if(!isPiece(c)&&!isAtkCard(c.key)) c.packed=false; const noSupport=testFire(v).dmg;
+    rows.push({target,share:st.hand/(st.hand+st.board||1),noAtk:base/Math.max(1,noAtk),noBoard:base/Math.max(1,noBoard),noSupport:base/Math.max(1,noSupport)}); }
+  for(const target of [1e6,1e9,1e12]){ const a=rows.filter(r=>r.target===target), f=x=>x>=1e4?fmt(x):x.toFixed(1); console.log(`\nAt power ${fmt(target)}: cards' share of damage ${a.map(r=>Math.round(100*r.share)).sort((x,y)=>x-y).join(' ')}%`);
+    console.log(`  take out the attack cards: damage falls x${f(med(a.map(r=>r.noAtk)))}  | take out the bastions: x${f(med(a.map(r=>r.noBoard)))}  | take out the other cards: x${f(med(a.map(r=>r.noSupport)))}`); } }

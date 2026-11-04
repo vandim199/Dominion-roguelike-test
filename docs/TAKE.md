@@ -1,5 +1,7 @@
 # Coinkeep: Forays (this branch's take)
 
+*Written for the earlier card-playing version of this branch, now at commit `c38cf26`. The fight has since been rebuilt around tapping a deck: see `docs/TAPDECK.md`. Hands, energy and burning below no longer exist, and the numbers are from the old rules. Kept as the record of how the design got here.*
+
 ## Pitch
 
 You hold a Keep with a water wheel that grinds Powder. You march out with a small pack of cards and a row of bastions, and every card in your hand is both a move and fuel, so each turn you decide what to play and what to burn. Powder runs left to right, and a full bastion fires at once. Your machine sweeps the old ground by itself, the fights near your limit are played by hand, and when you are beaten or wise enough to leave, you go home and spend. Nothing you bought is ever lost. Shops come rarely. Every card is a small build of its own, with levels, triple-pay milestones and sockets, and the top of the game is a chain of Charged bastions that has to complete inside one turn.
