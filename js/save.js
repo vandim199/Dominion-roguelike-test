@@ -17,6 +17,7 @@ function readSave(){
     const P=s.P, dflt={wheel:1,nid:9999,slots:TUNE.startBoard.length,comboCap:TUNE.comboCap,crit:TUNE.critChance,shuffleX:1};
     for(const k of ['coin','deepest','wheel','hearth','auto','ledger','slots','nid','trips','defeats','secs','comboCap','crit','shuffleX']) if(!Number.isFinite(P[k])) P[k]=dflt[k]||0;
     P.cards=P.cards.filter(c=>c&&CARDS[c.key]&&Number.isFinite(c.lvl)&&Number.isFinite(c.id));
+    for(const c of P.cards) c.sock=(c.sock||[]).filter(k=>PERKS[k]&&perkFits(k,c));   // a perk the card can no longer take gives its socket back
     if(!Array.isArray(P.layout)) P.layout=[];
     let T=s.T||null;
     if(T){ const ok=Number.isFinite(T.hp)&&Number.isFinite(T.coin)&&Number.isFinite(T.f)&&Array.isArray(T.board)&&T.board.every(b=>Number.isFinite(b.hp))&&Array.isArray(T.draw)&&Array.isArray(T.disc)&&(!T.F||Number.isFinite(T.F.enemy.hp));

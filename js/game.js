@@ -331,11 +331,24 @@ function runFight(P,T,rate,dt,cap){ const F=T.F; let acc=1; F.live=true;
   return F.t; }
 // A test firing against a dummy that never hits back, from an empty board.
 function testFire(P,opt){ const o=opt||{}, secs=o.secs||TUNE.powSecs, rate=o.rate==null?TUNE.powTap:o.rate, dt=o.dt||.1, seeds=o.seeds||2; let dmg=0,hand=0,board=0,block=0,plays=0,fires=0,coin=0,powder=0;
-  for(let s=0;s<seeds;s++){ const T=makeTrip(P,1009+s*77); T.sim=true; T.ev=null; beginFight(P,T,{key:'dummy',hp:1e200,atk:0}); runFight(P,T,rate,dt,secs); const st=T.stat, e=T.F.enemy;
+  for(let s=0;s<seeds;s++){ const T=makeTrip(P,(o.base||1009)+s*77); T.sim=true; T.ev=null; beginFight(P,T,{key:'dummy',hp:1e200,atk:0}); runFight(P,T,rate,dt,secs); const st=T.stat, e=T.F.enemy;
     const leftover=e.poison*TUNE.blightPay/(1-TUNE.blightKeep);
     hand+=st.dmgHand; board+=st.dmgBoard+leftover; dmg+=st.dmgHand+st.dmgBoard+leftover; block+=st.blockGain; plays+=st.plays; fires+=st.fires; coin+=T.coin; powder+=st.powder; }
   return {dmg:num(dmg/seeds),hand:num(hand/seeds),board:num(board/seeds),block:num(block/seeds),plays:plays/seeds,fires:fires/seeds,coin:coin/seeds,powder:powder/seeds,secs}; }
 const estPower=P=>testFire(P).dmg;
+/* What a perk does to damage. Not yet on the card: what tapping it would do, including the oldest perk it pushes out of a full card. Already on: what it adds now.
+   Decks that compound swing wildly between runs, and a plain average is ruled by the odd lucky one. So this takes the typical ratio (geometric mean)
+   over paired firings, and keeps firing until the reading settles. The seeds are fixed, so the same deck always reads the same. */
+function perkGain(P,c,k){
+  const keep=c.sock, on=keep.includes(k), out=!on&&keep.length>=socketsOpen(P,c)?keep[0]:null;
+  const without=on?keep.filter(x=>x!==k):keep, withIt=on?keep:keep.filter(x=>x!==out).concat(k);
+  const fire=(sock,base)=>{ c.sock=sock; return Math.max(1,testFire(P,{seeds:1,base}).dmg); };
+  let n=0,sum=0,sq=0,se=0;
+  do{ const base=1009+n*77, d=Math.log(fire(withIt,base)/fire(without,base)); sum+=d; sq+=d*d; n++; se=Math.sqrt(Math.max(0,sq/n-(sum/n)*(sum/n))/n); }
+  while(n<400&&(n<24||se>.05));
+  c.sock=keep;
+  return {ratio:Math.exp(sum/n),se,n,out};
+}
 // Chance of winning this fight at a steady 4 taps a second: from T if given (the trip as it stands), else from a fresh start.
 function winChance(P,f,T0,K){ K=K||5; let wins=0;
   for(let k=0;k<K;k++){ const T=T0?cloneT(T0):makeTrip(P,1); T.sim=true; T.ev=null; T.rng=(5003+k*911+f*17)|0; T.f=f; T.q=0; T.pend=0;
@@ -356,7 +369,9 @@ function buyKeep(P,what){
   else if(what==='auto'){ P.auto+=TUNE.autoStep; P.autoBuys=(P.autoBuys||0)+1; } else P.ledger++;
   return true;
 }
-function perkFits(perk,c){ const f=PERKS[perk].for; if(perk==='charge'&&!CARDS[c.key].fx.some(([k])=>ATK[k])) return false; return f==='both'||(f==='piece')===isPiece(c); }
+// Keen is only offered where it changes what the card pays. Powder, free plays and the like stay as they are.
+const keenPays=c=>CARDS[c.key].fx.some(([k,b])=>fxAmount({...c,sock:['keen']},k,b)!==fxAmount({...c,sock:[]},k,b));
+function perkFits(perk,c){ const f=PERKS[perk].for; if(perk==='charge'&&!CARDS[c.key].fx.some(([k])=>ATK[k])) return false; if(perk==='keen'&&!keenPays(c)) return false; return f==='both'||(f==='piece')===isPiece(c); }
 function togglePack(P,id){ const c=cardOf(P,id); if(isPiece(c)) return false;
   const cnt=packedCount(P);
   if(c.packed){ if(cnt<=TUNE.deckMin) return false; c.packed=false; } else { if(cnt>=TUNE.deckMax) return false; c.packed=true; }

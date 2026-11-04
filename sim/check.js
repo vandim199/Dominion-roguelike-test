@@ -34,4 +34,17 @@ const count=(T,t)=>T.ev.filter(e=>e.t===t).length;
 // Big numbers stay finite.
 { const {P,T}=fresh(['fork','whet','anvil','barrel','horn'],['cannon','bellows']); for(const c of P.cards) c.lvl=300; const st=testFire(P); assert.ok(Number.isFinite(st.dmg),'finite at level 300'); assert.ok(allFinite(JSON.parse(JSON.stringify(T)))); }
 
+// Keen is only offered on cards it changes.
+{ const fits=k=>perkFits('keen',{key:k,lvl:20,sock:[]});
+  for(const k of ['fork','helm','keg','vial','plague','bash','tithe','mend','cannon','stake','gate','hut','mint','forge','arsenal']) assert.ok(fits(k),`${k} pays more with Keen`);
+  for(const k of ['scoop','errand','whet','anvil','rope','trail','doll','drum','wind','post','tower','bellows']) assert.ok(!fits(k),`${k} pays the same with Keen`); }
+
+// Echo's reading is right, repeatable, and leaves the card as it found it.
+{ const {P}=fresh(['fork','helm','helm','helm','helm'],['cannon'],{crit:0}); const fork=P.cards.find(c=>c.key==='fork'), helm=P.cards.find(c=>c.key==='helm'), gun=P.cards.find(c=>c.key==='cannon');
+  fork.lvl=helm.lvl=gun.lvl=5; fork.sock=[];
+  const a=perkGain(P,fork,'echo'); assert.deepEqual(fork.sock,[],'the card is put back'); assert.ok(a.ratio>1.1,`Echo adds damage to the only attack card, got x${a.ratio.toFixed(2)}`); assert.equal(perkGain(P,fork,'echo').ratio,a.ratio,'the same deck reads the same');
+  assert.ok(Math.abs(perkGain(P,helm,'echo').ratio-1)<.01,'Echo on a Helm adds no damage');
+  fork.sock=['keen']; const b=perkGain(P,fork,'echo'); assert.equal(b.out,'keen','a full card swaps out its oldest perk'); assert.deepEqual(fork.sock,['keen']); assert.ok(b.ratio<1,`Echo pays less than the Keen it replaces, got x${b.ratio.toFixed(2)}`);
+  fork.sock=['echo']; const c=perkGain(P,fork,'echo'); assert.equal(c.out,null); assert.deepEqual(fork.sock,['echo']); assert.ok(c.ratio>1.1,'already on: it reads what it adds now'); }
+
 console.log('All rule checks passed.');

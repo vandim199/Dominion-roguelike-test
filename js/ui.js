@@ -127,7 +127,7 @@ function openItem(id){
   if(!junk){ const n=Math.max(3,socketsOpen(P,c)); h+=`<h3>Sockets</h3><div class="socks">`;
     for(let i=0;i<n+(P.extraSock?1:0)&&i<4;i++){ const need=i<3?TUNE.sockAt[i]:60, open=c.lvl>=need, cur=c.sock[i];
       h+=`<div class="sock ${open?'':'shut'}">${open?(cur?`<b>${PERKS[cur].name}</b>`:'empty'):`Lv ${need}`}</div>`; } h+='</div>';
-    if(socketsOpen(P,c)>0){ h+='<div class="perks">'+Object.keys(PERKS).filter(k=>perkFits(k,c)).map(k=>`<button class="perk ${c.sock.includes(k)?'on':''}" onclick="togglePerk(${id},'${k}')"><b>${PERKS[k].name}</b><small>${PERKS[k].text}</small></button>`).join('')+'</div>'; }
+    if(socketsOpen(P,c)>0){ h+='<div class="perks">'+Object.keys(PERKS).filter(k=>perkFits(k,c)).map(k=>`<button class="perk ${c.sock.includes(k)?'on':''}" onclick="togglePerk(${id},'${k}')"><b>${PERKS[k].name}</b><small>${PERKS[k].text}</small>${k==='echo'?'<small class="gain" id="echoGain">Measuring…</small>':''}</button>`).join('')+'</div>'; }
   }
   if(piece){ const i=P.layout.indexOf(id), on=onBoard(P,id), open=slotsOpen(P);
     h+='<div class="acts">'; if(on){ if(i>0) h+=`<button class="btn" onclick="movePiece(${id},${i-1})">◀ Left</button>`; if(i<open-1&&i+1<P.layout.length) h+=`<button class="btn" onclick="movePiece(${id},${i+1})">Right ▶</button>`; h+=`<button class="btn" onclick="movePiece(${id},null)">To reserve</button>`; }
@@ -136,7 +136,13 @@ function openItem(id){
   else h+=`<div class="acts"><button class="btn" onclick="packIt(${id})">${c.packed?'Leave in the vault':'Pack it'}</button></div>`;
   h+=`<button class="btn close" onclick="closeSheet();renderHome()">Done</button>`;
   sheet(h);
+  clearTimeout(UI.gainT); if($('echoGain')) UI.gainT=setTimeout(()=>showEchoGain(id),40);   // the sheet shows first: a jumpy deck can take a moment to measure
 }
+function showEchoGain(id){ const el=$('echoGain'); if(!el) return; const P=UI.P,c=cardOf(P,id);
+  if(!deckIds(P).includes(id)){ el.textContent='Not in your deck'; return; }
+  const G=perkGain(P,c,'echo'), same=Math.abs(Math.log(G.ratio))<Math.max(.05,2*G.se), amt=same?'about the same damage':`about ×${G.ratio<10?G.ratio.toFixed(1):fmt(G.ratio)} damage`;
+  el.textContent=c.sock.includes('echo')?(same?'Adding no clear damage':`Adding ${amt}`):G.out?`Replaces ${PERKS[G.out].name}: ${amt}`:amt[0].toUpperCase()+amt.slice(1);
+  el.className='gain '+(same?'':G.ratio>1?'up':'down'); }
 function sheetBuy(id,n){ let any=false; for(let i=0;i<n;i++) if(buyLevel(UI.P,id)){ any=true; flashMile(cardOf(UI.P,id)); } if(any){ SFX.unlock(); SFX.buy(); persist(); renderHome(); openItem(id); } }
 function togglePerk(id,k){ const P=UI.P,c=cardOf(P,id); if(c.sock.includes(k)) c.sock=c.sock.filter(x=>x!==k); else { if(c.sock.length>=socketsOpen(P,c)) c.sock.shift(); c.sock.push(k); } persist(); renderHome(); openItem(id); }
 function movePiece(id,slot){ placePiece(UI.P,id,slot); persist(); renderHome(); openItem(id); }

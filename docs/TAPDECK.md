@@ -40,6 +40,8 @@ Card playing was boring next to the incremental side. After a few upgrades to th
 - **The Wheel** now makes Powder per second, for the whole fight.
 - **Honest odds:** the old hand-tuned formula is gone. Odds now come from simulating the real fight.
 - **Caravan purchases** join your deck at once if there is room.
+- **Keen only where it pays:** it is not offered on a card whose effect it cannot change, such as Powder, free plays or Combo. Courier Post, Drum Tower and Bellows count as unaffected, because Keen only doubled their health. A save with Keen on such a card gets the socket back.
+- **Echo shows its damage:** Echo's button in the socket menu shows what it would do to this deck's damage, what it adds if it is already on, and which perk it would replace on a full card. It reads the typical result of paired test firings, 24 to 400 pairs until the number settles, because a plain average on a compounding deck is ruled by the odd lucky run. Effects that are not damage, such as doubled block, read as "about the same damage".
 
 ## What testing changed
 
@@ -58,5 +60,5 @@ Numbers are from the bots. See `docs/RESULTS.md`.
 
 1. Does tapping feel good, or is it a chore?
 2. Are the first few minutes readable, or just noise?
-3. Is it too fast? The bot's trillion takes 26 minutes.
+3. Is it too fast? The bot's trillion takes 31 minutes.
 4. Does a deck change at home feel like it matters when you tap next?
