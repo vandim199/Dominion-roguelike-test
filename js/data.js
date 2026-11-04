@@ -9,30 +9,30 @@
    ========================================================== */
 const TUNE = {
   gHp:1.30, gAtk:1.30, gCoin:1.30,       // growth per fight
-  hp0:26, atk0:14, coin0:18,               // fight 1 values
+  hp0:16, atk0:9,  coin0:18,               // fight 1 values
   pLv:1.5, mile:3,                        // payoff ×pLv per level, ×mile more at every 5th level
-  cLv:2.07,                               // price ×cLv per level
-  capBase:4, capPer:2.6,                  // level cap = capBase + deepest/capPer
+  cLv:2.12,                               // price ×cLv per level
+  capBase:1, capPer:2.75,                  // level cap = capBase + deepest/capPer
   bossEvery:15, finalBoss:105, bossHp:2.2, bossAtk:1.25,
   enrageTurn:5, enrage:1.5,
   energy:3, hand:5, mag:3,
   healBetween:.15, repairBetween:.25,
   defeatKeep:.7, firstClear:2,
-  dropR:3.5, standing:1.4, swapCost:1, wardCut:.3, wardBoss:.15,
+  dropR:4, standing:1.6, haul:.1, carry:.3, swapCost:1, wardCut:.3, wardBoss:.15,
   startHp:60, cacheEvery:3, surge:1.5,
 };
 
 const BASTIONS = {
   ballista: {n:'Bolt Tower',  i:'🏹', fill:3, cost:1, hp:20, price:10, d:8, tip:'Cheap, steady damage.'},
-  bombard:  {n:'Great Bombard',i:'💣', fill:8, cost:2, hp:14, price:14, d:42, tip:'Slow to fill, frail, enormous when it goes.'},
+  bombard:  {n:'Great Bombard',i:'💣', fill:6, cost:2, hp:14, price:14, d:30, tip:'Slow to fill, frail, enormous when it goes.'},
   buttress: {n:'Buttress',    i:'🧱', fill:3, cost:1, hp:30, price:8,  s:8, tip:'Shields for the coming attack.'},
-  gatehouse:{n:'Gatehouse',   i:'🏯', fill:4, cost:2, hits:3, price:9, s:6, tip:'Counts hits, not damage: any attack, however big, takes one hit and stops there. Firing mends one hit and gives shields.'},
-  plaguepit:{n:'Plague Pit',  i:'☣️', fill:4, cost:1, hp:16, price:10, b:12, tip:'Blight deals its stacks each enemy turn, then halves.'},
-  hexstone: {n:'Hexstone',    i:'🔮', fill:3, cost:1, hp:18, price:6,  hex:2, tip:'The next 2 attacks are halved.'},
-  mint:     {n:'Mint',        i:'🪙', fill:5, cost:1, hp:16, price:9,  coin:.25, tip:'Coin worth a quarter of this fight\'s purse.'},
-  signal:   {n:'Signal Post', i:'📯', fill:3, cost:1, hp:16, price:8,  draw:2, tip:'Draw 2 cards, mid-turn.'},
+  gatehouse:{n:'Gatehouse',   i:'🏯', fill:3, cost:2, hits:3, price:9, s:6, tip:'Counts hits, not damage: any attack, however big, takes one hit and stops there. Firing mends one hit and gives shields.'},
+  plaguepit:{n:'Plague Pit',  i:'☣️', fill:3, cost:1, hp:16, price:10, b:12, tip:'Blight deals its stacks each enemy turn, then halves.'},
+  hexstone: {n:'Hexstone',    i:'🔮', fill:2, cost:1, hp:18, price:6,  hex:2, tip:'The next 2 attacks are halved.'},
+  mint:     {n:'Mint',        i:'🪙', fill:4, cost:1, hp:16, price:9,  coin:.25, tip:'Coin worth a quarter of this fight\'s purse.'},
+  signal:   {n:'Signal Post', i:'📯', fill:2, cost:1, hp:16, price:8,  draw:2, tip:'Draw 2 cards, mid-turn.'},
   bellows:  {n:'Bellows',     i:'🌬️', fill:2, cost:1, hp:14, price:8,  p:4, tip:'Turns 2 Powder into 4 for whatever sits to the right.'},
-  anvil:    {n:'Anvil',       i:'⚒️', fill:4, cost:1, hp:24, price:9,  temper:3, tip:'The next Bastion to pay out pays ×3.'},
+  anvil:    {n:'Anvil',       i:'⚒️', fill:3, cost:1, hp:24, price:9,  temper:3, tip:'The next Bastion to pay out pays ×3.'},
 };
 
 const CARDS = {
@@ -93,8 +93,8 @@ const TRACKS = {
   mason:{n:'Masonry', i:'🧱',price:8, d:'All shields and Bastion health.'},
   walls:{n:'Walls',   i:'🏰',price:6, d:'Your own health.'},
 };
-const DEED_SLOTS = [[1,3],[2,4],[4,5],[6,6]];     // Deeds owned -> board slots
-const deedPrice = n => 40*Math.pow(25,n);
+const DEED_SLOTS = [[1,3],[2,4],[3,5],[4,6]];     // Deeds owned -> board slots
+const deedPrice = n => 40*Math.pow(60,n);
 
 // A finite whole-ish number: NaN to 0, Infinity to 1e300. Sims also count how often this had to step in.
 const NUMCHK = {bad:0};

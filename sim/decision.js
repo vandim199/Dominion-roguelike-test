@@ -19,7 +19,7 @@ function testProfile(L,board,cards){
   return P;
 }
 function fightOnce(P,pw,R,ek,seed,bot,opts){
-  const T=G.startTrip(P,{seed,noFight:true}); T.ev=null; if(opts&&opts.batch) T.batch=1;
+  const T=G.startTrip(P,{seed,noFight:true}); T.ev=null; if(opts&&opts.batch) T.batch=1; if(opts&&opts.noSwap) T.noSwap=1;
   const hp=pw/R; T.f=1+Math.log(hp/TUNE.hp0)/Math.log(TUNE.gHp); T.deepest=1e9; T.startF=T.f;
   G.startFight(T,ENEMIES[ek]);
   const r=mkR(seed*31+7); playFight(T,bot,r,+(opt('m')||8),30);
@@ -47,6 +47,11 @@ if(PART==='all'||PART==='batch'){
   const P=testProfile(8,BUILD_DEF);
   console.log('\n### Feed timing at level 8, R 1\n\nPowder flows at once:\n'); show(table(P,['fixed','thinker'],[1]));
   console.log('\nPowder flows in a batch at end of turn:\n'); show(table(P,['fixed','thinker'],[1],{batch:1}));
+}
+if(PART==='all'||PART==='noswap'){
+  const P=testProfile(8,BUILD_DEF);
+  console.log('\n### What swapping is worth: thinking bot at level 8\n\nWith swaps:\n'); show(table(P,['thinker'],[.7,1]));
+  console.log('\nNever swaps:\n'); show(table(P,['thinker'],[.7,1],{noSwap:1}));
 }
 if(PART==='all'||PART==='layout'){
   console.log(`\n### Layouts: all 24 orders of the same four Bastions, fixed bot, R 0.7, level 8, ${SEEDS} seeds per enemy, ties broken by health lost\n`);

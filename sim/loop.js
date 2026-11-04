@@ -11,9 +11,9 @@ const SEC=15;
 
 function score(P,deals){ const e=G.estPower(P,deals||2); return Math.log(Math.max(1,e.dmg))+.8*Math.log(Math.max(1,e.tough)); }
 const clone=o=>JSON.parse(JSON.stringify(o));
-function candidates(P){ const out=[];
+function candidates(P){ const out=[]; const noDeed=candidates.noDeed;
   for(const k of Object.keys(P.lv)) if(G.canLevel(P,k)) out.push({t:'lv',k,price:G.levelPrice(P,k)});
-  if(P.coin>=deedPrice(G.deedCount(P))) out.push({t:'deed',price:deedPrice(G.deedCount(P))});
+  if(!noDeed&&P.coin>=deedPrice(G.deedCount(P))) out.push({t:'deed',price:deedPrice(G.deedCount(P))});
   if(P.own.deed>=2&&P.coin>=G.charterPrice(P)) out.push({t:'charter',price:G.charterPrice(P)});
   for(const k of P.offers) if(P.coin>=G.offerPrice(P,k)) out.push({t:'offer',k,price:G.offerPrice(P,k)});
   return out; }
@@ -36,6 +36,8 @@ function spendCareful(P){ spendCrests(P); let guard=0;
     if(!bc) break; apply(P,bc); if(bc.t==='offer'||bc.t==='deed') improveLayout(P); }
   improveLayout(P);
 }
+// Careful, but a Bastion on offer always comes first while a slot stands empty.
+function spendBoard(P){ spendCrests(P); G.fixLayout(P); for(const k of P.offers.slice()) if(BASTIONS[k]&&P.layout.includes(null)&&P.coin>=G.offerPrice(P,k)) G.buyOffer(P,k); spendCareful(P); }
 function improveQuick(q){ G.fixLayout(q); const e=q.layout.indexOf(null); const spare=Object.keys(q.bases).filter(k=>!q.layout.includes(k)); if(e>=0&&spare.length) q.layout[e]=spare[0]; }
 
 function tripOnce(P,cfg,rec){
@@ -57,13 +59,14 @@ function tripOnce(P,cfg,rec){
   return {how,T,last};
 }
 function runOne(seed,cfg){
+  candidates.noDeed=!!cfg.nodeed;
   const P=G.newProfile(seed*1009+7); let sec=0, keepVisits=0; const bursts=[]; const marks={}; let turns=0; const bands={hi:0,mid:0,lo:0}; const trace=[]; let powPrev=G.estPower(P).dmg;
   const dmg={board:0,card:0,fires:0,wasted:0}; const rec={add(n,r){ sec+=n*SEC; turns+=n; if(r>=2) bands.hi+=n; else if(r>=1) bands.mid+=n; else bands.lo+=n; }};
   NUMCHK.bad=0; let safety=0; let topPow=powPrev; let lastBurst=0;
   const target=+cfg.to;
   while(topPow<target&&safety++<400&&sec<60*600){
     const r=tripOnce(P,cfg,rec); dmg.board+=r.T.st.baseDmg; dmg.card+=r.T.st.cardDmg; dmg.lastBoardShare=r.T.st.baseDmg/(r.T.st.baseDmg+r.T.st.cardDmg+1); dmg.fires+=r.T.st.fires; dmg.wasted+=r.T.st.wasted; dmg.turns=(dmg.turns||0)+r.T.st.turns;
-    if(cfg.spend==='careful') spendCareful(P); else spendNaive(P);
+    if(cfg.spend==='careful') spendCareful(P); else if(cfg.spend==='board') spendBoard(P); else spendNaive(P);
     const pow=G.estPower(P).dmg; const gain=pow/powPrev;
     if(gain>=2){ bursts.push((sec-lastBurst)/60); lastBurst=sec; }
     for(const m of [1e3,1e6,1e9,1e12,1e15]) if(pow>=m&&marks[m]==null) marks[m]=sec/60;

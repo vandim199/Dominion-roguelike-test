@@ -74,7 +74,7 @@ function renderKeep(){
   const rf=P.deepest+1, boss=isBoss(rf)||rf===TUNE.finalBoss;
   const nextE=enemyFor(rf); const rr=power/(fightHp(rf)*nextE.h*(boss?TUNE.bossHp:1));
   let rm='';
-  if(l&&l.lostTo){ const r=power/(fightHp(l.lostTo.f)); rm=`<b>${l.lostTo.i} ${esc(l.lostTo.n)}</b> beat you at fight ${l.lostTo.f}. Odds of a rematch now: <b class="${r>=1?'ok':'bad'}">${oddsTxt(r)}</b>`; }
+  if(l&&l.lostTo){ const e0=enemyFor(l.lostTo.f), r=power/(fightHp(l.lostTo.f)*e0.h*(isBoss(l.lostTo.f)?TUNE.bossHp:1)); rm=`<b>${l.lostTo.i} ${esc(l.lostTo.n)}</b> beat you at fight ${l.lostTo.f}. Odds of a rematch now: <b class="${r>=1?'ok':'bad'}">${oddsTxt(r)}</b>`; }
   else if(l) rm=`You walked home from fight ${l.f}. Next new ground: <b>${nextE.i} ${esc(nextE.n)}</b>, odds <b class="${rr>=1?'ok':'bad'}">${oddsTxt(rr)}</b>`;
   else rm=`Your board is two Bastions and a debt. Set out and see how far it gets.`;
   $('kRematch').innerHTML=rm+(boss?` <span class="bossnote">A boss stands at fight ${rf}.</span>`:'');
@@ -99,7 +99,7 @@ function spendHtml(){
       <div class="rbtns"><button class="buy" data-act="lv" data-k="${k}" ${canLevel(P,k)?'':'disabled'}>${fmt(pr)}</button><button class="ghost small" data-act="max" data-k="${k}" ${canLevel(P,k)?'':'disabled'}>Max</button></div></div>`; }
   const n=deedCount(P), nextSlot=DEED_SLOTS.find(([need])=>need>n), dp=deedPrice(n);
   s+='<h3>Deeds <span class="dim">junk in hand, and the only way to more slots</span></h3>';
-  s+=`<div class="row"><div class="ric">📜</div><div class="rmain"><b>Buy a Deed</b> <span class="lv">${n} owned · ×${fmt2(standing(P))}</span><div class="dim">×${TUNE.standing} to all payouts${nextSlot?`. ${nextSlot[0]} Deeds open slot ${nextSlot[1]}`:''}. It sticks in your hand until you pay 1⚡ to file it, for a little rent.</div></div>
+  s+=`<div class="row"><div class="ric">📜</div><div class="rmain"><b>Buy a Deed</b> <span class="lv">${n} owned · ×${fmt2(standing(P))}</span><div class="dim">×${TUNE.standing} to all payouts${nextSlot?`. ${nextSlot[0]} Deed${nextSlot[0]>1?'s':''} open${nextSlot[0]>1?'':'s'} slot ${nextSlot[1]}`:''}. It sticks in your hand until you pay 1⚡ to file it, for a little rent.</div></div>
     <div class="rbtns"><button class="buy" data-act="deed" ${P.coin>=dp?'':'disabled'}>${fmt(dp)}</button></div></div>`;
   if(P.own.deed>=2){ const cp=charterPrice(P); s+=`<div class="row"><div class="ric">👑</div><div class="rmain"><b>Merge 2 Deeds into a Charter</b><div class="dim">Still counts as 2, takes one card's room, triple rent.</div></div><div class="rbtns"><button class="buy" data-act="charter" ${P.coin>=cp?'':'disabled'}>${fmt(cp)}</button></div></div>`; }
   s+='<h3>For sale <span class="dim">new stock every trip, priced by your depth</span></h3><div class="offers">';
@@ -160,7 +160,7 @@ function setOut(){
 /* ---------- the fight ---------- */
 function renderFight(){
   const E=T.enemy;
-  $('fF').textContent=`Fight ${T.f}`+(E.boss?' · BOSS':''); $('fCoin').textContent='🪙 '+fmt(T.coin);
+  $('fF').textContent=`Fight ${T.f}`+(E.boss?' · BOSS':''); $('fCoin').textContent='🪙 '+fmt(T.coin)+(T.wins?` · haul ×${haulOf(T).toFixed(1)}`:'');
   const r=(turnPower*T.surge)/E.max; $('fOdds').textContent='odds '+oddsTxt(r); $('fOdds').className='chip num '+(r>=2?'ok':r>=1?'':'bad');
   $('fAuto').hidden=!(r>=2);
   $('eArt').textContent=E.i; $('eName').textContent=E.n; $('enemy').classList.toggle('boss',!!E.boss);
@@ -268,7 +268,7 @@ function wonSheet(){
   if(T.cache){ sheet(`<h2>A cache on the road</h2><p class="dim">Take one.</p><div class="choices">${T.cache.map((o,i)=>`<button class="choice" data-cache="${i}">${cacheLabel(o)}</button>`).join('')}</div>`); return; }
   const nf=f+1, ne=enemyFor(nf), boss=isBoss(nf)||nf===TUNE.finalBoss, r=turnPower*T.surge/(fightHp(nf)*ne.h*(boss?TUNE.bossHp:1));
   const crest=T.beaten>P.beaten&&T.beaten===f;
-  sheet(`<h2>Fight ${f} won</h2><p>${crest?'<b class="gold">You took a Crest.</b> Spend it at home.<br>':''}Carrying <b class="gold">🪙 ${fmt(T.coin)}</b>. ❤️ ${fmt(T.hp)} of ${fmt(T.maxHp)}.</p>
+  sheet(`<h2>Fight ${f} won</h2><p>${crest?'<b class="gold">You took a Crest.</b> Spend it at home.<br>':''}Carrying <b class="gold">🪙 ${fmt(T.coin)}</b>, haul ×${haulOf(T).toFixed(1)} on the next purse. ❤️ ${fmt(T.hp)} of ${fmt(T.maxHp)}.</p>
     <div class="nextup ${boss?'boss':''}"><span class="big">${ne.i}</span><div><b>${esc(ne.n)}</b>${boss?' · BOSS':''}<div class="dim">Fight ${nf}. Odds <b class="${r>=1?'ok':'bad'}">${oddsTxt(r)}</b>${nf>T.deepest?' · new ground pays double':''}</div>${ne.rule?`<div class="dim">${esc(ne.rule)}</div>`:''}</div></div>
     <div class="choices row2"><button class="go" data-next="1">Onward</button><button class="ghost" data-home="1">Go home, keep all</button></div>`);
 }

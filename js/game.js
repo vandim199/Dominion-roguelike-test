@@ -146,10 +146,11 @@ function hurtEnemy(T,v,src){
   emit(T,'hurt',{n:x,src,hp:E.hp});
   if(E.hp<=0) winFight(T);
 }
+const haulOf = T => 1+TUNE.haul*(T.wins||0);   // every win on this trip makes the next purse bigger, so a long trip beats two short ones
 function winFight(T){
   const E=T.enemy, over=-E.hp, f=T.f;
-  T.carry=E.dummy?0:num(over); T.phase='won'; T.st.fightsWon++;
-  let c=fightCoin(f)*E.coin; const first=f>T.deepest; if(first) c*=TUNE.firstClear;
+  T.carry=E.dummy?0:num(over*TUNE.carry); T.phase='won'; T.st.fightsWon++;
+  let c=fightCoin(f)*E.coin*haulOf(T); const first=f>T.deepest; if(first) c*=TUNE.firstClear; T.wins=(T.wins||0)+1;
   T.coin=num(T.coin+c); if(f>T.topWon) T.topWon=f;
   if(f>T.deepest) T.deepest=f;
   if((isBoss(f)||f===TUNE.finalBoss)&&f>T.beaten){ T.beaten=f; T.crests++; }
@@ -340,4 +341,4 @@ function estPower(P,deals,turns){
 }
 function cloneT(T){ const c=Object.assign({},T); c.ev=null; c.board=T.board.map(b=>b&&Object.assign({},b)); c.draw=T.draw.slice(); c.hand=T.hand.slice(); c.disc=T.disc.slice(); c.burn=T.burn.slice(); c.cards=T.cards; c.spoils=T.spoils; c.enemy=Object.assign({},T.enemy); c.st=Object.assign({},T.st); c.cache=null; return c; }
 
-if(typeof module!=='undefined') module.exports={SLOT,slotKey,newProfile,fixLayout,offerPrice,rollOffers,buyOffer,gainType,levelPrice,canLevel,buyLevel,buyMax,buyDeed,charterPrice,buyCharter,buyWork,setBench,standing,firstBossAhead,dropIn,startTrip,startFight,beginTurn,playCard,swapBases,endTurn,nextFight,pickCache,endTrip,keepSpoil,autoTurn,autoChoice,estPower,cloneT,intentOf,intentAmount,hitTarget,cardCost,lvl,fightHp,fightAtk,fightCoin,isBoss,levelCap,deedCount,slotCount,enemyFor,defOf,shuffle,rng,DUMMY,wardCount,enrageFactor,newBase};
+if(typeof module!=='undefined') module.exports={SLOT,slotKey,newProfile,fixLayout,offerPrice,rollOffers,buyOffer,gainType,levelPrice,canLevel,buyLevel,buyMax,buyDeed,charterPrice,buyCharter,buyWork,setBench,standing,firstBossAhead,dropIn,haulOf,startTrip,startFight,beginTurn,playCard,swapBases,endTurn,nextFight,pickCache,endTrip,keepSpoil,autoTurn,autoChoice,estPower,cloneT,intentOf,intentAmount,hitTarget,cardCost,lvl,fightHp,fightAtk,fightCoin,isBoss,levelCap,deedCount,slotCount,enemyFor,defOf,shuffle,rng,DUMMY,wardCount,enrageFactor,newBase};

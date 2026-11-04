@@ -14,7 +14,7 @@ function legal(T){
     const d=CARDS[c.k]; const ms=d.sticky?[0]:d.m.map((_,x)=>x);
     for(const m of ms){ const key=c.k+m; if(!seen.has(key)){ seen.add(key); out.push({i,m}); } }
   });
-  if(T.freeSwap>0||T.energy>=D.TUNE.swapCost) for(let a=0;a<T.board.length-1;a++) if(T.board[a]||T.board[a+1]) out.push({swap:[a,a+1]});
+  if(!T.noSwap&&(T.freeSwap>0||T.energy>=D.TUNE.swapCost)) for(let a=0;a<T.board.length-1;a++) if(T.board[a]||T.board[a+1]) out.push({swap:[a,a+1]});
   return out;
 }
 const doAct=(T,a)=>a.swap?swapBases(T,a.swap[0],a.swap[1]):playCard(T,a.i,a.m,a.slot);
