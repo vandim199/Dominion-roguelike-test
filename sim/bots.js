@@ -5,7 +5,7 @@
 function cloneT(T){ const F=T.F; return {...T,sim:true,ev:null,stat:{...T.stat},offer:null,board:T.board.map(b=>({...b})),
   F:{...F,enemy:{...F.enemy},draw:F.draw.slice(),hand:F.hand.slice(),disc:F.disc.slice(),boost:{...F.boost}}}; }
 function legalMoves(P,T,withSwap){ const F=T.F,out=[]; for(let i=0;i<F.hand.length;i++){ if(canPlay(P,T,i)) out.push({a:'play',i}); if(canBurn(P,T,i)) out.push({a:'burn',i}); }
-  if(withSwap&&F.energy>=TUNE.swapCost) for(let i=0;i+1<T.board.length;i++) out.push({a:'swap',i}); out.push({a:'end'}); return out; }
+  if(withSwap&&!TUNE.freeSwap&&F.energy>=TUNE.swapCost) for(let i=0;i+1<T.board.length;i++) out.push({a:'swap',i}); out.push({a:'end'}); return out; }
 function randomTurn(P,T,rs){ const F=T.F,turn=F.turn; let n=0; while(!F.over&&F.turn===turn&&n++<40){ const ms=legalMoves(P,T,true); const m=ms[Math.floor(rng32(rs,'s')*ms.length)]; doAction(P,T,m); } }
 // Scale-free score of a position after the enemy has acted.
 function evalT(P,T,turn0){
@@ -24,7 +24,7 @@ function thinkTurn(P,T,rs,samples,opts){
   const F=T.F, turn=F.turn, swap=!opts||opts.swap!==false; let bestSeq=null,bv=-Infinity;
   for(let k=0;k<samples;k++){
     const c=cloneT(T), seq=[]; c.F.rng=(c.F.rng+k*7919+1)|0; shuffle(c.F,c.F.draw);
-    let n=0;
+    let n=0, swapped=!(swap&&k%2===1&&c.F.freeSwap>0&&c.board.length>1); // half the sampled turns use the free swap, at a random moment
     if(k===0){ // the fixed line is always a candidate
       while(!c.F.over&&c.F.turn===turn&&n++<40){ const m=fixedMove(P,c); if(!m) break; seq.push(m); doAction(P,c,m); if(m.a==='end') break; }
     } else while(!c.F.over&&c.F.turn===turn&&n++<30){
@@ -32,6 +32,7 @@ function thinkTurn(P,T,rs,samples,opts){
       // lean towards acting: ending the turn is one option among many, and is not taken with energy and cards in hand half the time
       let m=ms[Math.floor(rng32(rs,'s')*ms.length)];
       if(m.a==='end'&&ms.length>1&&rng32(rs,'s')<.7) m=ms[Math.floor(rng32(rs,'s')*(ms.length-1))];
+      if(!swapped&&(m.a==='end'||rng32(rs,'s')<.3)){ swapped=true; const L=c.board.length; if(L>1){ const i=Math.floor(rng32(rs,'s')*L), j=(i+1+Math.floor(rng32(rs,'s')*(L-1)))%L, sw={a:'swap',i,j}; seq.push(sw); doAction(P,c,sw); } continue; }
       seq.push(m); doAction(P,c,m);
     }
     const v=evalT(P,c,turn); if(v>bv){ bv=v; bestSeq=seq; }

@@ -10,7 +10,7 @@ function newProfile(seed){
   const P={v:1,seed:seed|0,coin:0,deepest:-1,wheel:1,hearth:0,mag:0,ledger:0,slots:2,energy:TUNE.energyBase,hand:TUNE.handBase,extraSock:0,
     nid:1,cards:[],layout:[],caravans:{},bosses:{},rewards:[],trips:0,defeats:0,retreats:0,secs:0,bestRate:0,nemesis:null,last:null,bursts:0};
   for(const k of ['fork','fork','fork','helm','helm','scoop','keg','errand']) addCard(P,k,0,true);
-  P.layout=[addCard(P,'cannon',0,true).id,addCard(P,'stake',0,true).id];
+  P.slots=TUNE.startBoard.length; P.layout=TUNE.startBoard.map(k=>addCard(P,k,0,true).id);
   return P;
 }
 function addCard(P,key,lvl,packed){ const c={id:P.nid++,key,lvl:lvl||0,sock:[],packed:!!packed}; P.cards.push(c); return c; }
@@ -20,7 +20,7 @@ const RUBBLE={id:-1,key:'rubble',lvl:0,sock:[]};
 const has=(c,k)=>c.sock.includes(k);
 const isPiece=c=>!!CARDS[c.key].piece;
 function deedsPacked(P){ let n=0; for(const c of P.cards) if(c.key==='deed'&&c.packed) n++; return n; }
-function slotsOpen(P){ return TUNE.junk==='none'?P.slots:Math.min(P.slots,2+deedsPacked(P)); }
+function slotsOpen(P){ return TUNE.junk==='none'?P.slots:Math.min(P.slots,TUNE.freeSlots+deedsPacked(P)); }
 const onBoard=(P,id)=>P.layout.indexOf(id)>=0&&P.layout.indexOf(id)<slotsOpen(P);
 function packList(P){ return P.cards.filter(c=>c.packed&&!onBoard(P,c.id)); }
 function packedCount(P){ return packList(P).length; }
@@ -97,7 +97,7 @@ const ratioAt=(P,f)=>estPower(P)/enemyHp(P,f);
    A heuristic: the lesser of offence (halved for bosses, reduced when the front bastion falls to one hit) and toughness against about four hits. */
 function toughness(P){ let d=maxHpOf(P); for(const c of P.cards){ const on=onBoard(P,c.id); if(!c.packed&&!on) continue; for(const [k,x] of CARDS[c.key].fx) if(k==='block') d+=fxAmount(c,k,x)*.8; if(on) d+=pieceHp(c)*.3; } return d; }
 function oddsAt(P,f){ const boss=isBossF(f), hit=enemyAtk(f)*(boss?1.3:1); let off=ratioAt(P,f)/(boss?2:1);
-  const ids=P.layout.slice(0,slotsOpen(P)).filter(Boolean); if(ids.length){ const cs=ids.map(id=>cardOf(P,id)), front=cs.find(c=>CARDS[c.key].taunt)||cs[0], fh=pieceHp(front); if(hit>fh) off/=Math.sqrt(hit/fh); }
+  const ids=P.layout.slice(0,slotsOpen(P)).filter(Boolean); if(ids.length){ const cs=ids.map(id=>cardOf(P,id)), front=(TUNE.taunt&&cs.find(c=>CARDS[c.key].taunt))||cs[0], fh=pieceHp(front); if(hit>fh) off/=Math.sqrt(hit/fh); }
   return Math.min(off,toughness(P)/(hit*4)); }
 // The deepest fight a march reaches right now, for the home screen's preview.
 // A march sweeps what your machine clears on Wheel Powder alone in about three turns, or anything you utterly outclass.
@@ -107,7 +107,7 @@ function marchReach(P){ const p=estPower(P), m=machineDmg(P); let f=0; while(f<4
 
 /* ---------- trip ---------- */
 function startTrip(P){
-  P.trips++;
+  P.trips++; P.deep0=P.deepest;
   const maxHp=maxHpOf(P);
   const T={f:0,hp:maxHp,maxHp,coin:0,board:[],phase:'prefight',F:null,ev:[],stat:{turns:0,fights:0,marched:0,dmgHand:0,dmgBoard:0,taken:0,waste:0,blocked:0,lost:0,start:P.secs},marchList:[],rngSeed:(P.seed*31+P.trips*7919)|0};
   for(const id of P.layout.slice(0,slotsOpen(P))){ if(!id) continue; T.board.push(newPiece(P,id)); }
@@ -166,7 +166,7 @@ function drawCards(F,n,reshuffle){
 function startTurn(P,T){
   const F=T.F, def=ENEMIES[F.key];
   F.turn++; F.energy=P.energy; F.block=0; F.whet=0; F.aim=0; F.plays=0; T.stat.turns++;
-  F.enemy.wardUp=def.ward||0;
+  const e=F.enemy; e.wardUp=(def.ward||0)+(e.dodgeNext||0); e.hunker=e.hunkerNext||0; e.dodgeNext=0; e.hunkerNext=0; F.freeSwap=TUNE.freeSwap;
   for(const b of T.board){ b.fires=0; b.sealed=false; }
   const kept=F.hand.length; drawCards(F,Math.max(0,P.hand-kept),true);
   F.intent=def.intent(F.turn);
@@ -222,6 +222,7 @@ function applyFx(P,T,kind,base,c,mul,src,b){
 function hitEnemy(P,T,amt,src,c){
   const F=T.F, e=F.enemy;
   if(e.wardUp>0){ e.wardUp--; if(T.ev) T.ev.push({t:'warded'}); return; }
+  if(e.hunker) amt*=e.hunker;
   e.hp=num(e.hp-amt);
   if(src==='board') T.stat.dmgBoard=num(T.stat.dmgBoard+amt); else T.stat.dmgHand=num(T.stat.dmgHand+amt);
   if(T.ev) T.ev.push({t:'dmg',n:amt,src,over:e.hp<=0?amt/Math.max(1,e.maxHp):0});
@@ -229,7 +230,7 @@ function hitEnemy(P,T,amt,src,c){
 }
 function checkWin(P,T){
   const F=T.F; if(F.over||F.enemy.hp>0) return;
-  F.over='win'; const b=bounty(P,F.f); T.coin=num(T.coin+b); F.reward=b;
+  F.over='win'; const close=TUNE.closeR&&estPower(P)/F.enemy.maxHp<TUNE.closeR, b=bounty(P,F.f)*(close?TUNE.closePay:1); T.coin=num(T.coin+b); F.reward=b; F.close=!!close;
   const boss=isBossF(F.f), first=boss&&!P.bosses[F.f];
   if(!T.sim){ if(F.f>P.deepest) P.deepest=F.f; if(boss) P.bosses[F.f]=1; if(first) P.bursts++; }
   T.hp=Math.min(T.maxHp,T.hp+T.maxHp*TUNE.healAfter);
@@ -247,7 +248,7 @@ function rewardOffer(P,f){
 }
 function takeReward(P,T,key){ P.rewards.push(key); REWARDS[key].on(P); T.offer=null; T.phase='postfight'; }
 
-/* ---------- player actions: {a:'play',i,at} {a:'burn',i} {a:'swap',i} {a:'end'} ---------- */
+/* ---------- player actions: {a:'play',i,at} {a:'burn',i} {a:'swap',i,j} {a:'end'} ---------- */
 function canPlay(P,T,i){
   const F=T.F, c=cardOf(P,F.hand[i]), d=CARDS[c.key];
   if(d.junk||F.energy<cardCost(c)) return false;
@@ -273,8 +274,9 @@ function doAction(P,T,m){
     T.stat.burns=(T.stat.burns||0)+1; const n=stokeOf(c); if(n) addPowder(P,T,n,'burn');
     if(T.ev) T.ev.push({t:'burn',n});
   } else if(m.a==='swap'){
-    if(F.energy<TUNE.swapCost||m.i<0||m.i+1>=T.board.length) return false;
-    F.energy-=TUNE.swapCost; const b=T.board; const t=b[m.i]; b[m.i]=b[m.i+1]; b[m.i+1]=t;
+    const b=T.board, j=m.j==null?m.i+1:m.j; if(m.i<0||j<0||m.i>=b.length||j>=b.length||m.i===j) return false;
+    if(F.freeSwap>0) F.freeSwap--; else if(F.energy>=TUNE.swapCost) F.energy-=TUNE.swapCost; else return false;
+    const t=b[m.i]; b[m.i]=b[j]; b[j]=t; if(T.ev) T.ev.push({t:'swap',i:m.i,j});
   } else if(m.a==='end'){ endTurn(P,T); }
   return true;
 }
@@ -300,6 +302,8 @@ function enemyActs(P,T){
   for(const a of F.intent){
     if(a.drain){ if(T.board.length) T.board[0].fill=0; F.mag=0; if(T.ev) T.ev.push({t:'drain'}); }
     if(a.rubble) for(let i=0;i<a.rubble;i++) F.hand.push(-1);
+    if(a.hunker){ F.enemy.hunkerNext=a.hunker; if(T.ev) T.ev.push({t:'hunker'}); }
+    if(a.dodge){ F.enemy.dodgeNext=a.dodge; if(T.ev) T.ev.push({t:'dodge'}); }
     if(a.hit){
       if(a.at==='all'){ for(const b of T.board.slice()) strike(P,T,intentHit(F,a),'one',b); strikeYou(P,T,intentHit(F,a)*.5); }
       else strike(P,T,intentHit(F,a),a.at);
@@ -314,7 +318,7 @@ function strike(P,T,amt,at,only){
     let tgt=only||null;
     if(!only){
       if(at==='you'||!T.board.length) return strikeYou(P,T,left);
-      if(at==='left'){ tgt=T.board.find(b=>CARDS[cardOf(P,b.id).key].taunt)||T.board[0]; }
+      if(at==='left'){ tgt=(TUNE.taunt&&T.board.find(b=>CARDS[cardOf(P,b.id).key].taunt))||T.board[0]; }
       if(at==='right') tgt=T.board[T.board.length-1];
     } else if(!T.board.includes(only)) return;
     const hit=Math.min(left,tgt.hp); tgt.hp-=hit; left-=hit; if(T.ev) T.ev.push({t:'hurt',id:tgt.id,n:hit});
@@ -330,6 +334,7 @@ function endTrip(P,T,how){
   P.coin=num(P.coin+got); P.last={how,got,lost:T.coin-got,f:T.f,fights:T.stat.fights,marched:T.stat.marched,turns:T.stat.turns,lostPieces:T.stat.lost};
   if(how==='defeat'){ P.defeats++; const F=T.F, key=F?F.key:enemyKey(P,T.f); P.nemesis={f:T.f,key,left:F?F.enemy.hp/F.enemy.maxHp:1}; P.last.needed=F?Math.max(1,enemyHp(P,T.f)/Math.max(1,estPower(P)/3)):1; }
   else P.retreats++;
+  P.grit=P.deepest>P.deep0?0:(P.grit||0)+(how==='defeat'?1:0);
   P.lastSeen=P.secs;
   return P.last;
 }
@@ -340,7 +345,9 @@ const hearthCost=P=>TUNE.hearthCost*Math.pow(TUNE.hearthG,P.hearth);
 const wheelCost=P=>TUNE.wheelCost*Math.pow(TUNE.wheelG,P.wheelBuys||0);
 const magCost=P=>TUNE.magCost*Math.pow(TUNE.magG,P.magBuys||0);
 const ledgerCost=P=>TUNE.ledgerCost*Math.pow(TUNE.ledgerG,P.ledger);
-function buyLevel(P,id){ const c=cardOf(P,id), k=levelCost(c); if(P.coin<k||c.key==='deed'||c.key==='ward') return false; P.coin-=k; c.lvl++; return true; }
+// The gate: damage levels stop once your odds at new ground are high enough. Going deeper lifts it, and so does losing without getting deeper, so no wall is permanent.
+function levelGated(P,c){ if(!TUNE.capR||!CARDS[c.key].fx.some(([k])=>k==='dmg'||k==='poison')) return false; return ratioAt(P,P.deepest+1)>=TUNE.capR*Math.pow(TUNE.gritStep,P.grit||0); }
+function buyLevel(P,id){ const c=cardOf(P,id), k=levelCost(c); if(P.coin<k||c.key==='deed'||c.key==='ward'||levelGated(P,c)) return false; P.coin-=k; c.lvl++; return true; }
 function buyKeep(P,what){
   const k={hearth:hearthCost,wheel:wheelCost,mag:magCost,ledger:ledgerCost}[what](P);
   if(P.coin<k) return false; P.coin-=k;

@@ -22,9 +22,9 @@ $('tHow').onclick=()=>howTo();
 function howTo(){ sheet(`<h2>How to play</h2>
 <p><b>Trips.</b> Leave the Keep and fight deeper and deeper until you go home or get beaten. Going home keeps all your coin, defeat keeps 70%. Marched fights pay a tenth: the real money is at your limit. Nothing else is ever lost. Spend at the Keep, then go again: what beat you dies in the march.</p>
 <p><b>Your hand.</b> Each card is a choice. <b>Play</b> it for its effect, paying energy. Or <b>Burn</b> it for Powder: expensive cards burn hotter (cost + 1).</p>
-<p><b>The board.</b> Powder runs left to right into your bastions. A full bastion fires at once, once a turn. The Wheel adds Powder every turn. Spare Powder waits in the Magazine, and past that it is wasted.</p>
+<p><b>The board.</b> Powder runs left to right into your bastions. A full bastion fires at once, once a turn. The Wheel adds Powder every turn. Spare Powder waits in the Magazine, and past that it is wasted. In a fight, tap two bastions to swap them: one swap a turn is free.</p>
 <p><b>Enemies</b> show what they will do. Aimed hits strike your leftmost bastion (a Gatehouse first), archers the rightmost, and some go straight for you. Block stops everything first. A destroyed bastion goes to your discard and must be drawn and paid for again.</p>
-<p><b>Getting strong.</b> Levels multiply a card; every 10 levels pays triple. Levels 5, 20 and 40 open sockets, which you can rearrange free. Caravans come once, every 7 fights. Bosses every 12 fights change the rules. A Title Deed must be packed for each slot past two, and it is dead in your hand.</p>
+<p><b>Getting strong.</b> Levels multiply a card; every 10 levels pays triple. Levels 5, 20 and 40 open sockets, which you can rearrange free. Caravans come once, every 7 fights. Bosses every 12 fights change the rules. A Title Deed must be packed for each slot past three, and it is dead in your hand.</p>
 <button class="btn gold" onclick="closeSheet()">Got it</button>`); }
 function sheet(html){ const s=$('sheet'); s.innerHTML='<div class="panel">'+html+'</div>'; s.hidden=false; s.onclick=e=>{ if(e.target===s&&!s.dataset.lock) closeSheet(); }; }
 function closeSheet(){ const s=$('sheet'); s.hidden=true; s.dataset.lock=''; }
@@ -190,7 +190,7 @@ function renderDefeat(){
   const T=UI.T,P=UI.P; show('fight'); const F=T.F; const left=F?F.enemy.hp/F.enemy.maxHp:1;
   sheetLock(`<h2>Beaten</h2><p>${F?`${ENEMIES[F.key].art} ${esc(ENEMIES[F.key].name)} had ${Math.round(left*100)}% left.`:''} You drag home <b>${fmt(T.coin*TUNE.defeatKeep)}</b> of ${fmt(T.coin)} coin. Your cards, levels and Keep are untouched.</p><button class="btn gold" onclick="goHome('defeat')">Home</button>`);
 }
-function fightUI(){ beginFight(UI.P,UI.T); UI.T.ev=[]; UI.sel=null; route(); }
+function fightUI(){ beginFight(UI.P,UI.T); UI.T.ev=[]; UI.sel=null; UI.swap=null; route(); }
 
 /* ---------- fight screen ---------- */
 function targetName(P,T,a){ const n=b=>b?CARDS[cardOf(P,b.id).key].name:'you';
@@ -203,12 +203,12 @@ function intentHtml(P,T){ const F=T.F; return F.intent.map(a=>{
     if(a.drain) return `<span class="int">💧 drains ${T.board.length?esc(targetName(P,T,{at:'left'}))+' and ':''}Magazine</span>`;
     if(a.seal) return `<span class="int">🔒 seals ${T.board[0]?esc(CARDS[cardOf(P,T.board[0].id).key].name):'nothing'}</span>`;
     if(a.rubble) return `<span class="int">🪨 adds Rubble to your hand</span>`; return ''; }).join('')+(ENEMIES[F.key].flee?`<span class="int">🏃 flees after turn ${ENEMIES[F.key].flee}</span>`:'')+(F.enemy.wardUp?`<span class="int">🛡 ignores your next hit</span>`:''); }
-function pieceHtml(P,T,b,tg){ const c=cardOf(P,b.id),d=CARDS[c.key],need=pieceNeed(c),max=has(c,'twin')?2:1,done=b.fires>=max;
+function pieceHtml(P,T,b,tg,i){ const c=cardOf(P,b.id),d=CARDS[c.key],need=pieceNeed(c),max=has(c,'twin')?2:1,done=b.fires>=max;
   const pay=d.fx.filter(([k])=>k==='dmg'||k==='block'||k==='poison').map(([k,x])=>fmt(fxAmount(c,k,x)*(T.F&&T.F.whet?T.F.whet:1))+({dmg:'⚔',block:'🛡',poison:'☠'})[k]).join(' ')||(d.fx[0]?d.fx[0][0]:'');
   let pips=''; for(let i=0;i<need;i++) pips+=`<i class="${i<b.fill?'on':''}"></i>`;
-  return `<div class="piece ${done?'fired':''} ${b.sealed?'sealed':''} ${tg.has(b.id)?'tgt':''}" data-id="${b.id}"><div class="pa">${d.art}</div><div class="pn">${esc(d.name)}</div><div class="pips">${pips}</div><div class="py">${pay}</div><div class="bar"><i style="width:${100*b.hp/b.maxHp}%"></i></div></div>`; }
+  return `<div class="piece ${done?'fired':''} ${b.sealed?'sealed':''} ${tg.has(b.id)?'tgt':''} ${UI.swap===i?'swapsel':''}" data-id="${b.id}" onclick="tapPiece(${i})"><div class="pa">${d.art}</div><div class="pn">${esc(d.name)}</div><div class="pips">${pips}</div><div class="py">${pay}</div><div class="bar"><i style="width:${100*b.hp/b.maxHp}%"></i></div></div>`; }
 function boardHtml(P,T){ const tg=T.F?targetIds(P,T):new Set(), F=T.F;
-  return `<div class="board"><div class="wheel"><div class="wa">⚙️</div><small>+${P.wheel}</small><div class="mag" title="Magazine">🧺${F?F.mag:0}/${TUNE.magBase+P.mag}</div></div>${T.board.map(b=>pieceHtml(P,T,b,tg)).join('')}${[...Array(Math.max(0,slotsOpen(P)-T.board.length)).keys()].map(()=>'<div class="piece hole">empty</div>').join('')}</div>`; }
+  return `<div class="board"><div class="wheel"><div class="wa">⚙️</div><small>+${P.wheel}</small><div class="mag" title="Magazine">🧺${F?F.mag:0}/${TUNE.magBase+P.mag}</div></div>${T.board.map((b,i)=>pieceHtml(P,T,b,tg,i)).join('')}${[...Array(Math.max(0,slotsOpen(P)-T.board.length)).keys()].map(()=>'<div class="piece hole">empty</div>').join('')}</div>`; }
 function renderBoardOnly(){ const T=UI.T,P=UI.P; $('fight').innerHTML=boardHtml(P,T); }
 function renderFight(){
   const T=UI.T,P=UI.P,F=T.F; show('fight'); if(!F) return route();
@@ -220,10 +220,10 @@ function renderFight(){
    :`<div class="detail hint"><div>${hintText(P,T)}</div></div>`;
   $('fight').innerHTML=`<div class="tbar"><span>Fight ${F.f+1} · turn ${F.turn}</span><span>🪙 ${fmt(T.coin)}</span></div>
   ${hpLine(T)}
-  <div class="enemy ${def.boss?'boss':''}" id="enemy"><div class="ea">${def.art}</div><div class="eb"><b>${esc(def.name)}</b><div class="bar foe"><i style="width:${clamp(100*e.hp/e.maxHp,0,100)}%"></i><span>${fmt(e.hp)} / ${fmt(e.maxHp)}</span></div>
+  <div class="enemy ${def.boss?'boss':''}" id="enemy"><div class="ea">${def.art}</div><div class="eb"><b>${esc(def.name)}</b><div class="bar foe"><i style="width:${clamp(100*e.hp/e.maxHp,0,100)}%"></i><span>${fmt(Math.max(0,e.hp))} / ${fmt(e.maxHp)}</span></div>
    <div class="ints">${intentHtml(P,T)}${e.poison>0?`<span class="int psn">☠ ${fmt(e.poison)}</span>`:''}${e.hex>0?`<span class="int hexed">🎎 ${e.hex} halved</span>`:''}</div></div></div>
   ${boardHtml(P,T)}
-  <div class="status"><span class="energy">⚡ <b>${F.energy}</b></span><span class="blk">🛡 <b>${fmt(F.block)}</b></span>${F.whet>1?`<span class="chg">⚡×${fmt(F.whet)} next</span>`:''}<span class="dk">deck ${F.draw.length} · discard ${F.disc.length}</span></div>
+  <div class="status"><span class="energy">⚡ <b>${F.energy}</b></span><span class="blk">🛡 <b>${fmt(F.block)}</b></span>${F.whet>1?`<span class="chg">⚡×${fmt(F.whet)} next</span>`:''}${T.board.length>1?`<span class="swp">⇄ ${UI.swap!=null?'swap with?':F.freeSwap>0?'free swap':'swap 1⚡'}</span>`:''}<span class="dk">deck ${F.draw.length} · discard ${F.disc.length}</span></div>
   ${detail}
   <div class="hand">${cardsH}</div>
   <div class="acts end"><button class="btn" onclick="autoTurn()">Auto turn</button><button class="btn gold" id="endBtn" onclick="endT()">End turn</button></div>`;
@@ -231,12 +231,16 @@ function renderFight(){
 }
 function cardVal(c,id,F){ const d=CARDS[c.key]; const f=d.fx.find(([k])=>k==='dmg'||k==='block'||k==='poison'); if(!f) return ''; return fmt(fxAmount(c,f[0],f[1])*(F.boost[id]||1))+({dmg:'⚔',block:'🛡',poison:'☠'})[f[0]]; }
 function burnPreview(P,T,n){ let left=n; for(const b of (T.F.aim>0?T.board.slice().reverse():T.board)){ const c=cardOf(P,b.id); if(b.sealed||b.fires>=(has(c,'twin')?2:1)) continue; const need=pieceNeed(c)-b.fill; if(need<=left) return `${CARDS[c.key].name} fires`; return `${CARDS[c.key].name} ${b.fill+left}/${pieceNeed(c)}`; } return 'to the Magazine'; }
-function hintText(P,T){ const F=T.F; if(P.trips<=2&&F.f<3){ return F.turn===1?'Tap a card. <b>Play</b> spends energy. <b>Burn</b> feeds Powder to the board, left to right.':'A full bastion fires at once. Each fires once a turn. Watch where the enemy will hit.'; }
+function hintText(P,T){ const F=T.F; if(P.trips<=2&&F.f<3){ return F.turn===1?'Tap a card. <b>Play</b> spends energy. <b>Burn</b> feeds Powder to the board, left to right.':'A full bastion fires at once, once a turn. Tap two bastions to swap them: that changes who is fed first and who gets hit.'; }
   const R=oddsAt(P,F.f); return `Odds ×${R<10?R.toFixed(1):fmt(R)}. Tap a card to see it.`; }
-function selectCard(i){ UI.sel=UI.sel===i?null:i; renderFight(); }
-function act(a){ const T=UI.T,P=UI.P; if(UI.sel==null) return; const i=UI.sel; UI.sel=null; if(doAction(P,T,{a,i})) afterAct(); else renderFight(); }
-function endT(){ UI.sel=null; doAction(UI.P,UI.T,{a:'end'}); afterAct(); }
-function autoTurn(){ UI.sel=null; fixedTurn(UI.P,UI.T); afterAct(); }
+function selectCard(i){ UI.sel=UI.sel===i?null:i; UI.swap=null; renderFight(); }
+// Tap two bastions to swap them. One swap a turn is free, further ones cost energy.
+function tapPiece(i){ const T=UI.T; if(T.phase!=='fight'||!T.F||T.F.over) return; UI.sel=null;
+  if(UI.swap==null) UI.swap=i; else { const from=UI.swap; UI.swap=null; if(from!==i&&doAction(UI.P,T,{a:'swap',i:from,j:i})) persist(); }
+  renderFight(); }
+function act(a){ const T=UI.T,P=UI.P; if(UI.sel==null) return; const i=UI.sel; UI.sel=null; UI.swap=null; if(doAction(P,T,{a,i})) afterAct(); else renderFight(); }
+function endT(){ UI.sel=null; UI.swap=null; doAction(UI.P,UI.T,{a:'end'}); afterAct(); }
+function autoTurn(){ UI.sel=null; UI.swap=null; fixedTurn(UI.P,UI.T); afterAct(); }
 function afterAct(){ const T=UI.T; persist(); if(T.phase==='fight'){ renderFight(); return; }
   // Show the last blows, then move on.
   renderFight(); setTimeout(route,Math.min(900,200+eventsSpan)); }

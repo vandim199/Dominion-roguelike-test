@@ -1,246 +1,172 @@
-﻿## 1. Decision test (12 seeds x 9 enemies per cell; think = 60 sampled turns)
+## 1. Decision test (12 seeds x 9 enemies per cell; think = 60 sampled turns)
+
+### Build: fresh (L1)
+| R | bot | win | HP lost | turns to kill (wins) | plays/turn | burns/turn | hand share of damage |
+|---|---|---|---|---|---|---|---|
+| 0.7 | random | 26% | 77% | 4.07 | 1.1 | 1.5 | 37% |
+| 0.7 | fixed | 81% | 20% | 2.99 | 2.5 | 2.3 | 46% |
+| 0.7 | think | 100% | 2% | 2.07 | 2.4 | 3.4 | 19% |
+| 1 | random | 54% | 49% | 3.91 | 1.2 | 1.5 | 40% |
+| 1 | fixed | 96% | 6% | 2.38 | 2.6 | 2.2 | 50% |
+| 1 | think | 100% | 0% | 2.00 | 2.6 | 2.7 | 29% |
+| 1.5 | random | 79% | 23% | 3.42 | 1.2 | 1.5 | 38% |
+| 1.5 | fixed | 100% | 0% | 1.83 | 2.8 | 1.8 | 55% |
+| 1.5 | think | 100% | 0% | 1.20 | 2.6 | 2.6 | 28% |
+| 3 | random | 97% | 6% | 2.77 | 1.1 | 1.1 | 43% |
+| 3 | fixed | 100% | 0% | 1.52 | 2.4 | 1.4 | 73% |
+| 3 | think | 100% | 0% | 1.00 | 2.7 | 2.3 | 38% |
 
 ### Build: early (L6)
 | R | bot | win | HP lost | turns to kill (wins) | plays/turn | burns/turn | hand share of damage |
 |---|---|---|---|---|---|---|---|
-| 0.7 | random | 17% | 85% | 7.89 | 1.2 | 1.7 | 43% |
-| 0.7 | fixed | 89% | 19% | 4.66 | 2.6 | 2.2 | 51% |
-| 0.7 | think | 95% | 17% | 4.48 | 2.4 | 2.1 | 45% |
-| 1 | random | 56% | 51% | 6.13 | 1.2 | 1.6 | 37% |
-| 1 | fixed | 100% | 5% | 3.15 | 2.9 | 2.0 | 52% |
-| 1 | think | 100% | 5% | 3.11 | 2.2 | 1.8 | 43% |
-| 1.5 | random | 90% | 18% | 4.84 | 1.1 | 1.4 | 33% |
-| 1.5 | fixed | 100% | 0% | 2.10 | 2.9 | 1.8 | 48% |
-| 1.5 | think | 100% | 0% | 2.16 | 2.2 | 1.5 | 44% |
-| 3 | random | 100% | 1% | 3.10 | 1.1 | 1.2 | 35% |
-| 3 | fixed | 100% | 0% | 1.05 | 3.0 | 1.7 | 49% |
-| 3 | think | 100% | 0% | 1.05 | 3.0 | 1.7 | 49% |
+| 0.7 | random | 70% | 33% | 5.51 | 1.2 | 1.6 | 33% |
+| 0.7 | fixed | 96% | 10% | 2.93 | 2.8 | 2.2 | 47% |
+| 0.7 | think | 100% | 0% | 2.02 | 2.5 | 3.4 | 19% |
+| 1 | random | 86% | 17% | 4.72 | 1.2 | 1.5 | 33% |
+| 1 | fixed | 100% | 2% | 2.31 | 2.8 | 2.1 | 50% |
+| 1 | think | 100% | 0% | 2.00 | 2.6 | 2.5 | 30% |
+| 1.5 | random | 95% | 7% | 3.72 | 1.2 | 1.4 | 36% |
+| 1.5 | fixed | 100% | 0% | 1.83 | 2.8 | 1.8 | 55% |
+| 1.5 | think | 100% | 0% | 1.20 | 2.6 | 2.5 | 28% |
+| 3 | random | 100% | 2% | 2.86 | 1.1 | 1.1 | 46% |
+| 3 | fixed | 100% | 0% | 1.52 | 2.4 | 1.4 | 73% |
+| 3 | think | 100% | 0% | 1.00 | 2.7 | 2.3 | 38% |
 
 ### Build: mid (L22)
 | R | bot | win | HP lost | turns to kill (wins) | plays/turn | burns/turn | hand share of damage |
 |---|---|---|---|---|---|---|---|
-| 0.7 | random | 60% | 40% | 5.92 | 1.2 | 1.7 | 9% |
-| 0.7 | fixed | 80% | 21% | 5.36 | 4.3 | 0.3 | 28% |
-| 0.7 | think | 85% | 18% | 3.77 | 2.3 | 2.8 | 8% |
-| 1 | random | 80% | 22% | 4.67 | 1.2 | 1.5 | 9% |
-| 1 | fixed | 88% | 15% | 4.05 | 4.3 | 0.2 | 30% |
-| 1 | think | 98% | 8% | 3.00 | 2.4 | 2.4 | 9% |
-| 1.5 | random | 88% | 15% | 3.62 | 1.1 | 1.4 | 9% |
-| 1.5 | fixed | 100% | 5% | 3.09 | 4.0 | 0.2 | 34% |
-| 1.5 | think | 100% | 0% | 2.02 | 2.7 | 2.5 | 10% |
-| 3 | random | 100% | 1% | 2.33 | 1.0 | 1.4 | 10% |
-| 3 | fixed | 100% | 0% | 1.95 | 3.7 | 0.1 | 36% |
-| 3 | think | 100% | 0% | 1.26 | 1.7 | 3.0 | 8% |
+| 0.7 | random | 71% | 30% | 7.05 | 1.3 | 1.6 | 14% |
+| 0.7 | fixed | 88% | 17% | 5.53 | 4.8 | 0.3 | 34% |
+| 0.7 | think | 94% | 11% | 3.37 | 2.3 | 3.0 | 8% |
+| 1 | random | 82% | 20% | 5.71 | 1.3 | 1.5 | 14% |
+| 1 | fixed | 97% | 7% | 4.07 | 4.9 | 0.3 | 37% |
+| 1 | think | 100% | 2% | 2.56 | 2.2 | 2.9 | 6% |
+| 1.5 | random | 94% | 12% | 4.44 | 1.2 | 1.4 | 16% |
+| 1.5 | fixed | 100% | 1% | 3.11 | 4.6 | 0.2 | 39% |
+| 1.5 | think | 100% | 0% | 2.03 | 2.8 | 2.4 | 12% |
+| 3 | random | 100% | 2% | 2.98 | 1.1 | 1.3 | 20% |
+| 3 | fixed | 100% | 0% | 1.77 | 4.5 | 0.1 | 49% |
+| 3 | think | 100% | 0% | 1.10 | 2.5 | 2.7 | 15% |
 
 ### Build: late (L38)
 | R | bot | win | HP lost | turns to kill (wins) | plays/turn | burns/turn | hand share of damage |
 |---|---|---|---|---|---|---|---|
-| 0.7 | random | 0% | 100% | NaN | 0.8 | 1.9 | 48% |
-| 0.7 | fixed | 0% | 100% | NaN | 2.3 | 1.2 | 73% |
-| 0.7 | think | 16% | 88% | 4.12 | 1.6 | 2.9 | 51% |
-| 1 | random | 0% | 100% | NaN | 0.8 | 2.0 | 46% |
-| 1 | fixed | 2% | 99% | 5.50 | 2.3 | 1.2 | 73% |
-| 1 | think | 32% | 69% | 3.91 | 1.6 | 2.9 | 50% |
-| 1.5 | random | 6% | 96% | 6.00 | 0.8 | 2.0 | 49% |
-| 1.5 | fixed | 15% | 87% | 6.88 | 2.4 | 1.1 | 73% |
-| 1.5 | think | 72% | 29% | 3.47 | 1.4 | 3.2 | 44% |
-| 3 | random | 51% | 50% | 4.40 | 0.8 | 2.0 | 49% |
-| 3 | fixed | 89% | 13% | 5.40 | 2.8 | 0.8 | 76% |
-| 3 | think | 100% | 0% | 1.69 | 1.1 | 3.5 | 40% |
+| 0.7 | random | 5% | 97% | 7.80 | 1.0 | 2.0 | 53% |
+| 0.7 | fixed | 18% | 85% | 8.47 | 2.9 | 1.1 | 75% |
+| 0.7 | think | 85% | 16% | 4.72 | 1.8 | 3.6 | 72% |
+| 1 | random | 15% | 86% | 7.63 | 1.0 | 2.0 | 51% |
+| 1 | fixed | 62% | 40% | 7.58 | 3.0 | 1.0 | 78% |
+| 1 | think | 99% | 1% | 3.76 | 2.0 | 3.6 | 74% |
+| 1.5 | random | 59% | 43% | 7.00 | 1.0 | 1.9 | 49% |
+| 1.5 | fixed | 91% | 11% | 5.78 | 3.2 | 0.8 | 83% |
+| 1.5 | think | 100% | 0% | 2.82 | 1.7 | 3.6 | 67% |
+| 3 | random | 98% | 2% | 5.15 | 1.1 | 1.7 | 43% |
+| 3 | fixed | 100% | 0% | 3.42 | 3.3 | 0.3 | 89% |
+| 3 | think | 100% | 0% | 1.68 | 1.7 | 3.4 | 79% |
 
 ### Knock-outs, mid and late builds, R=1 (think vs fixed)
 | variant | fixed win | think win | fixed HP lost | think HP lost |
 |---|---|---|---|---|
-| as shipped (mid) | 88% | 98% | 15% | 8% |
-| as shipped (late) | 2% | 32% | 99% | 69% |
-| no board swap (shipped has none in UI; bot could swap above) (mid) | 88% | 97% | 15% | 9% |
-| burn flat 1 Powder, not cost+1 (mid) | 100% | 100% | 4% | 4% |
-| only Powder cards feed (mid) | 100% | 100% | 2% | 2% |
-| wheel only feeds (+3), hand never burns (mid) | 94% | 100% | 10% | 6% |
-| no Magazine (mid) | 88% | 98% | 15% | 8% |
+| as shipped (mid) | 97% | 100% | 7% | 2% |
+| as shipped (late) | 62% | 99% | 40% | 1% |
+| think bot may not swap (mid) | 97% | 100% | 7% | 2% |
+| think bot may not swap (late) | 62% | 99% | 40% | 1% |
+| burn flat 1 Powder, not cost+1 (mid) | 100% | 100% | 0% | 0% |
+| only Powder cards feed (mid) | 100% | 100% | 0% | 0% |
+| wheel only feeds (+3), hand never burns (mid) | 100% | 100% | 2% | 1% |
+| no Magazine (mid) | 97% | 100% | 7% | 4% |
 
 ### Layouts, mid build, R=1: same absolute enemy for all layouts, share of enemy-and-seed pairings where each layout did best
-stake_first 76%, guns_first 4%, gatehouse 0%, hex 7%, bellows 13%, post 0%
-best per enemy: {"rat":"stake_first","raider":"stake_first","archer":"stake_first","ogre":"hex","sapper":"stake_first","warden":"stake_first","shaman":"stake_first","toller":"stake_first","bishop":"stake_first"}
+stake_first 31%, guns_first 59%, gatehouse 4%, hex 0%, bellows 4%, post 2%
+best per enemy: {"rat":"guns_first","raider":"guns_first","archer":"guns_first","ogre":"guns_first","sapper":"guns_first","warden":"bellows","shaman":"guns_first","toller":"stake_first","bishop":"guns_first"}
 
 ### Layouts, late build, R=1: same absolute enemy for all layouts, share of enemy-and-seed pairings where each layout did best
-chain 4%, gate_chain 28%, bellows_chain 13%, hex_chain 52%, big_first 4%, economy 0%
-best per enemy: {"rat":"hex_chain","raider":"hex_chain","archer":"hex_chain","ogre":"hex_chain","sapper":"gate_chain","warden":"hex_chain","shaman":"gate_chain","toller":"big_first","bishop":"hex_chain"}
-Stress at level 300: power 3.8e62, finite after six turns: true, JSON round trip equal: true
+chain 56%, gate_chain 7%, bellows_chain 31%, hex_chain 4%, big_first 2%, economy 0%
+best per enemy: {"rat":"chain","raider":"chain","archer":"chain","ogre":"chain","sapper":"chain","warden":"chain","shaman":"chain","toller":"gate_chain","bishop":"bellows_chain"}
+Stress at level 300: power 2.5e62, finite after six turns: true, JSON round trip equal: true
 
 ## 2. Whole-loop pacing, 15 s per played turn
 
 ### careful upgrades, think fight bot (5 seeds)
-minutes to 1e6 24 (19-29), 1e9 38 (33-42), 1e12 56 (51-79), 1e15 65 (63-102)
-minutes between bursts: median 2.2, p10 0.4, p90 5.5 (n=132)
-time at R>=2 33%, R 1-2 43%, R<1 21%
-trips 25 (20-42), defeats 8, retreats 17, non-finite checks failed 0
-median across trips of hand share of damage 28%, plays/turn 2.1, burns/turn 2.1, trip length min median 1.9, power jump per trip median x2.3
+minutes to 1e6 21 (18-24), 1e9 31 (28-34), 1e12 48 (40-53), 1e15 61 (56-64)
+minutes between bursts: median 2.2, p10 0.4, p90 4.7 (n=122)
+time at R>=2 46%, R 1-2 42%, R<1 11%
+trips 18 (16-22), defeats 6, retreats 12, non-finite checks failed 0
+median across trips of hand share of damage 30%, plays/turn 2.1, burns/turn 2.4, trip length min median 2.9, power jump per trip median x3.9
 
 One run, trip by trip:
-{trip:1,min:2.1,how:retreat,f:4,got:406,power:69,jump:0.8,fights:4,marched:0,turns:6,wheel:1,lost:0,ledger:0,slots:2,pcs:2,top:0}
-{trip:2,min:7.7,how:defeat,f:9,got:810,power:242,jump:3.5,fights:8,marched:2,turns:18,wheel:2,lost:2,ledger:0,slots:2,pcs:2,top:4}
-{trip:3,min:12.7,how:defeat,f:15,got:4354,power:1499,jump:6.2,fights:7,marched:9,turns:16,wheel:3,lost:0,ledger:0,slots:3,pcs:3,top:5}
-{trip:4,min:16.8,how:defeat,f:21,got:828,power:19.1K,jump:13.9,fights:3,marched:19,turns:13,wheel:4,lost:8,ledger:1,slots:3,pcs:3,top:10}
-{trip:5,min:19.0,how:retreat,f:23,got:40.9K,power:19.1K,jump:1.0,fights:4,marched:19,turns:6,wheel:4,lost:0,ledger:1,slots:3,pcs:3,top:10}
-{trip:6,min:25.1,how:defeat,f:31,got:212K,power:73.2K,jump:3.8,fights:9,marched:23,turns:20,wheel:5,lost:4,ledger:1,slots:4,pcs:4,top:14}
-{trip:7,min:26.6,how:retreat,f:35,got:33.5K,power:374K,jump:5.6,fights:2,marched:33,turns:3,wheel:6,lost:0,ledger:2,slots:4,pcs:4,top:17}
-{trip:8,min:30.4,how:defeat,f:40,got:2.5M,power:1.7M,jump:4.5,fights:6,marched:35,turns:12,wheel:6,lost:0,ledger:2,slots:4,pcs:4,top:17}
-{trip:9,min:32.1,how:retreat,f:52,got:31.4M,power:68.6M,jump:41.9,fights:3,marched:49,turns:3,wheel:7,lost:0,ledger:2,slots:5,pcs:5,top:20}
-{trip:10,min:34.4,how:defeat,f:59,got:26.1M,power:1.1B,jump:16.8,fights:1,marched:59,turns:6,wheel:9,lost:6,ledger:3,slots:5,pcs:5,top:23}
-{trip:11,min:37.7,how:defeat,f:63,got:172M,power:1.3B,jump:1.2,fights:3,marched:61,turns:10,wheel:10,lost:13,ledger:3,slots:5,pcs:5,top:24}
-{trip:12,min:40.0,how:defeat,f:65,got:117M,power:3.0B,jump:2.3,fights:1,marched:65,turns:7,wheel:11,lost:11,ledger:3,slots:5,pcs:5,top:24}
-{trip:13,min:43.1,how:defeat,f:67,got:452M,power:4.3B,jump:1.4,fights:2,marched:66,turns:10,wheel:11,lost:12,ledger:3,slots:5,pcs:5,top:27}
-{trip:14,min:46.7,how:defeat,f:67,got:565M,power:4.3B,jump:1.0,fights:2,marched:66,turns:12,wheel:11,lost:12,ledger:4,slots:5,pcs:5,top:27}
-{trip:15,min:50.2,how:defeat,f:73,got:5.5B,power:26.0B,jump:6.1,fights:2,marched:72,turns:11,wheel:11,lost:11,ledger:4,slots:5,pcs:5,top:30}
-{trip:16,min:54.2,how:defeat,f:79,got:8.6B,power:88.3B,jump:3.4,fights:2,marched:78,turns:13,wheel:13,lost:16,ledger:4,slots:5,pcs:5,top:32}
-{trip:17,min:58.7,how:retreat,f:83,got:73.9B,power:130B,jump:1.5,fights:5,marched:78,turns:15,wheel:13,lost:6,ledger:4,slots:5,pcs:5,top:36}
-{trip:18,min:59.9,how:retreat,f:95,got:326B,power:7.8T,jump:59.8,fights:1,marched:94,turns:2,wheel:14,lost:0,ledger:5,slots:5,pcs:5,top:40}
-{trip:19,min:61.9,how:defeat,f:101,got:810B,power:28.5T,jump:3.1,fights:2,marched:100,turns:5,wheel:15,lost:8,ledger:5,slots:5,pcs:6,top:41}
-{trip:20,min:64.8,how:retreat,f:107,got:16.5T,power:133T,jump:3.1,fights:3,marched:104,turns:8,wheel:16,lost:0,ledger:5,slots:6,pcs:6,top:43}
+{trip:1,min:1.3,how:retreat,f:3,got:268,power:48,jump:0.6,fights:3,marched:0,turns:3,wheel:1,lost:0,ledger:0,slots:3,pcs:3,top:0}
+{trip:2,min:5.0,how:retreat,f:8,got:868,power:144,jump:3.0,fights:8,marched:0,turns:11,wheel:2,lost:1,ledger:0,slots:3,pcs:3,top:3}
+{trip:3,min:9.8,how:defeat,f:14,got:3176,power:1511,jump:10.5,fights:6,marched:9,turns:15,wheel:3,lost:4,ledger:0,slots:4,pcs:4,top:5}
+{trip:4,min:16.9,how:defeat,f:20,got:20.2K,power:4749,jump:3.5,fights:8,marched:13,turns:25,wheel:3,lost:7,ledger:1,slots:4,pcs:4,top:9}
+{trip:5,min:18.2,how:retreat,f:23,got:27.6K,power:30.3K,jump:6.4,fights:2,marched:21,turns:2,wheel:4,lost:0,ledger:1,slots:4,pcs:4,top:11}
+{trip:6,min:23.6,how:retreat,f:32,got:403K,power:76.5K,jump:2.5,fights:9,marched:23,turns:17,wheel:5,lost:4,ledger:1,slots:5,pcs:5,top:14}
+{trip:7,min:26.6,how:retreat,f:42,got:2.6M,power:3.2M,jump:45.2,fights:5,marched:37,turns:8,wheel:6,lost:2,ledger:2,slots:5,pcs:6,top:20}
+{trip:8,min:30.1,how:retreat,f:47,got:13.3M,power:8.3M,jump:2.7,fights:5,marched:42,turns:11,wheel:7,lost:5,ledger:2,slots:5,pcs:6,top:23}
+{trip:9,min:31.6,how:retreat,f:59,got:43.8M,power:2.6B,jump:311.8,fights:1,marched:58,turns:3,wheel:8,lost:1,ledger:3,slots:6,pcs:7,top:25}
+{trip:10,min:32.4,how:retreat,f:59,got:102M,power:642M,jump:0.3,fights:1,marched:58,turns:1,wheel:10,lost:0,ledger:3,slots:6,pcs:7,top:25}
+{trip:11,min:36.6,how:defeat,f:68,got:1.0B,power:3.1B,jump:4.8,fights:5,marched:64,turns:13,wheel:10,lost:13,ledger:3,slots:6,pcs:7,top:27}
+{trip:12,min:39.3,how:defeat,f:71,got:499M,power:22.9B,jump:7.4,fights:1,marched:71,turns:8,wheel:11,lost:12,ledger:4,slots:7,pcs:7,top:30}
+{trip:13,min:42.6,how:defeat,f:76,got:6.2B,power:57.4B,jump:2.5,fights:2,marched:75,turns:11,wheel:12,lost:16,ledger:4,slots:7,pcs:7,top:30}
+{trip:14,min:46.6,how:defeat,f:82,got:16.7B,power:223B,jump:3.9,fights:2,marched:81,turns:13,wheel:12,lost:18,ledger:4,slots:7,pcs:7,top:34}
+{trip:15,min:50.0,how:defeat,f:83,got:7.6B,power:735B,jump:3.3,fights:1,marched:83,turns:11,wheel:13,lost:17,ledger:4,slots:7,pcs:7,top:38}
+{trip:16,min:53.7,how:defeat,f:92,got:163B,power:1.2T,jump:1.6,fights:4,marched:89,turns:11,wheel:13,lost:12,ledger:5,slots:7,pcs:7,top:38}
+{trip:17,min:56.5,how:defeat,f:95,got:145B,power:28.1T,jump:15.9,fights:1,marched:95,turns:9,wheel:15,lost:16,ledger:5,slots:7,pcs:7,top:40}
+{trip:18,min:60.1,how:defeat,f:95,got:145B,power:71.9T,jump:2.6,fights:1,marched:95,turns:12,wheel:15,lost:18,ledger:5,slots:7,pcs:7,top:41}
+{trip:19,min:63.4,how:defeat,f:103,got:1.1T,power:48.9T,jump:0.7,fights:2,marched:102,turns:10,wheel:15,lost:15,ledger:5,slots:7,pcs:8,top:42}
+{trip:20,min:64.0,how:retreat,f:107,got:3.2T,power:196T,jump:2.7,fights:0,marched:107,turns:0,wheel:16,lost:0,ledger:5,slots:7,pcs:8,top:47}
 
 ## 3. Optimisation depth
 
 ### naive upgrades (cheapest first, random sockets, first caravan card, never retreats), same fight bot (5 seeds)
-minutes to 1e6 68 (45-93), 1e9 114 (92-360), 1e12 198 (141-Infinity), 1e15 338 (168-Infinity)
-minutes between bursts: median 7.3, p10 2.2, p90 16.9 (n=135)
-time at R>=2 10%, R 1-2 13%, R<1 77%
-trips 26 (15-44), defeats 26, retreats 0, non-finite checks failed 0
-median across trips of hand share of damage 59%, plays/turn 4.5, burns/turn 1.5, trip length min median 9.7, power jump per trip median x2.0
+minutes to 1e6 57 (44-69), 1e9 95 (68-237), 1e12 133 (91-Infinity), 1e15 197 (118-Infinity)
+minutes between bursts: median 5.8, p10 1.4, p90 18.5 (n=129)
+time at R>=2 4%, R 1-2 11%, R<1 85%
+trips 15 (14-33), defeats 15, retreats 0, non-finite checks failed 0
+median across trips of hand share of damage 43%, plays/turn 4.5, burns/turn 2.3, trip length min median 10.2, power jump per trip median x2.5
 
-Median minutes to 1e12: careful 56, naive 198, ratio x3.52. Per seed: 2.75, Infinity, Infinity, 2.60, 2.49
+Median minutes to 1e12: careful 48, naive 133, ratio x2.76. Per seed: 1.80, Infinity, 4.75, 3.31, 2.76
 
 ### careful upgrades, fixed fight bot (how much does in-fight thinking matter over the whole loop?) (5 seeds)
-minutes to 1e6 34 (19-36), 1e9 60 (44-75), 1e12 133 (53-142), 1e15 169 (92-244)
-minutes between bursts: median 3.5, p10 0.7, p90 9.9 (n=149)
-time at R>=2 53%, R 1-2 35%, R<1 10%
-trips 50 (42-80), defeats 42, retreats 11, non-finite checks failed 0
-median across trips of hand share of damage 12%, plays/turn 3.5, burns/turn 1.1, trip length min median 2.9, power jump per trip median x1.3
+minutes to 1e6 24 (22-63), 1e9 61 (36-78), 1e12 89 (60-125), 1e15 122 (76-165)
+minutes between bursts: median 3.4, p10 0.6, p90 7.7 (n=146)
+time at R>=2 65%, R 1-2 29%, R<1 6%
+trips 34 (23-44), defeats 26, retreats 11, non-finite checks failed 0
+median across trips of hand share of damage 5%, plays/turn 3.9, burns/turn 1.1, trip length min median 3.1, power jump per trip median x1.9
 
-fixed fight bot / think fight bot, minutes to 1e12: x2.37
+fixed fight bot / think fight bot, minutes to 1e12: x1.85
 
 ### careful upgrades but no sockets at all (5 seeds)
-minutes to 1e6 26 (25-41), 1e9 164 (97-252), 1e12 Infinity (Infinity-Infinity), 1e15 Infinity (Infinity-Infinity)
-minutes between bursts: median 3.1, p10 1.4, p90 46.9 (n=98)
-time at R>=2 41%, R 1-2 26%, R<1 28%
-trips 584 (437-669), defeats 0, retreats 582, non-finite checks failed 0
-median across trips of hand share of damage 59%, plays/turn 1.8, burns/turn 1.8, trip length min median 0.1, power jump per trip median x1.0
+minutes to 1e6 29 (22-40), 1e9 218 (171-281), 1e12 Infinity (Infinity-Infinity), 1e15 Infinity (Infinity-Infinity)
+minutes between bursts: median 2.8, p10 0.4, p90 37.4 (n=96)
+time at R>=2 73%, R 1-2 17%, R<1 7%
+trips 714 (682-718), defeats 0, retreats 712, non-finite checks failed 0
+median across trips of hand share of damage 47%, plays/turn 2.2, burns/turn 1.8, trip length min median 0.1, power jump per trip median x1.0
 
 no sockets / careful, minutes to 1e12: xInfinity
 
 ### careful upgrades but no Charge perk (5 seeds)
-minutes to 1e6 24 (19-29), 1e9 45 (36-49), 1e12 175 (87-276), 1e15 Infinity (370-Infinity)
-minutes between bursts: median 2.8, p10 0.7, p90 38.5 (n=122)
-time at R>=2 70%, R 1-2 23%, R<1 16%
-trips 610 (443-729), defeats 0, retreats 606, non-finite checks failed 0
-median across trips of hand share of damage 74%, plays/turn 2.7, burns/turn 0.9, trip length min median 0.1, power jump per trip median x1.0
+minutes to 1e6 20 (18-24), 1e9 46 (33-49), 1e12 182 (119-Infinity), 1e15 Infinity (254-Infinity)
+minutes between bursts: median 2.6, p10 0.6, p90 12.6 (n=117)
+time at R>=2 70%, R 1-2 18%, R<1 9%
+trips 704 (187-755), defeats 1, retreats 703, non-finite checks failed 0
+median across trips of hand share of damage 83%, plays/turn 3.0, burns/turn 1.3, trip length min median 0.1, power jump per trip median x1.0
 
-no Charge / careful, minutes to 1e12: x3.12
+no Charge / careful, minutes to 1e12: x3.77
 
 ### careful upgrades but never buys the Wheel (5 seeds)
-minutes to 1e6 26 (22-33), 1e9 41 (33-62), 1e12 79 (63-108), 1e15 111 (104-171)
-minutes between bursts: median 3.6, p10 0.6, p90 7.2 (n=148)
-time at R>=2 49%, R 1-2 33%, R<1 16%
-trips 31 (25-36), defeats 15, retreats 12, non-finite checks failed 0
-median across trips of hand share of damage 96%, plays/turn 2.2, burns/turn 2.4, trip length min median 3.4, power jump per trip median x2.0
+minutes to 1e6 26 (23-26), 1e9 39 (36-67), 1e12 64 (62-120), 1e15 100 (91-143)
+minutes between bursts: median 2.9, p10 0.5, p90 7.7 (n=147)
+time at R>=2 45%, R 1-2 40%, R<1 16%
+trips 29 (25-90), defeats 6, retreats 20, non-finite checks failed 0
+median across trips of hand share of damage 99%, plays/turn 2.5, burns/turn 2.4, trip length min median 0.9, power jump per trip median x1.2
 
-no Wheel buying / careful, minutes to 1e12: x1.41
+no Wheel buying / careful, minutes to 1e12: x1.33
 
 ### Retreat policy, careful upgrades: minutes to 1e12 by when the bot chooses to leave
-retreat when next R< 1.2: minutes to 1e12 50, trips 37, defeats 5
-retreat when next R< 1: minutes to 1e12 59, trips 29, defeats 11
-retreat when next R< 0.75: minutes to 1e12 56, trips 25, defeats 8
-retreat when next R< 0.5: minutes to 1e12 79, trips 27, defeats 18
-retreat when next R< 0: minutes to 1e12 89, trips 24, defeats 24
-march-and-go-home farming (fights only when nothing can be marched; 200 min cap): minutes to 1e12 Infinity, 1e9 Infinity, trips 397
-
-## Feed test: Deeds
-
-## Deeds: same absolute enemy (R=1 for 2 Deeds, 4 slots). think bot. Deed count opens that many slots past two.
-wheel 3 Deeds 0: win  90% taken  14%
-wheel 3 Deeds 1: win  98% taken   7%
-wheel 3 Deeds 2: win  97% taken   9%
-wheel 3 Deeds 3: win  93% taken  10%
-wheel 3 Deeds 4: win  96% taken   8%
-wheel 1 Deeds 0: win  90% taken  14%
-wheel 1 Deeds 1: win  94% taken  10%
-wheel 1 Deeds 2: win  96% taken   9%
-wheel 1 Deeds 3: win  89% taken  14%
-wheel 1 Deeds 4: win  96% taken  10%
-wheel 8 Deeds 0: win  90% taken  14%
-wheel 8 Deeds 1: win 100% taken   4%
-wheel 8 Deeds 2: win 100% taken   1%
-wheel 8 Deeds 3: win 100% taken   1%
-wheel 8 Deeds 4: win  98% taken   3%
-Fixed slots at 4 with free Deeds off, by Deed count held but useless:
-free slots, 0 dead cards: win 100% taken   1%
-free slots, 2 dead cards: win  97% taken   9%
-
-## Feed test: junk variants (R-normalised, so read the think-fixed gap, not win rates across variants)
-
-## Junk: 2 Deeds (baseline repeated)
-R     | random           | fixed            | think            | think-fixed win
-0.7   |  57%  44%  6.2t |  78%  22%  4.0t |  86%  19%  3.3t | 8 pts
-1     |  77%  24%  5.1t |  84%  17%  3.1t |  97%   9%  2.9t | 12 pts
-1.5   |  90%  15%  4.4t | 100%   4%  2.6t | 100%   0%  2.0t | 0 pts
-3     | 100%   2%  3.0t | 100%   0%  1.6t | 100%   0%  1.2t | 0 pts
-
-## Junk: no Deeds, slots free
-R     | random           | fixed            | think            | think-fixed win
-0.7   |  60%  40%  6.0t |  78%  22%  3.7t |  92%  10%  3.3t | 14 pts
-1     |  79%  22%  4.9t |  84%  17%  3.1t | 100%   2%  2.5t | 16 pts
-1.5   |  90%  14%  4.0t | 100%   3%  2.4t | 100%   0%  2.0t | 0 pts
-3     | 100%   1%  2.6t | 100%   0%  1.3t | 100%   0%  1.0t | 0 pts
-
-## Junk: 3 Wards instead
-R     | random           | fixed            | think            | think-fixed win
-0.7   |  71%  29%  5.5t |  78%  22%  5.4t |  91%  13%  3.0t | 13 pts
-1     |  82%  20%  4.7t |  81%  21%  4.0t |  98%   4%  2.4t | 17 pts
-1.5   |  91%  14%  4.1t | 100%   5%  3.0t | 100%   0%  2.0t | 0 pts
-3     | 100%   2%  2.8t | 100%   0%  1.7t | 100%   0%  1.3t | 0 pts
-
-## Junk: Deeds that boost board x1.5 while held
-R     | random           | fixed            | think            | think-fixed win
-0.7   |  71%  30%  5.4t |  79%  21%  3.5t |  93%  11%  2.8t | 14 pts
-1     |  82%  20%  4.6t |  96%   9%  2.9t | 100%   0%  2.1t | 4 pts
-1.5   |  94%  10%  3.8t | 100%   1%  2.3t | 100%   0%  2.0t | 0 pts
-3     | 100%   1%  2.6t | 100%   0%  1.4t | 100%   0%  1.2t | 0 pts
-
-## No swap allowed (think bot)
-R     | random           | fixed            | think            | think-fixed win
-0.7   |  57%  44%  6.2t |  78%  22%  4.0t |  84%  19%  3.6t | 7 pts
-1     |  77%  24%  5.1t |  84%  17%  3.1t |  96%   9%  2.9t | 11 pts
-1.5   |  90%  15%  4.4t | 100%   4%  2.6t | 100%   1%  2.2t | 0 pts
-3     | 100%   2%  3.0t | 100%   0%  1.6t | 100%   0%  1.2t | 0 pts
-Knock-outs with every trip required to fight at least once, so a weak bot cannot sit in a march-and-go-home loop:
-
-### careful, must fight (5 seeds)
-minutes to 1e6 24 (19-29), 1e9 38 (33-85), 1e12 77 (59-105), 1e15 91 (65-118)
-minutes between bursts: median 2.5, p10 0.6, p90 5.9 (n=133)
-time at R>=2 21%, R 1-2 46%, R<1 23%
-trips 28 (20-39), defeats 14, retreats 11, non-finite checks failed 0
-median across trips of hand share of damage 5%, plays/turn 2.0, burns/turn 2.1, trip length min median 2.8, power jump per trip median x2.0
-
-### no sockets, must fight (5 seeds)
-minutes to 1e6 26 (25-36), 1e9 69 (61-157), 1e12 351 (321-Infinity), 1e15 Infinity (Infinity-Infinity)
-minutes between bursts: median 3.0, p10 1.1, p90 47.5 (n=116)
-time at R>=2 18%, R 1-2 13%, R<1 66%
-trips 317 (302-350), defeats 0, retreats 317, non-finite checks failed 0
-median across trips of hand share of damage 42%, plays/turn 2.0, burns/turn 1.5, trip length min median 0.6, power jump per trip median x1.0
-no sockets / careful, minutes to 1e12: x4.55
-
-### no Charge, must fight (5 seeds)
-minutes to 1e6 24 (19-30), 1e9 43 (36-47), 1e12 82 (62-214), 1e15 245 (224-Infinity)
-minutes between bursts: median 2.8, p10 0.6, p90 16.1 (n=146)
-time at R>=2 25%, R 1-2 31%, R<1 40%
-trips 171 (136-264), defeats 4, retreats 142, non-finite checks failed 0
-median across trips of hand share of damage 77%, plays/turn 2.8, burns/turn 0.8, trip length min median 0.9, power jump per trip median x1.0
-no Charge / careful, minutes to 1e12: x1.06
-
-### never buys the Wheel, must fight (5 seeds)
-minutes to 1e6 26 (22-33), 1e9 41 (33-62), 1e12 79 (60-108), 1e15 119 (104-171)
-minutes between bursts: median 3.7, p10 0.6, p90 8.2 (n=146)
-time at R>=2 60%, R 1-2 33%, R<1 13%
-trips 27 (25-36), defeats 15, retreats 10, non-finite checks failed 0
-median across trips of hand share of damage 88%, plays/turn 2.2, burns/turn 2.3, trip length min median 3.7, power jump per trip median x2.1
-never buys the Wheel / careful, minutes to 1e12: x1.03
+retreat when next R< 1.2: minutes to 1e12 49, trips 28, defeats 6
+retreat when next R< 1: minutes to 1e12 57, trips 25, defeats 7
+retreat when next R< 0.75: minutes to 1e12 48, trips 18, defeats 6
+retreat when next R< 0.5: minutes to 1e12 63, trips 18, defeats 12
+retreat when next R< 0: minutes to 1e12 77, trips 18, defeats 18
+march-and-go-home farming (fights only when nothing can be marched; 200 min cap): minutes to 1e12 Infinity, 1e9 Infinity, trips 392

@@ -73,6 +73,7 @@ h2{margin:.1em 0 .4em;font-size:1.3rem}h3{margin:.8em 0 .3em;font-size:1rem}p{ma
 .wheel{flex:none;width:50px;background:#20262e;border:1px solid var(--line);border-radius:8px;text-align:center;padding:2px;display:flex;flex-direction:column;align-items:center;justify-content:center}.wa{font-size:1.3rem;animation:spin 6s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}.mag{font-size:.68rem;white-space:nowrap}
 .piece{flex:1 1 0;min-width:66px;max-width:130px;background:var(--pan);border:1px solid var(--line);border-radius:8px;padding:3px;text-align:center;position:relative}
 .piece.hole{color:var(--line);border-style:dashed;display:flex;align-items:center;justify-content:center;font-size:.72rem}
+.piece.swapsel{outline:2px solid var(--gold);outline-offset:1px}.swp{color:var(--gold);font-size:.8em}
 .piece.fired{opacity:.62}.piece.sealed{background:#2a2438;outline:1px dashed #a48bd6}.piece.tgt{border-color:var(--red);box-shadow:0 0 0 1px var(--red) inset}
 .piece.flash{animation:flash .35s}@keyframes flash{0%{background:var(--gold);transform:scale(1.08)}100%{background:var(--pan);transform:none}}
 .pa{font-size:1.3rem;line-height:1.2}.pn{font-size:.66rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.py{font-size:.72rem;color:var(--gold);min-height:1.1em}

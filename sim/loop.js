@@ -8,7 +8,7 @@ let OPT={};
 
 /* ---- how each upgrader spends ---- */
 const defOf=P=>{ let d=maxHpOf(P); for(const c of P.cards){ if(!c.packed&&!onBoard(P,c.id)) continue; for(const [k,x] of CARDS[c.key].fx) if(k==='block') d+=fxAmount(c,k,x)*.8; if(onBoard(P,c.id)) d+=pieceHp(c)*.3; } return d; };
-const buyables=P=>P.cards.filter(c=>c.key!=='deed'&&c.key!=='ward'&&(onBoard(P,c.id)||c.packed));
+const buyables=P=>P.cards.filter(c=>c.key!=='deed'&&c.key!=='ward'&&(onBoard(P,c.id)||c.packed)&&!levelGated(P,c));
 function bestPerks(P,c){ // careful: fill open sockets greedily by what the estimator and the role say
   const n=socketsOpen(P,c); if(!n||OPT.noSock) return; c.sock=[];
   const dmg=CARDS[c.key].fx.some(([k])=>k==='dmg'||k==='poison'||k==='block');
@@ -36,7 +36,7 @@ function packCareful(P){
   // Deeds as slots are worth having; then the strongest cards by role.
   const cards=P.cards.filter(c=>!isPiece(c)&&c.key!=='deed');
   const pieces=P.cards.filter(isPiece).length;
-  const deeds=P.cards.filter(c=>c.key==='deed'); const useDeeds=Math.min(deeds.length,Math.max(0,pieces-2));
+  const deeds=P.cards.filter(c=>c.key==='deed'); const useDeeds=Math.min(deeds.length,Math.max(0,pieces-TUNE.freeSlots));
   deeds.forEach((d,i)=>d.packed=i<useDeeds);
   const v=c=>{ let s=0; for(const [k,x] of CARDS[c.key].fx) s+=({dmg:1,poison:.8,block:.5,powder:.3,draw:.4,energy:.4})[k]?fxAmount(c,k,x)*({dmg:1,poison:.8,block:.5})[k]||0:0; return s/Math.max(.7,cardCost(c)); };
   const cap=TUNE.deckMax-useDeeds, want=[]; const take=(f,n)=>{ for(const c of cards.filter(f).sort((a,b)=>v(b)-v(a)||b.lvl-a.lvl)){ if(n<=0||want.length>=cap) break; if(!want.includes(c)){ want.push(c); n--; } } };

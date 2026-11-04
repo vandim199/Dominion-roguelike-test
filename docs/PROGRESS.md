@@ -1,19 +1,11 @@
 STATUS: DONE
 
-Branch: `wild/forays-yours` (publishes to `v/wild-forays-yours/`). Never commit to main or force-push.
+Branch: `wild/forays-merged` (publishes to `v/wild-forays-merged/`). It starts from `wild/forays-yours`. Never commit to main or force-push.
 
-## Deliverables (priority order)
-1. `docs/TAKE.md`: pitch, a minute and a session, decision log, accepted/changed/rejected.
-2. DOM-free core plus headless test of the riskiest idea (`js/data.js`, `js/game.js`, `sim/feedtest.js`).
-3. Playable loop in `index.html`: title, home, trip, fights, defeat or retreat, home, spend, again. Phone and desktop. Autosave. Loss keeps progress.
-4. Whole-loop bot, tune pacing (`sim/loop.js`).
-5. Real browser check; update `README.md`. launch.json entry `forays-yours` exists but preview_start resolves against the main repo, so serve the worktree with `python -m http.server 8772` and open `http://localhost:8772/index.html` with preview_start url.
-6. `docs/RESULTS.md`: decision test, whole-loop pacing, optimisation depth, honest verdict, with reproducing command (`node sim/results.js all > docs/results_raw.txt`).
+## What was done
+Each idea from `wild/forays-claude` was tested alone with `sim/variants.js`, then the kept ones were taken back out one at a time. Kept: higher fill costs, flatter enemy damage, a third starting bastion, a free swap. Rejected: removing the "must attack first" rule, Hunker and Dodge, the odds gate, double pay for close wins. See `docs/MERGE.md`.
+
+## What is next
+Nothing is pending. Nobody has played this yet, so the next step is a person's verdict. Open questions are under "What is still weak" in `docs/MERGE.md`.
 
 Keep working: `classic/`, `js/versions.js`, `#tVersions`, `slotKey`. Every commit ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-
-## Done
-- All deliverables: rules core, feed test, full UI loop with save, whole-loop bots, tuning, browser check, README, TAKE, RESULTS.
-
-## Next
-- Nothing required. If continuing: a real person's playtest first, then the weak spots listed in RESULTS section 4.

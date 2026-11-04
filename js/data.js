@@ -21,7 +21,7 @@ function rng32(o,k){ o[k]=(o[k]+0x6D2B79F5)|0; let t=o[k]; t=Math.imul(t^(t>>>15
 function hash01(a,b){ const o={s:(Math.imul(a|0,2654435761)^Math.imul(b|0,40503))|0}; rng32(o,'s'); return rng32(o,'s'); }
 
 const TUNE = {
-  hp0:20, hpG:1.30,  atk0:17, atkG:1.19,  coin0:70, coinG:1.255,   // enemy per fight
+  hp0:20, hpG:1.30,  atk0:24, atkG:1.175,  coin0:70, coinG:1.255,   // enemy per fight
   bossEvery:12, bossHp:2.6, bossCoin:4, caravanEvery:7, caravanPrice:2,
   valG:1.40, mileX:3, mileEvery:10, defG:1.42,                   // value of a card or bastion per level
   cost0:3, pieceCostX:2.5, costG:1.72, hearthCost:10, hearthG:1.60, baseHp:60,
@@ -31,6 +31,12 @@ const TUNE = {
   sockAt:[5,20,40],
   feed:'stoke',      // 'stoke' any card burns for Powder; 'powdercards' only Powder cards feed; 'wheel' only the wheel feeds
   junk:'deed',       // 'deed' a Title Deed in the pack opens each slot past two; 'none' slots are free; 'hold' deeds also boost while held
+  taunt:true,        // a Gatehouse takes aimed hits wherever it stands
+  freeSwap:1,        // free board swaps a turn, between any two slots; further swaps cost swapCost energy
+  stance:false,      // test switch, off: enemies sometimes Hunker (next turn they take a quarter of direct damage) or Dodge (the next direct hit misses). See docs/MERGE.md
+  startBoard:['cannon','stake','apoth'], freeSlots:3,   // the board you start with, and the slots that need no Title Deed
+  capR:0, gritStep:1.5,   // test switch, off: damage levels stop once your odds at new ground reach capR; each defeat without new ground lifts that by gritStep
+  closeR:0, closePay:2,   // test switch, off: a win at odds below closeR pays closePay times the bounty
 };
 
 /* Cards. fx entries: [kind, base]. dmg, poison scale by value; block by defence; the rest are flat.
@@ -54,13 +60,13 @@ const CARDS = {
   ram:    {name:'Battering Ram', art:'🪵', cost:3, fx:[['dmg',48]], text:'Deal {dmg}.'},
   cart:   {name:'Handcart',      art:'🛒', cost:0, fx:[['rotate',1],['draw',1]], text:'Move your leftmost bastion to the far right. Draw 1.'},
   anvil:  {name:'Field Anvil',   art:'⚒️', cost:1, fx:[['anvil',3]], text:'Your strongest other card in hand pays triple for this fight.'},
-  deed:   {name:'Title Deed',    art:'📜', cost:0, junk:true, stoke:0, fx:[], text:'Cannot be played and burns for nothing. While packed it opens one board slot past two.'},
+  deed:   {name:'Title Deed',    art:'📜', cost:0, junk:true, stoke:0, fx:[], text:'Cannot be played and burns for nothing. While packed it opens one board slot past three.'},
   ward:   {name:'Boundary Ward', art:'🪬', cost:0, junk:true, stays:true, stoke:0, fx:[], text:'Cannot be played, stays in hand. Once burned, the enemy loses 3% of max health each turn while it lies in the discard.'},
   rubble: {name:'Rubble',        art:'🪨', cost:0, junk:true, stoke:0, temp:true, fx:[], text:'Cannot be played. Burn it to clear it, for no Powder.'},
   // Bastions
-  cannon: {name:'Cannon',        art:'💣', piece:true, cost:2, need:3, hp:30, fx:[['dmg',14]], text:'Deal {dmg}.'},
+  cannon: {name:'Cannon',        art:'💣', piece:true, cost:2, need:4, hp:30, fx:[['dmg',14]], text:'Deal {dmg}.'},
   mortar: {name:'Mortar',        art:'🎯', piece:true, cost:3, need:7, hp:20, fx:[['dmg',46]], text:'Deal {dmg}.'},
-  stake:  {name:'Palisade',      art:'🪓', piece:true, cost:1, need:2, hp:40, fx:[['block',7]], text:'Gain {block} block.'},
+  stake:  {name:'Palisade',      art:'🪓', piece:true, cost:1, need:3, hp:40, fx:[['block',7]], text:'Gain {block} block.'},
   gate:   {name:'Gatehouse',     art:'🏰', piece:true, cost:2, need:3, hp:90, taunt:true, fx:[['block',6],['selfrepair',.3]], text:'Takes aimed hits first. Gain {block} block and repair 30%.'},
   apoth:  {name:'Apothecary',    art:'⚗️', piece:true, cost:2, need:3, hp:24, fx:[['poison',18]], text:'Apply {poison} blight.'},
   hut:    {name:'Witch Hut',     art:'🛖', piece:true, cost:2, need:4, hp:24, fx:[['hex',2],['dmg',8]], text:'Next 2 enemy hits halved. Deal {dmg}.'},
@@ -86,20 +92,20 @@ const PERKS = {
   charge: {name:'Charge', for:'piece', text:'The next bastion to fire or attack card you play this turn pays triple. Chains multiply.'},
 };
 
-/* Enemies. intent(turn) gives a list of actions: {hit:mult,at:'left'|'right'|'you'|'all'}, {drain:1}, {seal:1}, {rubble:n}. */
+/* Enemies. intent(turn) gives a list of actions: {hit:mult,at:'left'|'right'|'you'|'all'}, {drain:1}, {seal:1}, {rubble:n}, {hunker:x}, {dodge:n}. */
 const ENEMIES = {
-  rat:   {name:'Packrat',       art:'🐀', hp:.9, min:0, intent:t=>[{hit:1,at:'left'}]},
-  raider:{name:'Hedge Raider',  art:'🗡️', hp:1,  min:0, intent:t=>[{hit:.6,at:'left'},{hit:.6,at:'left'}]},
-  archer:{name:'Tower Archer',  art:'🏹', hp:.9, min:3, intent:t=>[{hit:1.1,at:'right'}]},
-  ogre:  {name:'Toll Ogre',     art:'👹', hp:1.2,min:4, intent:t=>t%2?[{hit:.3,at:'you'}]:[{hit:2.5,at:'you'}]},
+  rat:   {name:'Packrat',       art:'🐀', hp:.9, min:0, intent:t=>TUNE.stance===true&&t%3===0?[{hit:.6,at:'left'},{hunker:.25}]:[{hit:1,at:'left'}]},
+  raider:{name:'Hedge Raider',  art:'🗡️', hp:1,  min:0, intent:t=>TUNE.stance&&t%3===2?[{hit:.6,at:'left'},{dodge:1}]:[{hit:.6,at:'left'},{hit:.6,at:'left'}]},
+  archer:{name:'Tower Archer',  art:'🏹', hp:.9, min:3, intent:t=>TUNE.stance&&t%3===0?[{hit:.8,at:'right'},{dodge:1}]:[{hit:1.1,at:'right'}]},
+  ogre:  {name:'Toll Ogre',     art:'👹', hp:1.2,min:4, intent:t=>t%2?(TUNE.stance===true?[{hit:.3,at:'you'},{hunker:.25}]:[{hit:.3,at:'you'}]):[{hit:2.5,at:'you'}]},
   sapper:{name:'Sapper',        art:'⛏️', hp:1,  min:6, intent:t=>[{drain:1},{hit:.6,at:'left'}]},
   warden:{name:'Shield Warden', art:'🛡️', hp:.9, min:8, ward:1, intent:t=>[{hit:.9,at:'left'}]},
-  cutpurse:{name:'Cutpurse',    art:'🥷', hp:.8, min:5, flee:4, intent:t=>[{hit:.6,at:'you'}]},
-  shaman:{name:'Mire Shaman',   art:'🧙', hp:1,  min:10,intent:t=>[{rubble:1},{hit:.7,at:'left'}]},
+  cutpurse:{name:'Cutpurse',    art:'🥷', hp:.8, min:5, flee:4, intent:t=>TUNE.stance&&t%2===0?[{hit:.4,at:'you'},{dodge:1}]:[{hit:.6,at:'you'}]},
+  shaman:{name:'Mire Shaman',   art:'🧙', hp:1,  min:10,intent:t=>TUNE.stance===true&&t%3===0?[{hit:.7,at:'left'},{hunker:.25}]:[{rubble:1},{hit:.7,at:'left'}]},
   // Bosses
-  toller:{name:'The Toll Collector', art:'🧛', boss:true, hp:1, intent:t=>[{seal:1},{hit:1.3,at:'left'}]},
-  bishop:{name:'The Iron Bishop',    art:'🗿', boss:true, hp:1, intent:t=>t%3?[{hit:.7,at:'all'}]:[{hit:2.4,at:'you'}]},
-  king:  {name:'The Hollow King',    art:'👑', boss:true, hp:1, grow:1.25, intent:t=>t%2?[{hit:1,at:'left'}]:[{drain:1},{hit:1,at:'you'}]},
+  toller:{name:'The Toll Collector', art:'🧛', boss:true, hp:1, intent:t=>TUNE.stance&&t%3===0?[{seal:1},{hit:1,at:'left'},{dodge:1}]:[{seal:1},{hit:1.3,at:'left'}]},
+  bishop:{name:'The Iron Bishop',    art:'🗿', boss:true, hp:1, intent:t=>t%3?(TUNE.stance===true&&t%3===2?[{hit:.7,at:'all'},{hunker:.25}]:[{hit:.7,at:'all'}]):[{hit:2.4,at:'you'}]},
+  king:  {name:'The Hollow King',    art:'👑', boss:true, hp:1, grow:1.25, intent:t=>t%2?(TUNE.stance&&t%4===1?[{hit:1,at:'left'},{dodge:1}]:[{hit:1,at:'left'}]):[{drain:1},{hit:1,at:'you'}]},
 };
 const ENEMY_POOL = ['rat','raider','archer','ogre','sapper','warden','cutpurse','shaman'];
 const BOSS_ORDER = ['toller','bishop','king'];

@@ -1,5 +1,7 @@
 # Coinkeep: Forays (this branch's take)
 
+*Written for `wild/forays-yours`. This branch changed some rules afterwards, including fill costs, the starting board, enemy damage and swapping in fights. Where this note and `docs/MERGE.md` disagree, `docs/MERGE.md` is current. Numbers below are from the old rules.*
+
 ## Pitch
 
 You hold a Keep with a water wheel that grinds Powder. You march out with a small pack of cards and a row of bastions, and every card in your hand is both a move and fuel, so each turn you decide what to play and what to burn. Powder runs left to right, and a full bastion fires at once. Your machine sweeps the old ground by itself, the fights near your limit are played by hand, and when you are beaten or wise enough to leave, you go home and spend. Nothing you bought is ever lost. Shops come rarely. Every card is a small build of its own, with levels, triple-pay milestones and sockets, and the top of the game is a chain of Charged bastions that has to complete inside one turn.

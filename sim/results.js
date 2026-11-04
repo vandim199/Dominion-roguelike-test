@@ -3,15 +3,16 @@
    node sim/results.js [decision|loop|depth|all] > docs/results_raw.txt */
 require('./load.js'); require('./bots.js');
 const {runGame}=require('./loop.js');
-const what=process.argv[2]||'all', FN=+process.env.FN||12, LN=+process.env.LN||5;
+const what=require.main===module?(process.argv[2]||'all'):'none', FN=+process.env.FN||12, LN=+process.env.LN||5;
 const pc=x=>(100*x).toFixed(0)+'%', med=a=>{ const b=a.slice().sort((x,y)=>x-y); return b.length?b[Math.floor((b.length-1)/2)]:NaN; };
 const q=(a,p)=>{ const b=a.slice().sort((x,y)=>x-y); return b.length?b[Math.floor(p*(b.length-1))]:NaN; };
 
 /* ---- builds at three stages of the game, taken from what the careful bot actually ends up with ---- */
 const BUILDS={
-  early:{lvl:6,wheel:1,slots:2,deeds:0,board:['stake','cannon'],pack:['fork','fork','fork','helm','helm','scoop','keg','errand'],sock:{}},
-  mid:{lvl:22,hearth:22,wheel:3,slots:4,deeds:2,board:['stake','cannon','apoth','mortar'],pack:['fork','fork','sally','helm','pavise','scoop','keg','errand','vial','doll'],sock:{all:['keen','light']}},
-  late:{lvl:38,hearth:46,wheel:7,slots:6,deeds:4,energy:5,board:['stake','apoth','cannon','mortar','cannon','mortar'],pack:['ram','ram','fork','helm','helm','keg','second','errand'],sock:{piece:['charge','keen'],last:['keen','light'],card:['keen','echo']}},
+  fresh:{lvl:1,hearth:1,wheel:1,slots:3,deeds:0,board:['stake','cannon','apoth'],pack:['fork','fork','fork','helm','helm','scoop','keg','errand'],sock:{}}, // the first trips, before the first boss
+  early:{lvl:6,wheel:1,slots:3,deeds:0,board:['stake','cannon','apoth'],pack:['fork','fork','fork','helm','helm','scoop','keg','errand'],sock:{}},
+  mid:{lvl:22,hearth:22,wheel:3,slots:4,deeds:1,board:['stake','cannon','apoth','mortar'],pack:['fork','fork','sally','helm','pavise','scoop','keg','errand','vial','doll'],sock:{all:['keen','light']}},
+  late:{lvl:38,hearth:46,wheel:7,slots:6,deeds:3,energy:5,board:['stake','apoth','cannon','mortar','cannon','mortar'],pack:['ram','ram','fork','helm','helm','keg','second','errand'],sock:{piece:['charge','keen'],last:['keen','light'],card:['keen','echo']}},
 };
 function build(name,seed,boardOverride){
   const b=BUILDS[name], P=newProfile(seed); P.wheel=b.wheel; P.hearth=b.hearth||b.lvl; P.slots=b.slots; P.energy=b.energy||3; P.cards=[]; P.layout=[]; P.nid=1;
@@ -42,19 +43,25 @@ function decision(){
   const ko=(label,name,fn,undo,opts)=>{ fn(); const a=cell(name,'fixed',1,SET),b=cell(name,'think',1,SET,opts); undo(); console.log(`| ${label} (${name}) | ${pc(a.win)} | ${pc(b.win)} | ${pc(a.taken)} | ${pc(b.taken)} |`); };
   const nil=()=>{};
   for(const n of ['mid','late']) ko('as shipped',n,nil,nil);
-  ko('no board swap (shipped has none in UI; bot could swap above)','mid',nil,nil,{swap:false});
+  for(const n of ['mid','late']) ko('think bot may not swap',n,nil,nil,{swap:false});
   ko('burn flat 1 Powder, not cost+1','mid',()=>{TUNE.burnFlat=true;},()=>{TUNE.burnFlat=false;});
   ko('only Powder cards feed','mid',()=>{TUNE.feed='powdercards';},()=>{TUNE.feed='stoke';});
   ko('wheel only feeds (+3), hand never burns','mid',()=>{TUNE.feed='wheel';},()=>{TUNE.feed='stoke';});
   ko('no Magazine','mid',()=>{TUNE.magBase=0;},()=>{TUNE.magBase=2;});
-  // Layouts and builds across enemy sets
+  layoutTest(true);
+}
+// Layouts across enemy sets
+function layoutTest(print){
   const layouts={mid:{stake_first:['stake','cannon','apoth','mortar'],guns_first:['cannon','mortar','apoth','stake'],gatehouse:['gate','cannon','mortar','apoth'],hex:['hut','stake','cannon','mortar'],bellows:['bellows','cannon','apoth','mortar'],post:['post','stake','cannon','mortar']},
     late:{chain:['stake','apoth','cannon','mortar','cannon','mortar'],gate_chain:['gate','apoth','cannon','mortar','cannon','mortar'],bellows_chain:['bellows','stake','cannon','apoth','mortar','mortar'],hex_chain:['hut','stake','cannon','apoth','mortar','mortar'],big_first:['mortar','mortar','cannon','cannon','apoth','stake'],economy:['post','granary','stake','cannon','mortar','mortar']}};
+  const shares={};
   for(const name of ['mid','late']){ const names=Object.keys(layouts[name]), wins={}, per={}; names.forEach(n=>wins[n]=0); let tot=0;
     for(const key of SET){ const loc={}; for(let s=1;s<=Math.ceil(FN/2);s++){ let best=null,bv=-1e9; for(const n of names){ const r=runFight(build(name,s,layouts[name][n]),key,1,'think',s*13+7,undefined,estPower(build(name,s))); const v=(r.win?100:0)-r.taken*50-r.turns-r.left*50; if(v>bv){bv=v;best=n;} } wins[best]++; loc[best]=(loc[best]||0)+1; tot++; }
       per[key]=Object.entries(loc).sort((a,b)=>b[1]-a[1])[0][0]; }
-    console.log(`\n### Layouts, ${name} build, R=1: same absolute enemy for all layouts, share of enemy-and-seed pairings where each layout did best\n`+names.map(n=>`${n} ${pc(wins[n]/tot)}`).join(', ')+'\nbest per enemy: '+JSON.stringify(per));
+    shares[name]=Object.fromEntries(names.map(n=>[n,wins[n]/tot]));
+    if(print) console.log(`\n### Layouts, ${name} build, R=1: same absolute enemy for all layouts, share of enemy-and-seed pairings where each layout did best\n`+names.map(n=>`${n} ${pc(wins[n]/tot)}`).join(', ')+'\nbest per enemy: '+JSON.stringify(per));
   }
+  return shares;
 }
 function summarize(label,rs){
   const min=m=>rs.map(r=>r.marks[m]==null?Infinity:r.marks[m]/60), gaps=[]; for(const r of rs) for(let i=1;i<r.bursts.length;i++) gaps.push((r.bursts[i]-r.bursts[i-1])/60);
@@ -69,7 +76,7 @@ function summarize(label,rs){
 }
 const games=(kind,o={})=>{ const out=[]; for(let s=1;s<=LN;s++) out.push(runGame(s*97+3,kind,{capMin:400,target:1e15,samples:+process.env.SAMPLES||16,...o})); return out; };
 if(what==='decision'||what==='all') decision();
-{ // Stress: far past the game's end, every number must stay finite, in the rules and through a save round trip.
+if(what!=='none'){ // Stress: far past the game's end, every number must stay finite, in the rules and through a save round trip.
   const P=build('late',5); for(const c of P.cards) if(c.key!=='deed') c.lvl=300; P.hearth=320; P.coin=1e200; const T=startTrip(P); T.f=1000; beginFight(P,T,{key:'bishop',hp:estPower(P)*2,atk:enemyAtk(1000)}); for(let i=0;i<6&&!T.F.over;i++) fixedTurn(P,T);
   console.log('Stress at level 300: power '+fmt(estPower(P))+', finite after six turns: '+(allFinite(P)&&allFinite(T))+', JSON round trip equal: '+(JSON.stringify(JSON.parse(JSON.stringify(T)))===JSON.stringify(T))); }
 if(what==='ko'){ const t=r=>r.map(x=>x.marks[1e12]==null?Infinity:x.marks[1e12]/60); console.log('Knock-outs with every trip required to fight at least once, so a weak bot cannot sit in a march-and-go-home loop:'); const c=summarize('careful, must fight',games('careful',{mustFight:true})); for(const [n,o] of [['no sockets',{noSock:true}],['no Charge',{noCharge:true}],['never buys the Wheel',{noWheel:true}]]){ const r=summarize(n+', must fight',games('careful',{mustFight:true,...o})); console.log(n+' / careful, minutes to 1e12: x'+(med(t(r))/med(t(c))).toFixed(2)); } }
@@ -95,3 +102,4 @@ if(what==='loop'||what==='depth'||what==='all'){
   for(const R of [1.2,1,.75,.5,0]){ const rs=games('careful',{retreatR:R||.0001,neverRetreat:R===0}); console.log(`retreat when next R< ${R}: minutes to 1e12 ${med(t(rs)).toFixed(0)}, trips ${med(rs.map(r=>r.P.trips))}, defeats ${med(rs.map(r=>r.P.defeats))}`); }
   { const rs=games('careful',{farm:true,capMin:200}); console.log(`march-and-go-home farming (fights only when nothing can be marched; 200 min cap): minutes to 1e12 ${med(t(rs)).toFixed(0)}, 1e9 ${med(rs.map(r=>r.marks[1e9]==null?Infinity:r.marks[1e9]/60)).toFixed(0)}, trips ${med(rs.map(r=>r.P.trips))}`); }
 }
+module.exports={BUILDS,build,cell,SET,layoutTest};
