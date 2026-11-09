@@ -104,7 +104,7 @@ All numbers come from `node sim/sim.js`, 100 seeded runs per bot (seeds 1–100)
 
 **The clock bites early and late.** With the starter deck the first foe takes the mage bot 3 turns and the first Boss falls 75% of the time. In circles 3 to 5 a working engine outgrows the foes (most fall in about 2 turns). From circle 6 the Bosses take over again: 65%, 49%, then 38% for the 8th.
 
-**Breaking the game works.** Once Amplify, Twincast and Mana cards line up, single hits pass a million and some fights end with 10²⁰ times the foe's health dealt. Endless mode exists for that.
+**Breaking the game works.** Once Amplify, Twincast and Mana cards line up, single hits pass a million and some fights end with 10²⁰ times the foe's health dealt. Endless mode exists for that, yet health growth still catches up: playing on after the 8th Boss, the mage bot's longest runs end around fight 36 (`--endless 1`, 40 runs). A broken deck is still an inconsistent one.
 
 **Bosses** (mage win rate, all circles): Null Rift 54%, Toll Golem 63%, Iron Bureaucrat 64%, Ogre King 65%, Bog Witch 65%, Wraith 67%, Bookworm 69%, Snow Queen 74%, Ancient Dragon 76%, Mirror Knight 82%, Pirate Lich 82%, Goblin Thief 85%. The naive bot finds Iron Bureaucrat (14%) and Snow Queen (22%) hardest.
 
@@ -116,3 +116,7 @@ All numbers come from `node sim/sim.js`, 100 seeded runs per bot (seeds 1–100)
 - **Deck size.** The bots buy whenever they can afford something good and end with about 100 cards. People will likely keep thinner decks; Banish and the Sanctum's purge are there for it, but the bots never use Banish.
 - **The middle circles are easy** for a strong engine. Steeper health growth there would also make the late game harder, so that wants a person's feel first.
 - **Order inside a card** (Surge against Wild Magic) is the idea the game started from. The bots use both about equally, which suggests neither dominates, but it hasn't been looked at closely.
+
+## Look
+
+The retheme is a wizard's tower at night: a starfield behind everything, parchment cards with a band coloured by school (red spells, blue Mana, gold Arcana, violet runes), the Mana cost as a blue wax seal, prices as gold coins, the foe in a slowly turning summoning circle, and a Mana orb whose glow grows with the multiplier. Fonts are Cinzel (titles) and Alegreya Sans (text). The market is the Arcane Library, the discard pile is "Spent", and the icon is a wizard's hat.

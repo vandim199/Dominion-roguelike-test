@@ -1,8 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#1A2354"/>
-  <circle cx="256" cy="256" r="178" fill="#C98B00"/>
-  <circle cx="256" cy="244" r="178" fill="#FFC93C"/>
-  <circle cx="256" cy="244" r="138" fill="none" stroke="#E0A400" stroke-width="16"/>
-  <path d="M176 300v-92l40 30 40-62 40 62 40-30v92z" fill="#8A5A00"/>
-  <rect x="176" y="300" width="160" height="22" rx="6" fill="#8A5A00"/>
+  <defs>
+    <radialGradient id="sky" cx="50%" cy="35%" r="75%"><stop offset="0" stop-color="#3B2A7A"/><stop offset="1" stop-color="#120C2A"/></radialGradient>
+    <linearGradient id="hat" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7A5BE0"/><stop offset="1" stop-color="#3E2A96"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#sky)"/>
+  <circle cx="110" cy="120" r="5" fill="#fff" opacity=".8"/><circle cx="410" cy="96" r="4" fill="#fff" opacity=".7"/>
+  <circle cx="420" cy="250" r="3" fill="#fff" opacity=".6"/><circle cx="80" cy="300" r="3" fill="#fff" opacity=".6"/>
+  <path d="M256 70 C300 150 330 250 360 360 L152 360 C190 250 215 150 256 70 Z" fill="url(#hat)"/>
+  <path d="M256 70 C268 110 300 120 330 112 C300 140 280 140 256 70 Z" fill="#5A41C0"/>
+  <ellipse cx="256" cy="372" rx="170" ry="40" fill="#2E1F72"/>
+  <ellipse cx="256" cy="362" rx="170" ry="34" fill="#4D36B4"/>
+  <rect x="160" y="318" width="192" height="26" rx="8" fill="#F2C14E"/>
+  <path d="M256 170 l14 30 33 4 -24 22 6 33 -29-16 -29 16 6-33 -24-22 33-4z" fill="#F7E28A"/>
 </svg>

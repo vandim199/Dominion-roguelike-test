@@ -50,7 +50,7 @@ async function newRun(seed){
   for(let i=0;i<4;i++) G.deck.push(mk('mote'));
   for(let i=0;i<4;i++) G.deck.push(mk('zap'));
   for(let i=0;i<2;i++) G.deck.push(mk('channel'));
-  log('Your tower stands. Foes come one at a time: bring each down within its turns.','hl');
+  log('The tower wakes. Foes climb its stair one at a time: bring each down before its turns run out.','hl');
   await startFight();
 }
 
@@ -179,7 +179,7 @@ function hit(S,b,dry){
   if(!dry){ G.foe.hp-=d; G.stats.dealt+=d; if(d>G.stats.best) G.stats.best=d; fx('hit',d); }
   return d;
 }
-function addMana(S,n){ S.mana=Math.min(manaCap(),S.mana+n); }
+function addMana(S,n){ const was=S.mana; S.mana=Math.min(manaCap(),S.mana+n); if(S===G) fx('mana',S.mana-was); }
 function gainArc(S,n,dry){ n=(n+(hasR('coin')?1:0))*(hasR('stone')?2:1); S.arc+=n; if(!dry) G.arcana+=n; return n; }
 
 // Choice steps need a player; everything else is applyOp, which is synchronous so look-ahead can run it.
@@ -202,7 +202,7 @@ function applyOp(S,o,c,dry){
     case 'grow': if(!dry) c.grow=(c.grow||0)+a; break;
     case 'mana': addMana(S,a+(hasR('staff')?1:0)); break;
     case 'lose': S.mana=Math.max(0,S.mana-a); break;
-    case 'double': S.mana=Math.min(manaCap(),S.mana*a); break;
+    case 'double': { const was=S.mana; S.mana=Math.min(manaCap(),S.mana*a); if(!dry) fx('mana',S.mana-was); } break;
     case 'echo': S.echo+=a; break;
     case 'draw': if(dry) S.drawn+=a; else draw(a,true); break;
     case 'cycle': S.drawn+=a; break;

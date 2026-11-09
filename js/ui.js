@@ -49,7 +49,10 @@ function fx(kind,a){
   }
   if(kind==='kill') pulse($('foe'),'slain',900);
   if(kind==='fail') pulse($('app'),'quake',500);
-  if(kind==='foe') pulse($('foe'),'arrive',600);
+  if(kind==='foe') pulse($('foe'),'arrive',700);
+  if(kind==='mana'&&a>0){ const o=document.querySelector('#mana .orb'); if(!o) return;
+    const r=o.getBoundingClientRect(), d=document.createElement('div'); d.className='manapop'; d.textContent=`+${fmt(a)} ${MANA}`;
+    d.style.left=(r.left+r.width/2)+'px'; d.style.top=(r.top-6)+'px'; document.body.appendChild(d); setTimeout(()=>d.remove(),1000); }
 }
 function downloadLog(){
   const txt=LEDGER.map(([m])=>m).join('\n');
@@ -122,7 +125,8 @@ function render(){
     M.appendChild(el);
   });
   // bar
-  $('mana').innerHTML=`<span class="mv">${MANA} ${fmt(G.mana)}</span><span class="mx">×${fmt(Math.max(1,G.mana))}</span>`;
+  $('mana').innerHTML=`<span class="orb">${fmt(G.mana)}</span><span class="mx"><b>×${fmt(Math.max(1,G.mana))}</b><small>damage</small></span>`;
+  $('mana').style.setProperty('--glow',clamp(Math.log2(1+G.mana)/4,0.1,1).toFixed(2));
   const bf=[];
   if(G.focus) bf.push(`<span class="buff" title="Every hit deals more">🔷 +${fmt(G.focus)}</span>`);
   if(G.vuln) bf.push(`<span class="buff" title="Foe takes more damage this turn">🧿 +${G.vuln}%</span>`);
@@ -130,7 +134,7 @@ function render(){
   if(G.echo) bf.push(`<span class="buff" title="Your next card resolves again">👥 +${G.echo}</span>`);
   const rm=G.runes.reduce((s,c)=>s+(c.manarune||0),0); if(rm) bf.push(`<span class="buff" title="Mana each turn from runes">🔶 +${rm}</span>`);
   $('buffs').innerHTML=bf.join('');
-  $('pDeck').textContent=`Deck ${G.deck.length}`; $('pDisc').textContent=`Discard ${G.discard.length}`;
+  $('pDeck').textContent=`📖 Deck ${G.deck.length}`; $('pDisc').textContent=`🪶 Spent ${G.discard.length}`;
   const et=$('endturn');
   et.textContent=G.won?'Claim victory':G.turn>=turnsMax()?'End last turn':'End turn';
   et.classList.toggle('win',!!G.won); et.classList.toggle('last',!G.won&&G.turn>=turnsMax());
@@ -220,7 +224,7 @@ function showPile(title,cards){
   cards.slice().sort((a,b)=>cname(a).localeCompare(cname(b))).forEach(c=>{ const el=cardEl(c,'pick'); el.onclick=()=>inspectOnly(c); $('pool').appendChild(el); });
   const b=document.createElement('button'); b.className='mbtn go'; b.textContent='Close'; b.onclick=closeVeil; $('mBtns').appendChild(b);
 }
-const showDeck=()=>{ if(G) showPile('Your deck',[...G.deck,...G.hand,...G.discard,...G.inPlay,...G.runes,...G.exhausted]); };
+const showDeck=()=>{ if(G) showPile('Your spellbook',[...G.deck,...G.hand,...G.discard,...G.inPlay,...G.runes,...G.exhausted]); };
 
 /* ---------- menus & title ---------- */
 function openMenu(){ $('menu').classList.add('on'); }
