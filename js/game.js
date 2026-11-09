@@ -26,15 +26,15 @@ const hasR  = k => !!G && G.relics.some(r=>r.key===k);
 const cname = c => DB[c.key].n+plus(c.lv);
 const opsOf = c => DB[c.key].ops(c.lv,c);
 const ctext = c => opsOf(c).map(opText);
-const isSpell = c => opsOf(c).some(o=>['dmg','chain','burn','nova'].includes(o[0]));
+const isSpell = c => opsOf(c).some(o=>['dmg','chain','burn','nova','handdmg','burndmg'].includes(o[0]));
 const baseCost = c => { const d=DB[c.key]; return d.c + (d.c||2)*(tierMult(c.lv)-1) + d.step*c.lv; };
-const allCards = () => [...G.deck,...G.hand,...G.discard,...G.inPlay,...G.runes];
+const allCards = () => [...G.deck,...G.hand,...G.discard,...G.inPlay,...G.runes,...(G.stolen||[])];
 const deckSize = () => allCards().length + G.exhausted.length;
 const circleOf = f => Math.floor(f/TUNE.fightsPerCircle)+1;
-const turnsMax = () => TUNE.turns+(hasR('hourglass')?1:0)-(hasR('glass')?1:0);
+const turnsMax = () => TUNE.turns+(hasR('hourglass')?1:0)-(hasR('glass')?1:0)-(boss('djinn')?2:0);
 const handSize = () => TUNE.handSize+(hasR('robes')?1:0)-(boss('ogre')?1:0);
 const boss = k => !!G && !!G.foe && G.foe.boss===k;
-const manaCap = () => boss('rift') ? 8 : Infinity;
+const manaCap = () => boss('rift') ? 10 : Infinity;
 const cardWorth = c => DB[c.key].noLv ? -1 : baseCost(c);
 const playCost = () => boss('heavy') ? 2 : 1;
 
@@ -42,37 +42,30 @@ function loadBest(){ try{ return +localStorage.getItem(slotKey('spellkeep.best')
 function saveBest(n){ try{ if(n>loadBest()) localStorage.setItem(slotKey('spellkeep.best'),String(n)); }catch(e){} }
 
 async function newRun(seed){
-  G={ rng:seed!=null?seed>>>0:(nativeRandom()*4294967296)>>>0, hearts:TUNE.hearts, arcana:TUNE.startArcana,
-      deck:[],hand:[],discard:[],inPlay:[],runes:[],exhausted:[],trash:[],
+  G={ rng:seed!=null?seed>>>0:(nativeRandom()*4294967296)>>>0, hearts:TUNE.hearts,
+      deck:[],hand:[],discard:[],inPlay:[],runes:[],exhausted:[],stolen:[],trash:[],
       mana:0, carry:0, turn:0, fight:-1, foe:null, burn:0, focus:0, vuln:0, empower:1, echo:0,
-      spells:0, played:0, flags:{}, market:[], relics:[], bossesSeen:[], phase:'turn', over:false, won:false,
+      spells:0, played:0, flags:{}, relics:[], bossesSeen:[], phase:'turn', over:false, won:false,
       stats:{dealt:0,best:0,kills:0,fails:0} };
-  for(let i=0;i<4;i++) G.deck.push(mk('mote'));
-  for(let i=0;i<4;i++) G.deck.push(mk('zap'));
-  for(let i=0;i<2;i++) G.deck.push(mk('channel'));
+  for(let i=0;i<6;i++) G.deck.push(mk('zap'));
+  for(let i=0;i<3;i++) G.deck.push(mk('channel'));
+  G.deck.push(mk('ponder'));
   log('The tower wakes. Foes climb its stair one at a time: bring each down before its turns run out.','hl');
   await startFight();
 }
 
-/* ---------- market ---------- */
-function rollTier(){ const m=TUNE.maxTier(circleOf(G.fight)); return Math.max(0,wpick([[m,50],[m-1,30],[m-2,10],[m+1,10]])); }
-function marketCard(){ return mk(wpick(MARKET_KEYS.filter(k=>DB[k].t!=='arcana').map(k=>[k,DB[k].rare?2:10])),rollTier()); }
-function arcanaCard(){ const c=circleOf(G.fight); return mk(wpick([['crystal',40],['starshard',10+5*c],['alembic',12],['hoard',10]]),rollTier()); }
-function newMarket(){
-  G.market=[]; for(let i=0;i<TUNE.marketSize-2;i++) G.market.push(marketCard());
-  G.market.push(arcanaCard(),arcanaCard()); shuffle(G.market);
+/* ---------- rewards ---------- */
+function rollTier(){ const m=TUNE.maxTier(circleOf(G.fight))+(hasR('quill')?1:0); return Math.max(0,wpick([[m,55],[m-1,30],[m+1,15]])); }
+// A card reward: distinct cards, each rarity rolled by the kind of foe beaten. A Boss always offers a rare.
+function rewardCards(kind){
+  const n=TUNE.rewardCards+(hasR('clasp')?1:0), w=TUNE.rarity[kind], out=[];
+  for(let i=0;i<n;i++){
+    const r= kind==='boss'&&i===0 ? 'rare' : wpick(Object.entries(w));
+    const cand=POOL[r].filter(k=>!out.some(c=>c.key===k));
+    out.push(mk(pick(cand.length?cand:POOL.common),rollTier()));
+  }
+  return shuffle(out);
 }
-const marketOpen = () => !boss('pirate');
-function buyCard(i){
-  if(busy||G.over||G.phase!=='turn'||!marketOpen()) return false;
-  const c=G.market[i]; if(!c) return false;
-  const p=baseCost(c); if(G.arcana<p) return false;
-  G.arcana-=p; G.discard.push(c);
-  G.market[i]= DB[c.key].t==='arcana' ? arcanaCard() : marketCard();
-  log(`You learn ${cname(c)} for ${p} ${ARC}.`,'good'); fx('buy',c);
-  render(); return true;
-}
-
 /* ---------- deck ---------- */
 function popDeck(){
   if(!G.deck.length){ if(!G.discard.length)return null;
@@ -89,8 +82,8 @@ function draw(n,bySpell){
   return got;
 }
 function gatherDeck(){
-  G.deck=shuffle([...G.deck,...G.hand,...G.discard,...G.inPlay,...G.runes,...G.exhausted]);
-  G.hand=[]; G.discard=[]; G.inPlay=[]; G.runes=[]; G.exhausted=[];
+  G.deck=shuffle([...G.deck,...G.hand,...G.discard,...G.inPlay,...G.runes,...G.exhausted,...(G.stolen||[])]);
+  G.hand=[]; G.discard=[]; G.inPlay=[]; G.runes=[]; G.exhausted=[]; G.stolen=[];
   G.deck.forEach(c=>{ c.frozen=false; });
 }
 function trashCard(c){ G.trash.push(c); }
@@ -113,13 +106,11 @@ async function startFight(){
   else foe={...pick(kind==='elite'?ELITES:MINIONS)};
   G.foe={...foe,kind,hp,max:hp,circle:c};
   G.burn=0; G.focus=0; G.turn=0; G.carry=0; G.won=false; G.phase='turn';
-  newMarket();
   log(`Circle ${c} · ${kind==='boss'?'Boss':kind==='elite'?'Elite':'Foe'} ${f%3+1}/3`,'wave');
   log(`${foe.art} ${foe.n} appears with ${fmt(hp)} health. You have ${plural(turnsMax(),'turn')}.`,'hl');
   if(foe.boss) log(`${foe.n}: ${foe.tx}`,'bad');
   else if(slot===0) log(`This circle's Boss: ${BOSSES[G.nextBoss].art} ${BOSSES[G.nextBoss].n}. ${BOSSES[G.nextBoss].tx}`);
-  if(boss('queen')) freezeBest(2);
-  if(boss('pirate')&&G.arcana>0){ const s=Math.floor(G.arcana/2); G.arcana-=s; log(`The Pirate Lich plunders ${s} ${ARC}.`,'bad'); }
+  if(boss('queen')) freezeBest(1);
   fx('foe',G.foe);
   await startTurn();
 }
@@ -133,11 +124,12 @@ async function startTurn(){
   G.turn++; G.played=0; G.spells=0; G.vuln=0; G.empower=1; G.echo=0;
   G.flags={eaten:0,firstHit:false,twin:false,owl:false};
   G.mana=TUNE.startMana+(hasR('crystalball')?1:0)+G.carry+G.runes.reduce((s,c)=>s+(c.manarune||0),0);
+  if(G.turn===1&&hasR('haste')) G.mana+=2;
   G.mana=Math.min(G.mana,manaCap()); G.carry=0;
   if(boss('witch')) gainCurse(2,true);
-  if(boss('goblin')&&G.arcana>0){ const s=Math.ceil(G.arcana/4); G.arcana-=s; log(`The Goblin Thief steals ${s} ${ARC}.`,'bad'); }
-  if(hasR('quill')){ const q=Math.floor(deckSize()/5); if(q) { G.arcana+=q; } }
   draw(handSize());
+  if(boss('goblin')){ const c=pick(G.hand.filter(c=>!DB[c.key].noLv));
+    if(c){ pull(G.hand,c); G.stolen.push(c); log(`🦹 The Goblin Thief steals your ${cname(c)} until the fight ends.`,'bad'); } }
   log(`Turn ${G.turn}/${turnsMax()} · ${G.mana} ${MANA}`);
   render();
   if(boss('toll')&&!G.won){
@@ -180,7 +172,6 @@ function hit(S,b,dry){
   return d;
 }
 function addMana(S,n){ const was=S.mana; S.mana=Math.min(manaCap(),S.mana+n); if(S===G) fx('mana',S.mana-was); }
-function gainArc(S,n,dry){ n=(n+(hasR('coin')?1:0))*(hasR('stone')?2:1); S.arc+=n; if(!dry) G.arcana+=n; return n; }
 
 // Choice steps need a player; everything else is applyOp, which is synchronous so look-ahead can run it.
 async function choiceOp(o,c){
@@ -197,18 +188,17 @@ const CHOICE_OPS=['cycle','trash'];
 function applyOp(S,o,c,dry){
   const [k,a,b]=o;
   switch(k){
-    case 'arc':  gainArc(S,a,dry); break;
-    case 'alch': gainArc(S,a*Math.max(1,S.mana),dry); break;
-    case 'grow': if(!dry) c.grow=(c.grow||0)+a; break;
     case 'mana': addMana(S,a+(hasR('staff')?1:0)); break;
     case 'lose': S.mana=Math.max(0,S.mana-a); break;
     case 'double': { const was=S.mana; S.mana=Math.min(manaCap(),S.mana*a); if(!dry) fx('mana',S.mana-was); } break;
-    case 'echo': S.echo+=a; break;
+    case 'echo': S.echo=Math.max(S.echo,a); break;
     case 'draw': if(dry) S.drawn+=a; else draw(a,true); break;
     case 'cycle': S.drawn+=a; break;
     case 'trash': break;
     case 'dmg': for(let i=0;i<(b||1);i++) hit(S,a,dry); break;
     case 'chain': if(S.spells) hit(S,a*S.spells,dry); break;
+    case 'handdmg': { const n=dry?S.handN-1:G.hand.length; if(n>0) hit(S,a*n,dry); } break;
+    case 'burndmg': if(S.burn) hit(S,a*S.burn,dry); break;
     case 'nova': { hit(S,a*Math.max(1,S.mana),dry); S.mana=Math.min(S.mana,1); } break;
     case 'burn': { const n=Math.floor(a*Math.max(1,S.mana)*S.cardMult*(hasR('ember')?2:1)); S.burn+=n; S.burnAdd+=n;
       if(!dry) log(`Burn +${fmt(n)} (now ${fmt(S.burn)}).`); } break;
@@ -231,7 +221,7 @@ function postCard(S,c){ S.cardMult=1; if(isSpell(c)) S.spells++; S.played++; }
 function resolveDry(S,c){
   const ops=opsOf(c), times=preCard(S,c);
   for(let t=0;t<times;t++) for(const o of ops) applyOp(S,o,c,true);
-  postCard(S,c);
+  postCard(S,c); S.handN--;
 }
 async function resolveCard(c){
   const ops=opsOf(c), times=preCard(G,c);
@@ -247,24 +237,25 @@ async function playCard(c){
   try{
     const cost=playCost();
     pull(G.hand,c); G.inPlay.push(c);
-    G.dealt=0; G.arc=0; G.drawn=0; G.burnAdd=0;
+    G.dealt=0; G.drawn=0; G.burnAdd=0;
     await resolveCard(c);
     G.mana=Math.max(0,G.mana-cost);
     const t=DB[c.key].t, ops=opsOf(c);
     if(t==='rune'){ pull(G.inPlay,c); G.runes.push(c); }
     else if(ops.some(o=>o[0]==='exhaust')){ pull(G.inPlay,c); G.exhausted.push(c); }
-    log(`${DB[c.key].art} ${cname(c)}${G.dealt?` hits for ${fmt(G.dealt)}`:''}${G.arc?` · +${fmt(G.arc)} ${ARC}`:''}. ${G.mana} ${MANA} left.`, G.dealt?'dmg':'');
+    log(`${DB[c.key].art} ${cname(c)}${G.dealt?` hits for ${fmt(G.dealt)}`:''}. ${G.mana} ${MANA} left.`, G.dealt?'dmg':'');
     checkKill();
   } finally { busy=false; }
   render(); saveNow();
+  if(G.won){ await sleep(450); await endTurn(); }      // the fight ends the moment the foe falls
   return true;
 }
 function checkKill(){
   if(!G.won&&G.foe.hp<=0){ G.won=true; G.foe.hp=0; G.stats.kills++;
-    log(`${G.foe.n} falls on turn ${G.turn}! Finish your turn, then claim your reward.`,'good'); fx('kill',G.foe); }
+    log(`${G.foe.n} falls on turn ${G.turn}!`,'good'); fx('kill',G.foe); }
 }
 
-// What a card would do if played now: {dmg, burn, arc, mana after}. Used by the UI and bots.
+// What a card would do if played now: {dealt, burnAdd, mana after}. Used by the UI and bots.
 function predict(c,S0){
   const S=lightState(S0);
   resolveDry(S,c);
@@ -274,7 +265,7 @@ function predict(c,S0){
 function lightState(S0){
   const s=S0||G;
   return {mana:s.mana,focus:s.focus,vuln:s.vuln,empower:s.empower,echo:s.echo,spells:s.spells,played:s.played,burn:s.burn,
-    flags:{...s.flags},cardMult:1,dealt:0,arc:0,drawn:0,burnAdd:0,runeMana:0};
+    flags:{...s.flags},cardMult:1,dealt:0,drawn:0,burnAdd:0,runeMana:0,handN:G.hand.length};
 }
 
 /* ==========================================================
@@ -289,7 +280,7 @@ async function endTurn(){
       checkKill();
       if(!G.won&&boss('dragon')){ const h=Math.round(G.foe.max*0.2); G.foe.hp=Math.min(G.foe.max,G.foe.hp+h); log(`The Dragon heals ${fmt(h)}.`,'bad'); }
     }
-    if(hasR('battery')) G.carry=Math.floor(G.mana/2);
+    G.carry=Math.floor(G.mana*Math.min(1,TUNE.carry+(hasR('battery')?0.5:0)));
     G.discard.push(...G.hand,...G.inPlay); G.hand=[]; G.inPlay=[];
     if(G.won){ busy=false; await winFight(); return; }
     if(G.turn>=turnsMax()){ busy=false; await failFight(); return; }
@@ -299,14 +290,12 @@ async function endTurn(){
 
 async function winFight(){
   G.phase='camp'; render();
-  const c=G.foe.circle, left=turnsMax()-G.turn;
-  const pay=TUNE.winArcana(c)+left*TUNE.bounty(c)*(hasR('trophy')?2:1);
-  G.arcana+=pay;
-  log(`Victory! +${pay} ${ARC}${left?` (${plural(left,'turn')} to spare)`:''}.`,'good');
+  const left=turnsMax()-G.turn;
+  log(`Victory${left?`, with ${plural(left,'turn')} to spare`:''}!`,'good');
   saveBest(G.fight+1);
   const kind=G.foe.kind;
   if(kind==='boss') G.relics.forEach(r=>r.age++);
-  G.camp={step:'card',offers:[marketCard(),marketCard(),marketCard()],relics:kind!=='minion'?rollRelics(kind==='boss'?4:3):null,sanctum:kind==='boss'};
+  G.camp={step:'card',kind,offers:rewardCards(kind),relics:kind!=='minion'?rollRelics(kind==='boss'?4:3):null,sanctum:kind==='boss'};
   saveNow();
   await campFlow();
 }
@@ -323,8 +312,11 @@ async function failFight(){
 async function campFlow(){
   const C=G.camp;
   if(C.step==='card'){
-    const ch=await chooseCards(C.offers,{min:0,max:1,why:'reward',title:'Spoils',sub:'Take one card into your deck, or none.'});
-    if(ch[0]){ G.deck.push(ch[0]); log(`${cname(ch[0])} joins your deck.`,'good'); }
+    const raise=TUNE.raiseOn.includes(C.kind);
+    const ch=await chooseCards(C.offers,{min:0,max:1,why:'reward',title:'Spoils',sub:raise?'Take one card into your deck, or raise a card you have.':'Take one card into your deck, or none.',
+      extra:raise?[['upgrade','✨ Raise a card a tier instead']]:[]});
+    if(ch==='upgrade') await raiseCard('Raise a card','Raise one card in your deck a tier.');
+    else if(ch[0]){ G.deck.push(ch[0]); log(`${cname(ch[0])} joins your deck.`,'good'); }
     C.step=C.relics?'relic':C.sanctum?'sanctum':'next'; saveNow();
   }
   if(C.step==='relic'){ await relicDraft(C.relics); C.step=C.sanctum?'sanctum':'next'; saveNow(); }
@@ -354,8 +346,15 @@ async function relicDraft(offers){
   G.relics.push({key:k,age:0}); log(`${RELICS[k].art} ${RELICS[k].n} is yours.`,'good'); render();
 }
 function deckSummary(){ const a=[...G.deck,...G.discard,...G.hand], by=t=>a.filter(c=>c.t===t).length;
-  return `${a.length} cards: ${by('spell')} spells, ${by('mana')} mana, ${by('arcana')} arcana, ${by('rune')} runes, ${by('curse')} curses`; }
-async function sanctum(){
+  return `${a.length} cards: ${by('spell')} spells, ${by('mana')} mana, ${by('rune')} runes${by('curse')?`, ${by('curse')} curses`:''}`; }
+async function raiseCard(title,sub){
+  gatherDeck();
+  const s=await chooseCards(G.deck.slice().sort((a,b)=>cname(a).localeCompare(cname(b))).filter(c=>!DB[c.key].noLv),
+    {min:0,max:1,why:'temper',title,sub,badge:c=>DB[c.key].n+plus(c.lv+1)});
+  if(s[0]){ const w=cname(s[0]); s[0].lv++; log(`${w} becomes ${cname(s[0])}.`,'good'); }
+}
+async function sanctum(){ await sanctumRite(); if(hasR('stone')) await sanctumRite(); }
+async function sanctumRite(){
   const o=await chooseOption('🕯 The Sanctum',`${deckSummary()}. Choose one rite.`,[
     ['purge','🕳 Purge: banish up to 2 cards'],['temper','✨ Empower: raise a card one tier'],
     ['copy','📜 Transcribe: copy a card'],['heal',`❤ Rest: recover a heart (${G.hearts}/${TUNE.hearts})`],['skip','Move on']]);
@@ -363,8 +362,7 @@ async function sanctum(){
   const sorted=()=>G.deck.slice().sort((a,b)=>cname(a).localeCompare(cname(b)));
   if(o==='purge'){ const s=await chooseCards(sorted(),{min:0,max:2,why:'purge',title:'Purge',sub:'Banish up to 2 cards for good.'});
     s.forEach(c=>{pull(G.deck,c);trashCard(c);}); if(s.length) log(`Purged: ${s.map(cname).join(', ')}.`); }
-  else if(o==='temper'){ const s=await chooseCards(sorted().filter(c=>!DB[c.key].noLv),{min:0,max:1,why:'temper',title:'Empower',sub:'Raise one card a tier.',badge:c=>DB[c.key].n+plus(c.lv+1)});
-    if(s[0]){ const w=cname(s[0]); s[0].lv++; log(`${w} becomes ${cname(s[0])}.`,'good'); } }
+  else if(o==='temper') await raiseCard('Empower','Raise one card a tier.');
   else if(o==='copy'){ const s=await chooseCards(sorted().filter(c=>!DB[c.key].noLv),{min:0,max:1,why:'copy',title:'Transcribe',sub:'Add a copy of one card.'});
     if(s[0]){ G.deck.push(mk(s[0].key,s[0].lv)); log(`You transcribe ${cname(s[0])}.`,'good'); } }
   else if(o==='heal'){ G.hearts=Math.min(TUNE.hearts,G.hearts+1); log(`You rest: ${plural(G.hearts,'heart')}.`,'good'); }

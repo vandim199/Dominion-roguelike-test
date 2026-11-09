@@ -61,29 +61,28 @@ function downloadLog(){
 }
 
 /* ---------- cards ---------- */
-const TYPE_NAME={arcana:'Arcana',mana:'Mana',spell:'Spell',rune:'Rune',curse:'Curse'};
-// One card's face. where: 'hand' (live preview), 'market' (price), 'pick'.
+const TYPE_NAME={mana:'Mana',spell:'Spell',rune:'Rune',curse:'Curse'};
+const RAR_NAME={uncommon:'Uncommon',rare:'Rare'};
+// One card's face. where: 'hand' (live preview) or 'pick'.
 function cardEl(c,where,extra){
   const d=DB[c.key], el=document.createElement('div');
-  el.className=`card t-${d.t}${c.lv?' up':''}${c.frozen?' frozen':''}${d.rare?' rare':''}`;
+  el.className=`card t-${d.t} r-${d.r}${c.lv?' up':''}${c.frozen?' frozen':''}`;
   const ops=opsOf(c);
   let pv=null;
   if(where==='hand'&&G&&!d.unplayable&&!G.won&&G.phase==='turn') pv=predict(c);
   const lines=ops.map(o=>`<li class="op op-${o[0]}">${opText(o)}</li>`).join('')||`<li class="op">${d.unplayable?'Cannot be played.':''}</li>`;
   let foot='';
-  if(where==='market') foot=`<span class="price">${ARC} ${baseCost(c)}</span>`;
-  else if(!d.unplayable) foot=`<span class="cost">${playCost()} ${MANA}</span>`;
+  if(!d.unplayable) foot=`<span class="cost">${playCost()} ${MANA}</span>`;
   let badge='';
   if(pv){
     const bits=[];
     if(pv.dealt) bits.push(`<b class="bd">⚔ ${fmt(pv.dealt)}</b>`);
     if(pv.burnAdd) bits.push(`<b class="bb">🔥 ${fmt(pv.burnAdd)}</b>`);
-    if(pv.arc) bits.push(`<b class="ba">+${fmt(pv.arc)} ${ARC}</b>`);
     bits.push(`<b class="bm">${MANA} ${G.mana}→${pv.mana}</b>`);
     badge=`<div class="pv">${bits.join('')}</div>`;
   }
   el.innerHTML=`<div class="ch"><span class="cart">${d.art}</span><span class="cn">${d.n}<i>${plus(c.lv)}</i></span></div>
-    <div class="ctype">${TYPE_NAME[d.t]}</div><ol class="ops">${lines}</ol>${badge}<div class="cf">${foot}${extra||''}</div>`;
+    <div class="ctype">${TYPE_NAME[d.t]}${RAR_NAME[d.r]?` · <b>${RAR_NAME[d.r]}</b>`:''}</div><ol class="ops">${lines}</ol>${badge}<div class="cf">${foot}${extra||''}</div>`;
   el.oncontextmenu=e=>{ e.preventDefault(); inspect(c,where); };
   return el;
 }
@@ -94,7 +93,6 @@ function render(){
   const f=G.foe, circ=circleOf(Math.max(0,G.fight));
   $('cCircle').textContent=`Circle ${circ} · ${f?(f.kind==='boss'?'Boss':f.kind==='elite'?'Elite':'Foe')+' '+(G.fight%3+1)+'/3':''}${G.endless?' · Endless':''}`;
   $('cHearts').textContent='❤'.repeat(Math.max(0,G.hearts))+'♡'.repeat(Math.max(0,TUNE.hearts-G.hearts));
-  $('cArc').textContent=`${ARC} ${fmt(G.arcana)}`;
   const nb=G.nextBoss&&BOSSES[G.nextBoss];
   $('cBoss').textContent=nb?`Boss: ${nb.art} ${nb.n}`:''; $('cBoss').title=nb?nb.tx:''; $('cBoss').onclick=()=>nb&&toast(`${nb.n}: ${nb.tx}`);
   // relics
@@ -110,22 +108,13 @@ function render(){
     $('foe').innerHTML=`<div class="fart">${f.art}</div>
       <div class="fbody"><div class="fname">${f.n} <span class="fkind">${f.kind==='boss'?'Boss':f.kind==='elite'?'Elite':''}</span></div>
       <div class="hpbar"><div class="hpfill" style="width:${pctHp}%"></div><span>${G.won?'Defeated':`${fmt(Math.max(0,f.hp))} / ${fmt(f.max)}`}</span></div>
-      <div class="frow"><span class="turns" title="Turns">${pips}</span><span class="tlabel">${G.won?'Finish your turn':`Turn ${G.turn} of ${tm}`}</span>
+      <div class="frow"><span class="turns" title="Turns">${pips}</span><span class="tlabel">${G.won?'Defeated':`Turn ${G.turn} of ${tm}`}</span>
       ${G.burn?`<span class="burn">🔥 ${fmt(G.burn)}</span>`:''}</div>
       ${f.boss?`<div class="frule">${f.tx}</div>`:''}</div>`;
   }
-  // market
-  const M=$('market'); M.innerHTML='';
-  const open=marketOpen();
-  $('mktNote').textContent=open?'':'· closed this fight';
-  G.market.forEach((c,i)=>{
-    const el=cardEl(c,'market'); const can=open&&G.phase==='turn'&&!G.over&&G.arcana>=baseCost(c);
-    el.classList.add(can?'afford':'dim');
-    el.onclick=()=>{ if(UI.tap) inspect(c,'market',i); else buyCard(i); };
-    M.appendChild(el);
-  });
   // bar
-  $('mana').innerHTML=`<span class="orb">${fmt(G.mana)}</span><span class="mx"><b>×${fmt(Math.max(1,G.mana))}</b><small>damage</small></span>`;
+  const keep=Math.floor(G.mana*Math.min(1,TUNE.carry+(hasR('battery')?0.5:0)));
+  $('mana').innerHTML=`<span class="orb">${fmt(G.mana)}</span><span class="mx"><b>×${fmt(Math.max(1,G.mana))}</b><small>damage · ${fmt(keep)} ${MANA} carries over</small></span>`;
   $('mana').style.setProperty('--glow',clamp(Math.log2(1+G.mana)/4,0.1,1).toFixed(2));
   const bf=[];
   if(G.focus) bf.push(`<span class="buff" title="Every hit deals more">🔷 +${fmt(G.focus)}</span>`);
@@ -153,11 +142,10 @@ function render(){
 function inspect(c,where,i){
   const body=$('inspectBody'); body.innerHTML=''; body.appendChild(cardEl(c,where));
   const help=[...new Set(opsOf(c).map(o=>OP_HELP[o[0]]).filter(Boolean))];
-  $('inspectInfo').innerHTML=(help.length?help.map(h=>`<p>${h}</p>`).join(''):'')+(where==='market'?`<p>Price ${baseCost(c)} ${ARC}. You have ${fmt(G.arcana)}.</p>`:'');
+  $('inspectInfo').innerHTML=(help.length?help.map(h=>`<p>${h}</p>`).join(''):'');
   const B=$('inspectBtns'); B.innerHTML='';
   const btn=(t,f,go)=>{ const b=document.createElement('button'); b.className='mbtn'+(go?' go':''); b.textContent=t; b.onclick=f; B.appendChild(b); };
   if(where==='hand'&&canPlay(c)) btn('Play',()=>{ closeInspect(); playCard(c); },true);
-  if(where==='market'&&marketOpen()&&G.arcana>=baseCost(c)&&G.phase==='turn') btn(`Buy for ${baseCost(c)} ${ARC}`,()=>{ closeInspect(); buyCard(i); },true);
   btn('Close',closeInspect);
   $('inspect').classList.add('on');
 }
@@ -184,6 +172,7 @@ function chooseCards(list,o){
       P.appendChild(el);
     });
     ok.onclick=()=>{ closeVeil(); res([...chosen]); };
+    for(const [v,label] of o.extra||[]){ const b=document.createElement('button'); b.className='mbtn alt'; b.textContent=label; b.onclick=()=>{ closeVeil(); res(v); }; B.appendChild(b); }
     B.appendChild(ok); upd();
   });
 }

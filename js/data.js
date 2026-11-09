@@ -23,81 +23,80 @@ function fmt(n){
   return (n<0?'-':'')+(v<100?v.toFixed(1):Math.round(v))+u[i];
 }
 
-const MANA='✦', ARC='◆';
+const MANA='✦';
 
 const TUNE = {
-  handSize:5, startMana:3, turns:5, hearts:3, relicSlots:5, marketSize:6,
+  handSize:5, startMana:3, turns:5,
+  hearts:3, relicSlots:5,
+  carry:0.5,                                 // share of unspent Mana kept into the next turn (rounded down)
   fightsPerCircle:3,                         // minion, elite, boss
   circles:8,                                 // beat the 8th boss to win; endless after
-  hp0:45,                                    // the first minion's health
-  hpGrowth: f => Math.pow(1.43, f),          // f = fights before this one
-  eliteHp:1.6, bossHp:2.4,
-  maxTier: c => c-1,                         // market tier climbs one a circle
-  bounty: c => 2+c,                          // Arcana for each turn left when a foe falls
-  startArcana:0,
-  winArcana: c => 3+2*c,                     // Arcana for every victory
+  hp0:40,                                    // the first minion's health
+  growth:1.65,                               // health ×growth each fight
+  hpGrowth: f => Math.pow(TUNE.growth, f),   // f = fights before this one
+  eliteHp:1.5, bossHp:2.2,
+  maxTier: c => c-1,                         // reward cards climb one tier a circle
+  rewardCards:3,
+  raiseOn:['elite','boss'],         // which wins offer "raise a card a tier" instead of a new card
+  rarity: { minion:{common:62,uncommon:31,rare:7}, elite:{common:35,uncommon:50,rare:15}, boss:{common:0,uncommon:60,rare:40} },
 };
 
 /* ==========================================================
    CARDS. Each card is a list of steps that resolve top to
    bottom (ops). lv is the card's tier: Firebolt, Firebolt+…
+   r is its rarity, which sets how often rewards offer it.
    ========================================================== */
 const DB={};
-function def(k,o){ DB[k]=Object.assign({key:k,step:3,t:'spell'},o); }
+function def(k,o){ DB[k]=Object.assign({key:k,step:3,t:'spell',r:'common'},o); }
 const plus = lv => lv<=0 ? '' : lv<=3 ? '+'.repeat(lv) : `+${lv}`;
-// How hard a card hits at a tier: 1,2,3,4,5,8,11,17,26,38… Prices follow the same curve.
+// How hard a card hits at a tier: 1,2,3,4,5,8,11,17,26,38… Its worth (for bots) follows the same curve.
 const tierMult = lv => Math.max(1+lv, Math.round(Math.pow(1.5,lv)));
 
-/* Card types: arcana (economy), mana (gain Mana / draw), spell (damage), rune (lasts the fight), curse. */
-// --- Arcana ---
-def('mote',   {n:'Mote',        c:0, step:2, t:'arcana', art:'✧', ops:l=>[['arc',tierMult(l)]]});
-def('crystal',{n:'Crystal',     c:3, step:4, t:'arcana', art:'💎', ops:l=>[['arc',2*tierMult(l)]]});
-def('starshard',{n:'Star Shard',c:6, step:5, t:'arcana', art:'🌟', ops:l=>[['arc',3*tierMult(l)]]});
-def('alembic',{n:'Alembic',     c:5, step:4, t:'arcana', art:'⚗', ops:l=>[['alch',tierMult(l)]]});
-def('hoard',  {n:'Hoarded Tome',c:4, step:3, t:'arcana', art:'📕', ops:(l,c)=>[['arc',tierMult(l)+((c&&c.grow)||0)],['grow',1]]});
-
+/* Card types: mana (gain Mana / draw), spell (damage), rune (lasts the fight), curse. */
 // --- Mana and draw ---
 def('channel',{n:'Channel',     c:2, t:'mana', art:'🌀', ops:l=>[['mana',2+l]]});
 def('leyline',{n:'Ley Line',    c:3, t:'mana', art:'〰', ops:l=>[['draw',1],['mana',2+l]]});
-def('wellspring',{n:'Wellspring',c:5,t:'mana', art:'⛲', ops:l=>[['mana',4+2*l]]});
+def('ponder', {n:'Ponder',      c:2, t:'mana', art:'💭', ops:l=>[['mana',1+l],['draw',1]]});
 def('study',  {n:'Study',       c:4, t:'mana', art:'📖', ops:l=>[['draw',3+l]]});
-def('familiar',{n:'Familiar',   c:5, t:'mana', art:'🦉', ops:l=>[['draw',2+Math.floor(l/2)],['mana',1+Math.ceil(l/2)]]});
-def('reshuffle',{n:'Clear Mind',c:2, step:2, t:'mana', art:'🍃', ops:l=>[['mana',1],['cycle',l]]});
-def('amplify',{n:'Amplify',     c:8, step:5, t:'mana', art:'🔆', rare:true, ops:l=>[['double',2+l]]});
-def('echo',   {n:'Twincast',    c:5, step:4, t:'mana', art:'👥', ops:l=>[['echo',1+l]]});
-def('banish', {n:'Banish',      c:2, step:2, t:'mana', art:'🕳', ops:l=>[['trash',3+l]]});
+def('reshuffle',{n:'Clear Mind',c:2, t:'mana', art:'🍃', ops:l=>[['mana',1],['cycle',l]]});
+def('banish', {n:'Banish',      c:2, t:'mana', art:'🕳', ops:l=>[['trash',2+l]]});
+def('wellspring',{n:'Wellspring',c:5,t:'mana', art:'⛲', r:'uncommon', ops:l=>[['mana',4+2*l]]});
+def('familiar',{n:'Familiar',   c:5, t:'mana', art:'🦉', r:'uncommon', ops:l=>[['draw',2+Math.floor(l/2)],['mana',1+Math.ceil(l/2)]]});
+def('echo',   {n:'Twincast',    c:5, t:'mana', art:'👥', r:'uncommon', ops:l=>[['echo',1+l]]});
+def('amplify',{n:'Amplify',     c:8, t:'mana', art:'🔆', r:'rare', ops:l=>l?[['mana',2*l],['double',2]]:[['double',2]]});
 
 // --- Damage ---
-def('zap',    {n:'Zap',         c:1, step:2, t:'spell', art:'⚡', ops:l=>[['dmg',3*tierMult(l)]]});
+def('zap',    {n:'Zap',         c:1, t:'spell', art:'⚡', r:'basic', ops:l=>[['dmg',3*tierMult(l)]]});
 def('firebolt',{n:'Firebolt',   c:3, t:'spell', art:'🔥', ops:l=>[['dmg',7*tierMult(l)]]});
 def('missiles',{n:'Magic Missiles',c:4,t:'spell',art:'✴', ops:l=>[['dmg',3*tierMult(l),3]]});
-def('surge',  {n:'Surge',       c:5, t:'spell', art:'🌩', ops:l=>[['mana',3],['dmg',6*tierMult(l)]]});
-def('wild',   {n:'Wild Magic',  c:4, t:'spell', art:'🎇', ops:l=>[['dmg',12*tierMult(l)],['mana',3]]});
-def('fireball',{n:'Fireball',   c:6, t:'spell', art:'☄', ops:l=>[['dmg',22*tierMult(l)],['lose',2]]});
-def('chain',  {n:'Chain Lightning',c:5,t:'spell',art:'⛓', ops:l=>[['chain',5*tierMult(l)]]});
+def('frostbolt',{n:'Frostbolt', c:3, t:'spell', art:'❄', ops:l=>[['dmg',5*tierMult(l)],['draw',1]]});
+def('siphon', {n:'Siphon',      c:3, t:'spell', art:'🩸', ops:l=>[['dmg',4*tierMult(l)],['mana',1]]});
 def('ignite', {n:'Ignite',      c:4, t:'spell', art:'🕯', ops:l=>[['burn',tierMult(l)]]});
-def('hex',    {n:'Hex',         c:4, t:'spell', art:'🧿', ops:l=>[['vuln',50+25*l],['mana',1]]});
-def('empower',{n:'Empower',     c:4, t:'spell', art:'💪', ops:l=>[['mana',1+l],['empower',2]]});
-def('cataclysm',{n:'Cataclysm', c:8, step:5, t:'spell', art:'🌋', rare:true, ops:l=>[['nova',2*tierMult(l)]]});
-def('meteor', {n:'Meteor',      c:7, step:5, t:'spell', art:'🌠', ops:l=>[['dmg',45*tierMult(l)],['exhaust']]});
+def('surge',  {n:'Surge',       c:5, t:'spell', art:'🌩', r:'uncommon', ops:l=>[['mana',3],['dmg',6*tierMult(l)]]});
+def('wild',   {n:'Wild Magic',  c:4, t:'spell', art:'🎇', r:'uncommon', ops:l=>[['dmg',12*tierMult(l)],['mana',3]]});
+def('fireball',{n:'Fireball',   c:6, t:'spell', art:'☄', r:'uncommon', ops:l=>[['dmg',22*tierMult(l)],['lose',2]]});
+def('chain',  {n:'Chain Lightning',c:5,t:'spell',art:'⛓', r:'uncommon', ops:l=>[['chain',5*tierMult(l)]]});
+def('storm',  {n:'Spellstorm',  c:5, t:'spell', art:'🌪', r:'uncommon', ops:l=>[['handdmg',3*tierMult(l)]]});
+def('conflag',{n:'Conflagrate', c:5, t:'spell', art:'🌋', r:'uncommon', ops:l=>[['burndmg',1+l]]});
+def('hex',    {n:'Hex',         c:4, t:'spell', art:'🧿', r:'uncommon', ops:l=>[['vuln',50+25*l],['mana',1]]});
+def('empower',{n:'Empower',     c:4, t:'spell', art:'💪', r:'uncommon', ops:l=>[['mana',1+l],['empower',2]]});
+def('cataclysm',{n:'Cataclysm', c:8, t:'spell', art:'💥', r:'rare', ops:l=>[['nova',2*tierMult(l)]]});
+def('meteor', {n:'Meteor',      c:7, t:'spell', art:'🌠', r:'rare', ops:l=>[['dmg',45*tierMult(l)],['exhaust']]});
 
 // --- Runes: stay out for the rest of the fight ---
-def('focus',  {n:'Focus Rune',  c:5, t:'rune', art:'🔷', ops:l=>[['focus',2*tierMult(l)]]});
-def('wellrune',{n:'Mana Rune',  c:6, t:'rune', art:'🔶', ops:l=>[['manarune',1+l]]});
+def('focus',  {n:'Focus Rune',  c:5, t:'rune', art:'🔷', r:'uncommon', ops:l=>[['focus',2*tierMult(l)]]});
+def('wellrune',{n:'Mana Rune',  c:6, t:'rune', art:'🔶', r:'rare', ops:l=>[['manarune',1+l]]});
 
 // --- Junk ---
-def('curse',  {n:'Curse',       c:0, t:'curse', noLv:true, art:'🐈‍⬛', ops:()=>[], unplayable:true});
+def('curse',  {n:'Curse',       c:0, t:'curse', r:'junk', noLv:true, art:'🐈‍⬛', ops:()=>[], unplayable:true});
 
-const MARKET_KEYS=Object.keys(DB).filter(k=>!DB[k].noLv&&k!=='mote');
-const ARCANA_KEYS=['mote','crystal','starshard'];
+const POOL={common:[],uncommon:[],rare:[]};
+for(const k in DB){ const r=DB[k].r; if(POOL[r]) POOL[r].push(k); }
 
 /* Step text: each step is one line on the card, read top to bottom. */
 function opText(o){
   const [k,a,b]=o;
   switch(k){
-    case 'arc':    return `+${fmt(a)} ${ARC}`;
-    case 'alch':   return `+${fmt(a)} ${ARC} per ${MANA} you hold`;
-    case 'grow':   return `Worth ${a} more, for good`;
     case 'mana':   return `+${fmt(a)} ${MANA}`;
     case 'lose':   return `−${a} ${MANA}`;
     case 'draw':   return `+${plural(a,'Card')}`;
@@ -107,6 +106,8 @@ function opText(o){
     case 'trash':  return `Banish up to ${a} cards from your hand`;
     case 'dmg':    return b?`Deal ${fmt(a)}, ${b} times`:`Deal ${fmt(a)}`;
     case 'chain':  return `Deal ${fmt(a)} per spell already cast this turn`;
+    case 'handdmg':return `Deal ${fmt(a)} per other card in your hand`;
+    case 'burndmg':return a===1?"Deal damage equal to the foe's Burn":`Deal ${a}× the foe's Burn`;
     case 'burn':   return `Burn ${fmt(a)}`;
     case 'vuln':   return `Foe takes +${a}% damage this turn`;
     case 'empower':return `Your next spell hits ×${a}`;
@@ -124,7 +125,8 @@ const OP_HELP={
   nova:`Counts your ${MANA} twice: once in the card, once as the multiplier.`,
   chain:'A spell is any card that deals damage or Burn.',
   focus:`Added to each hit before the ${MANA} multiplier.`,
-  echo:`The echoed card is paid for once.`,
+  echo:`The echoed card is paid for once. Echoes don't stack: a second Twincast only keeps the larger one.`,
+  burndmg:`Multiplied by your ${MANA} like any hit.`,
 };
 
 /* ==========================================================
@@ -133,10 +135,10 @@ const OP_HELP={
 const RELICS={
   robes:   {n:'Wide Sleeves',  art:'🧥', r:'common',  tx:'+1 card in every hand you draw.'},
   crystalball:{n:'Mana Crystal',art:'🔮',r:'common',  tx:`+1 ${MANA} at the start of every turn.`},
-  coin:    {n:"Alchemist's Coin",art:'🪙',r:'common', tx:`Arcana cards give +1 ${ARC}.`},
+  clasp:   {n:'Silver Clasp',  art:'📎', r:'common',  tx:'Card rewards offer 4 cards, not 3.'},
   lens:    {n:'Focusing Lens', art:'🔍', r:'common',  tx:'Every hit deals +2.'},
-  trophy:  {n:'Trophy Skull',  art:'💀', r:'common',  tx:`Each turn left when a foe falls pays double ${ARC}.`},
-  quill:   {n:"Scholar's Quill",art:'🪶',r:'common',  tx:`+1 ${ARC} at the start of each turn for every 5 cards in your deck.`},
+  haste:   {n:'Quicksilver',   art:'☿', r:'common',  tx:`+2 ${MANA} on the first turn of every fight.`},
+  quill:   {n:"Scholar's Quill",art:'🪶',r:'uncommon',tx:'Reward cards come one tier higher.'},
   ember:   {n:'Ember Heart',   art:'❤️‍🔥',r:'uncommon',tx:'Burn you apply is doubled.'},
   battery: {n:'Leyden Jar',    art:'🫙', r:'uncommon',tx:`Half your unspent ${MANA} carries over to your next turn.`},
   overflow:{n:'Overflow Sigil',art:'🌊', r:'uncommon',tx:`At the end of your turn, deal 3 for each unspent ${MANA} (multiplied by ${MANA} as usual).`},
@@ -145,7 +147,7 @@ const RELICS={
   ascetic: {n:"Ascetic's Bead",art:'📿', r:'uncommon',tx:'While your deck is 12 cards or fewer, damage ×2.'},
   hourglass:{n:'Hourglass',    art:'⏳', r:'uncommon',tx:'Fights last 6 turns, not 5.'},
   crescendo:{n:'Crescendo',    art:'🎼', r:'uncommon',tx:'Every hit deals +1 for each card already played this turn.'},
-  stone:   {n:"Philosopher's Stone",art:'🗿',r:'rare', tx:`Arcana cards give ×2 ${ARC}.`},
+  stone:   {n:"Philosopher's Stone",art:'🗿',r:'rare', tx:'Your Sanctum rite happens twice.'},
   glass:   {n:'Glass Wand',    art:'🥂', r:'rare',    tx:'Damage ×3 — but fights last one turn less.'},
   staff:   {n:'Archmage Staff',art:'🦯', r:'rare',    tx:`Mana cards give +1 ${MANA} more.`},
   vintage: {n:'Old Grimoire',  art:'📜', r:'rare',    tx:'Damage ×(1 + 0.5 per Boss beaten while you hold it).'},
@@ -166,13 +168,13 @@ const ELITES=[
 const BOSSES={
   witch:  {n:'Bog Witch',    art:'🧙', tx:'At the start of each of your turns, 2 Curses are shuffled into your draw pile.'},
   ogre:   {n:'Ogre King',    art:'👑', tx:'You draw 1 fewer card each turn.'},
-  queen:  {n:'Snow Queen',   art:'🧊', tx:'Your 2 finest cards are frozen in ice for this fight.'},
+  queen:  {n:'Snow Queen',   art:'🧊', tx:'Your finest card is frozen in ice for this fight.'},
   worm:   {n:'Bookworm',     art:'🐛', tx:'Cards your spells would draw are eaten (the first 4 each turn).'},
-  rift:   {n:'Null Rift',    art:'🌌', tx:`Your ${MANA} can never rise above 8.`},
-  pirate: {n:'Pirate Lich',  art:'🏴‍☠️', tx:`Plunders half your ${ARC} when the fight starts, and the market is closed.`},
+  rift:   {n:'Null Rift',    art:'🌌', tx:`Your ${MANA} can never rise above 10.`},
+  djinn:  {n:'Time Djinn',   art:'🧞', tx:'You have 3 turns, not 5.'},
   wraith: {n:'Wraith',       art:'👻', tx:'The first hit each turn passes through it.'},
   dragon: {n:'Ancient Dragon',art:'🐉',tx:'Heals 20% of its health at the end of each of your turns.'},
-  goblin: {n:'Goblin Thief', art:'🦹', tx:`Steals a quarter of your ${ARC} at the start of each turn.`},
+  goblin: {n:'Goblin Thief', art:'🦹', tx:'At the start of each turn, steals a random card from your hand until the fight ends.'},
   toll:   {n:'Toll Golem',   art:'🗿', tx:'At the start of each turn, discard 2 cards of your choice.'},
   heavy:  {n:'Iron Bureaucrat',art:'📜',tx:`Every card costs 2 ${MANA} to play.`},
   mirror: {n:'Mirror Knight',art:'🪞', tx:'Hits for less than a fifth of its health do nothing.'},

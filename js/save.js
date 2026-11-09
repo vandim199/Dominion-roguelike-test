@@ -7,7 +7,7 @@
    save is deleted when the run ends.
    ========================================================== */
 const SAVE_KEY = slotKey('spellkeep.save');
-const SAVE_VERSION = 1;
+const SAVE_VERSION = 2;                   // 2: no market or Arcana
 const SAVE = { armed:false, timer:0 };        // armed once a run is started or continued
 
 function saveNow(){
@@ -23,13 +23,13 @@ function readSave(){
 function saveSummary(){
   const s=readSave(); if(!s) return null;
   const g=s.G, f=g.fight;
-  return `Circle ${Math.floor(f/TUNE.fightsPerCircle)+1}, fight ${f%TUNE.fightsPerCircle+1}/3 · ❤ ${g.hearts} · ${ARC} ${fmt(g.arcana)}`;
+  return `Circle ${Math.floor(f/TUNE.fightsPerCircle)+1}, fight ${f%TUNE.fightsPerCircle+1}/3 · ❤ ${g.hearts}`;
 }
 function loadGame(){
   const s=readSave(); if(!s) return false;
   try{
     const g=s.G;
-    const cards=[...g.deck,...g.hand,...g.discard,...g.inPlay,...g.runes,...g.exhausted,...g.trash,...g.market.filter(Boolean)];
+    const cards=[...g.deck,...g.hand,...g.discard,...g.inPlay,...g.runes,...g.exhausted,...(g.stolen||[]),...g.trash];
     if(cards.some(c=>!DB[c.key])) throw new Error('unknown card');
     G=g; uid=s.uid; busy=false;
     LEDGER.length=0; LEDGER.push(...s.ledger);

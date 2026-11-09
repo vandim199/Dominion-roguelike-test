@@ -116,7 +116,6 @@ button:disabled{opacity:.45;cursor:default}
 .cn{font-family:var(--head);font-weight:700;font-size:.86rem;line-height:1.1;text-shadow:0 1px 2px #0009}
 .cn i{font-style:normal;color:var(--gold2)}
 .ctype{font-family:var(--head);font-size:.6rem;text-transform:uppercase;letter-spacing:.14em;color:var(--pmute);text-align:center}
-.card.rare .ctype::after{content:' · rare';color:var(--i-arc)}
 .card.up{box-shadow:0 .3rem .7rem #000a,inset 0 0 1.4rem #a07a3a33,0 0 .6rem #E2BC6266}
 .ops{margin:0;padding:0;list-style:none;counter-reset:st;font-size:.86rem;line-height:1.22;flex:1}
 .ops li{counter-increment:st;position:relative;padding-left:1.15rem;margin:.18rem 0;font-weight:700}
@@ -212,3 +211,14 @@ button:disabled{opacity:.45;cursor:default}
 .L-narrow .market .card{width:6.8rem;min-height:7.6rem}
 .L-narrow .cost{width:1.6rem;height:1.6rem;font-size:.62rem}
 .L-narrow #board{flex:1 1 auto;overflow-y:auto}
+
+/* Rarity: a gem colour on the type line and a glow for rares. */
+.ctype b{font-weight:800}
+.card.r-uncommon .ctype b{color:#2d63b8}
+.card.r-rare .ctype b{color:#a8781f}
+.card.r-rare{box-shadow:0 .3rem .7rem #000a,inset 0 0 1.4rem #a07a3a33,0 0 .9rem #F7E28A88}
+.mbtn.alt{background:linear-gradient(180deg,#3e3170,#2a2054);border-color:#E2BC6288}
+.mx small{max-width:9rem}
+/* With no market the foe has the board to itself: keep it a sensible size, centred. */
+#board{align-items:center;justify-content:center}
+#foe{max-width:48rem;max-height:17rem;width:100%}
