@@ -1,139 +1,94 @@
 #!/usr/bin/env node
 "use strict";
 /* ==========================================================
-   Coinkeep simulator. Loads js/data.js and js/game.js as they
+   Spellbook simulator. Loads js/data.js and js/game.js as they
    are into a sandbox, plays seeded runs with bots (sim/bots.js)
    and prints a balance report.
 
-     node sim/sim.js                       all bots, 100 runs each (~45s)
-     node sim/sim.js --bot engine --runs 1000
-     node sim/sim.js --mode classic --waves 20    (merge is the default; splice too)
-     node sim/sim.js --bot money --log run.txt     also save run 1's log
-     node sim/sim.js --json out.json               every run, raw
-     --waves 30 --turns 2000 --deckcap 400         when a run stops early
+     node sim/sim.js                       all bots, 100 runs each
+     node sim/sim.js --bot mage --runs 500
+     node sim/sim.js --endless 1 --fights 40   keep going after the 8th boss
+     node sim/sim.js --bot mage --log run.txt  also save run 1's log
+     node sim/sim.js --json out.json           every run, raw
 
-   Bots: engine (Actions & draw), money (Big Money), random.
+   Bots: mage (balanced engine), money (Arcana first),
+   burner (Burn and big spells), naive (buys like mage, plays
+   in random order: the cost of bad sequencing), random.
    ========================================================== */
 const fs=require('fs'), path=require('path'), vm=require('vm');
-
 const ROOT=path.join(__dirname,'..');
 const SCRIPTS=['js/data.js','js/game.js','sim/bots.js'].map(f=>new vm.Script(fs.readFileSync(path.join(ROOT,f),'utf8'),{filename:f}));
-const BOTS=['engine','money','random'];
+const BOTS=['mage','naive','money','burner','random'];
 
 function args(){
-  const o={bot:'all',runs:100,mode:'merge',seed:1,waves:30,turns:2000,deckcap:400,json:null,log:null};
+  const o={bot:'all',runs:100,seed:1,fights:24,endless:0,json:null,log:null};
   const a=process.argv.slice(2);
   for(let i=0;i<a.length;i++){
     const k=a[i].replace(/^--/,''), v=a[i+1];
-    if(k==='help'||k==='h'){ console.log(fs.readFileSync(__filename,'utf8').split('\n').slice(3,15).join('\n').replace(/^ *\*? ?/gm,'')); process.exit(0); }
+    if(k==='help'||k==='h'){ console.log(fs.readFileSync(__filename,'utf8').split('\n').slice(3,16).join('\n').replace(/^ *\*? ?/gm,'')); process.exit(0); }
     if(!(k in o)){ console.error(`Unknown option --${k}. Try --help.`); process.exit(1); }
     o[k]= typeof o[k]==='number' ? +v : v; i++;
   }
   o.bots = o.bot==='all' ? BOTS : o.bot.split(',');
-  for(const b of o.bots) if(!BOTS.includes(b)){ console.error(`Unknown bot "${b}". Bots: ${BOTS.join(', ')}.`); process.exit(1); }
-  if(!['merge','splice','classic'].includes(o.mode)){ console.error('--mode is merge, splice or classic.'); process.exit(1); }
+  if(o.endless&&o.fights===24) o.fights=45;
   return o;
 }
-
 function sandbox(){
   const ctx=vm.createContext({console, setTimeout:f=>{ f(); return 0; }, clearTimeout(){}});
   for(const s of SCRIPTS) s.runInContext(ctx);
   return ctx;
 }
-
 async function play(o,bot){
   const ctx=sandbox(), runs=[];
   for(let i=0;i<o.runs;i++){
-    const opts={bot, mode:o.mode, seed:o.seed+i, waves:o.waves, maxTurns:o.turns, deckCap:o.deckcap, keepLog:!!o.log&&i===0};
+    const opts={bot, seed:o.seed+i, maxFights:o.fights, endless:!!o.endless, keepLog:!!o.log&&i===0};
     runs.push(JSON.parse(JSON.stringify(await vm.runInContext(`simRun(${JSON.stringify(opts)})`,ctx))));
     if(process.stderr.isTTY) process.stderr.write(`\r${bot}: ${i+1}/${o.runs}`);
   }
-  if(process.stderr.isTTY) process.stderr.write('\r'+' '.repeat(40)+'\r');
-  const names=vm.runInContext(`({cards:Object.fromEntries(Object.entries(DB).map(([k,d])=>[k,d.n])),
-    charms:Object.fromEntries(Object.entries(JOKERS).map(([k,j])=>[k,j.n])),
-    threats:Object.fromEntries(Object.entries(THREATS).map(([k,t])=>[k,t.n])),
-    splices:Object.fromEntries(Object.entries(SPLICES).map(([k,s])=>[k,s.n]))})`,ctx);
-  return {runs,names:JSON.parse(JSON.stringify(names))};
+  if(process.stderr.isTTY) process.stderr.write('\r'+' '.repeat(30)+'\r');
+  const names=JSON.parse(JSON.stringify(vm.runInContext(`({cards:Object.fromEntries(Object.entries(DB).map(([k,d])=>[k,d.n])),
+    relics:Object.fromEntries(Object.entries(RELICS).map(([k,r])=>[k,r.n])), bosses:Object.fromEntries(Object.entries(BOSSES).map(([k,b])=>[k,b.n]))})`,ctx)));
+  return {runs,names};
 }
 
-/* ---------- report ---------- */
-const mean = a => a.length ? a.reduce((s,x)=>s+x,0)/a.length : 0;
-const quant = (a,q) => { if(!a.length) return 0; const s=a.slice().sort((x,y)=>x-y); return s[Math.min(s.length-1,Math.floor(q*s.length))]; };
-const pct = (n,d) => d ? Math.round(100*n/d)+'%' : '—';
-const f1 = x => (Math.round(x*10)/10).toFixed(1);
-function table(head,rows){
-  const all=[head,...rows].map(r=>r.map(String)), w=head.map((_,i)=>Math.max(...all.map(r=>r[i].length)));
-  return all.map((r,j)=>r.map((c,i)=>i===0?c.padEnd(w[i]):c.padStart(w[i])).join('  ')+(j===0?'\n'+w.map(n=>'─'.repeat(n)).join('  '):'')).join('\n');
-}
+const mean=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:0;
+const pct=x=>(100*x).toFixed(0).padStart(3)+'%';
+const pad=(s,n)=>String(s).padEnd(n);
+const fmt=n=>{ n=Math.round(n); if(Math.abs(n)<10000) return String(n); const u=['K','M','B','T']; let i=-1,v=n; while(v>=1000&&i<3){v/=1000;i++;} return v>=1000?n.toExponential(1):(v<100?v.toFixed(1):Math.round(v))+u[i]; };
 
-function report(bot,{runs,names},o){
-  const out=[], N=runs.length, cl=runs.map(r=>r.cleared);
-  out.push(`\n████ ${bot.toUpperCase()} — ${N} runs, ${o.mode} mode, seeds ${o.seed}–${o.seed+N-1}, cap ${o.waves} waves`);
-  out.push(`Waves cleared: mean ${f1(mean(cl))} · median ${quant(cl,.5)} · p10 ${quant(cl,.1)} · p90 ${quant(cl,.9)} · best ${Math.max(...cl)}`);
-  const ends={}; runs.forEach(r=>ends[r.result]=(ends[r.result]||0)+1);
-  out.push('Ends: '+Object.entries(ends).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`${k} ${pct(n,N)}`).join(' · '));
-  const kill={}; runs.forEach(r=>{ if(r.killer) kill[r.killer]=(kill[r.killer]||0)+1; });
-  out.push('Last straw: '+(Object.entries(kill).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,n])=>`${k} ${pct(n,N)}`).join(' · ')||'—'));
-
-  // Per wave: what a turn looks like, and what the wave asks of it.
-  const W={};
-  for(const r of runs) for(const w of r.waves){
-    const a=W[w.wave] ||= {runs:0,lost:0,turns:0,coin:0,actsLeft:0,played:0,seen:0,deck:0,drewAll:0,stuck:0,tc:[],price:[],tier:w.maxTier,merges:0,topLv:0};
-    a.runs++; a.merges+=w.merges||0; a.topLv+=w.topLv||0; a.turns+=w.turns; a.coin+=w.coin; a.actsLeft+=w.actsLeft; a.played+=w.played; a.seen+=w.seen; a.deck+=w.deck;
-    a.drewAll+=w.drewAll; a.stuck+=w.stuck;
-    a.tc.push(...w.threats.filter(t=>t.coin).map(t=>t.coin)); a.price.push(...w.market.map(m=>m.cost));
-    if(r.cleared===w.wave-1&&(r.result==='hearts'||r.result==='board full')) a.lost++;
+function report(bot,{runs,names}){
+  const out=[];
+  const cleared=runs.map(r=>r.fights.filter(f=>f.won).length);
+  const reached=runs.map(r=>r.fights.length);
+  const wins=runs.filter(r=>r.won).length;
+  out.push(`\n=== ${bot} — ${runs.length} runs ===`);
+  out.push(`fights won: mean ${mean(cleared).toFixed(1)}, median ${cleared.slice().sort((a,b)=>a-b)[runs.length>>1]}; fights reached mean ${mean(reached).toFixed(1)}; beat circle 8: ${pct(wins/runs.length)}`);
+  // per fight
+  out.push('fight  kind    hp       reach  win%  turn   deck  dealt/hp');
+  const maxF=Math.max(...runs.map(r=>r.fights.length));
+  for(let f=0;f<maxF;f++){
+    const fs_=runs.map(r=>r.fights[f]).filter(Boolean); if(fs_.length<3) break;
+    const w=fs_.filter(x=>x.won);
+    out.push(`${pad(f+1,6)} ${pad(fs_[0].kind,7)} ${pad(fmt(fs_[0].hp),8)} ${pad(fs_.length,6)} ${pct(w.length/fs_.length)}  ${mean(w.map(x=>x.turnWon)).toFixed(1).padStart(4)}  ${mean(fs_.map(x=>x.deck)).toFixed(0).padStart(4)}   ${mean(fs_.map(x=>x.dealt/x.hp)).toFixed(2)}`);
   }
-  out.push('\nPer wave (averages per turn). seen = cards in hand+play ÷ deck size. drew all = turns that drew the whole deck.');
-  const M=o.mode==='merge';
-  out.push('stuck = turns ending with an Action in hand it could not pay for. threat ÷ income = turns of income a coin threat asks for.'+(M?' top lv = highest card level in the deck (1 = level one).':''));
-  out.push(table(['wave','runs','lost',M?'merges':'tier',M?'top lv':'','turns','coin','⚡ spare','played','seen','deck','drew all','stuck','coin threat','÷ income','market med','÷ income'],
-    Object.entries(W).map(([wave,a])=>{ const T=a.turns||1, inc=a.coin/T, tc=mean(a.tc), mp=quant(a.price,.5);
-      return [wave,a.runs,pct(a.lost,a.runs),M?f1(a.merges/a.runs):a.tier,M?f1(1+a.topLv/a.runs):'',f1(a.turns/a.runs),f1(inc),f1(a.actsLeft/T),f1(a.played/T),
-        pct(a.seen,a.deck),f1(a.deck/T),pct(a.drewAll,T),pct(a.stuck,T),Math.round(tc),inc?f1(tc/inc):'—',mp,inc?f1(mp/inc):'—']; })));
-
-  // Threats: which ones get cleared, which ones get through.
-  const TH={};
-  for(const r of runs) for(const [k,t] of Object.entries(r.threats)){
-    const a=TH[k] ||= {spawned:0,cleared:0,detonated:0,hits:0,clearAge:0};
-    for(const f in a) a[f]+=t[f];
-  }
-  const classic=o.mode==='classic';
-  out.push('\nThreats. turns = average turns on the board before being cleared.'+(classic?' hits = attacks that landed (not blocked).':''));
-  out.push(table(['threat','seen','cleared',classic?'hits':'detonated','turns'],
-    Object.entries(TH).sort((a,b)=>(a[1].cleared/a[1].spawned)-(b[1].cleared/b[1].spawned))
-      .map(([k,a])=>[names.threats[k],a.spawned,pct(a.cleared,a.spawned),classic?a.hits:pct(a.detonated,a.spawned),a.cleared?f1(a.clearAge/a.cleared):'—'])));
-
-  // Cards, charms, splices: how often taken, and how runs that took them did.
-  const lift=(label,key,get)=>{
-    const has={}; runs.forEach(r=>new Set(get(r)).forEach(k=>(has[k] ||= []).push(r.cleared)));
-    const rows=Object.entries(has).map(([k,c])=>{ const other=runs.filter(r=>!get(r).includes(k)).map(r=>r.cleared);
-      return [names[key][k]||k,pct(c.length,N),f1(mean(c)),other.length?f1(mean(c)-mean(other)):'—']; })
-      .sort((a,b)=>parseFloat(b[1])-parseFloat(a[1]));
-    if(rows.length){ out.push(''); out.push(table([label,'runs','waves','vs without'],rows)); }
-  };
-  out.push('\nTaken in what share of runs, average waves cleared in those runs, and the difference from runs without it.');
-  lift('card bought','cards',r=>Object.keys(r.bought));
-  lift('charm','charms',r=>r.charms);
-  lift('splice','splices',r=>r.splices);
+  // bosses
+  const bs={}; runs.forEach(r=>r.fights.filter(f=>f.boss).forEach(f=>{ (bs[f.boss]=bs[f.boss]||[]).push(f.won); }));
+  out.push('bosses: '+Object.entries(bs).sort((a,b)=>mean(a[1])-mean(b[1])).map(([k,v])=>`${names.bosses[k]} ${pct(mean(v.map(Number)))} (${v.length})`).join(', '));
+  // relics
+  const rl={}; runs.forEach((r,i)=>r.relics.forEach(k=>{ (rl[k]=rl[k]||[]).push(cleared[i]); }));
+  out.push('relics (taken, fights won): '+Object.entries(rl).sort((a,b)=>mean(b[1])-mean(a[1])).map(([k,v])=>`${names.relics[k]} ${v.length}/${mean(v).toFixed(1)}`).join(', '));
+  // cards
+  const cb={}; runs.forEach((r,i)=>Object.entries(r.buys).forEach(([k,n])=>{ (cb[k]=cb[k]||{n:0,runs:[]}); cb[k].n+=n; cb[k].runs.push(cleared[i]); }));
+  out.push('bought (copies, runs, fights won): '+Object.entries(cb).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=>`${names.cards[k]} ${v.n}/${v.runs.length}/${mean(v.runs).toFixed(1)}`).join(', '));
+  const pl={}; runs.forEach(r=>Object.entries(r.plays).forEach(([k,n])=>pl[k]=(pl[k]||0)+n));
+  out.push('plays per run: '+Object.entries(pl).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`${names.cards[k]} ${(n/runs.length).toFixed(0)}`).join(', '));
+  out.push(`biggest hit: median ${fmt(runs.map(r=>r.end.best).sort((a,b)=>a-b)[runs.length>>1])}; end deck ${mean(runs.map(r=>r.end.deck)).toFixed(0)} cards`);
   return out.join('\n');
 }
 
 (async()=>{
   const o=args(), all={};
-  const t0=Date.now();
-  for(const bot of o.bots){
-    const res=await play(o,bot); all[bot]=res.runs;
-    console.log(report(bot,res,o));
-    if(o.log){
-      const file=o.bots.length>1?o.log.replace(/(\.\w+)?$/,`-${bot}$1`):o.log;
-      fs.writeFileSync(file,res.runs[0].log); console.log(`\nRun 1's log saved to ${file}`);
-    }
-  }
-  if(o.bots.length>1){
-    console.log('\n████ SUMMARY');
-    console.log(table(['bot','runs','mean waves','median','p90'],o.bots.map(b=>{ const c=all[b].map(r=>r.cleared); return [b,c.length,f1(mean(c)),quant(c,.5),quant(c,.9)]; })));
-  }
-  if(o.json){ for(const b in all) all[b].forEach(r=>{ delete r.log; }); fs.writeFileSync(o.json,JSON.stringify({options:o,runs:all},null,1)); console.log(`\nRaw runs saved to ${o.json}`); }
-  console.log(`\n${o.bots.length*o.runs} runs in ${((Date.now()-t0)/1000).toFixed(1)}s`);
-})().catch(e=>{ console.error(e); process.exit(1); });
+  for(const b of o.bots){ all[b]=await play(o,b); console.log(report(b,all[b])); }
+  if(o.log){ const r=all[o.bots[0]].runs[0]; fs.writeFileSync(o.log,(r.log||[]).join('\n')); }
+  if(o.json) fs.writeFileSync(o.json,JSON.stringify(Object.fromEntries(Object.entries(all).map(([k,v])=>[k,v.runs]))));
+})();
