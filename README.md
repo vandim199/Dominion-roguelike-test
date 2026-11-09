@@ -23,18 +23,16 @@ GitHub Pages is built by `.github/workflows/pages.yml` (Settings → Pages → S
 `sim/` plays the game headless with bots, so balance changes can be measured instead of guessed. It needs Node.js and loads `js/data.js` and `js/game.js` exactly as they are:
 
 ```
-node sim/sim.js                            # every bot, 100 runs each (about 4 minutes)
+node sim/sim.js                            # every bot, 100 runs each (about 3 minutes)
 node sim/sim.js --bot mage --runs 500      # one bot, more runs
 node sim/sim.js --endless 1 --fights 60    # play on after the 8th Boss
 node sim/sim.js --bot mage --log run.txt --json runs.json
 node sim/sim.js --tune '{"growth":1.5,"carry":1}'   # try other TUNE values without editing
 ```
 
-Bots: **mage** (looks ahead over every order of its hand and buys a balanced deck), **naive** (picks cards exactly like mage but plays its hand in a random order: the gap between the two is what sequencing is worth), **burner** (Burn and big spells) and **random** (the floor). Runs are seeded: the same `--seed` plays the same game.
+Bots: **mage** (looks ahead over every order of its hand and picks a balanced deck), **naive** (picks cards exactly like mage but plays its hand in a random order: the gap between the two is what sequencing is worth), **burner** (Burn and big spells) and **random** (the floor). Runs are seeded: the same `--seed` plays the same game.
 
 The report shows, per bot: fights won and how many runs beat the 8th Boss; on which turn fights end; for each fight, its health, how often it was reached and won, on which turn, and the deck size; each Boss's win rate; and for every relic and card, how often it was taken and how those runs did.
-
-(about 2 minutes for every bot at 60 runs)
 
 ## Files
 
