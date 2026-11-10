@@ -25,6 +25,15 @@ From the first human play of version 2: the game is better without the market, b
 - Twincast on a Mana Rune now gives both runes' Mana (it used to keep only one).
 - Overlays (your deck, rewards) scroll from the top, so a long deck is no longer cut off above the fold, and their buttons stay on screen while you scroll.
 
+## Version 2.2: Bosses that don't end runs unfairly, and Wither
+
+- **Mirror Knight judges a multi-hit spell by its total.** Magic Missiles' three hits used to be checked one by one against "a fifth of its health", so they always glanced off. Now 3 × 9 counts as 27. Single small hits still glance. Its health is ×1.15 to make up for it.
+- **Wraith** is unchanged: only the first hit of each turn passes through, so a multi-hit spell loses its first hit and the rest land. Its text now says so.
+- **Bog Witch's Curses no longer stay in your deck.** They used to be shuffled into the deck for good: one Witch fight could leave you up to ten dead cards for the rest of the run. Now Curses can be played for 1 ✦ to dispel them and draw a card, and every Curse vanishes when the fight ends. Still 2 a turn. Mage-bot win rate against her: about 60%, in line with the other Bosses.
+- **New card: Wither** (uncommon, 🥀). Deal 0.5% of the foe's *current* health per ✦: at 4 ✦ that's 2%. Your ✦ sets the percentage rather than multiplying the damage again; Empower, Hex, Twincast and damage relics still apply, Focus and +damage don't. Each tier adds 0.25% (Wither+ 0.75%, Wither++ 1%), not the usual ×1.5, because rewards climb a tier a circle and a 2–4% Wither killed late Bosses at 25–50 ✦.
+
+  Wither is a late-game Boss killer: it ignores how fast health grows. With it in the pool the mage bot beats circle 8 in about 30% of runs, against about 23% without it (three seeds × 300 runs); fights won barely change (13.5 → 14). If that's too much, "once per fight" brings it down a few points.
+
 ## The rules
 
 | | Classic Coinkeep | Spellkeep |
@@ -91,9 +100,10 @@ Every card costs 1 ✦.
 | Focus Rune | Rune | uncommon | Every hit deals +2 this fight |
 | Amplify | Mana | rare | Double your ✦ |
 | Cataclysm | Spell | rare | Deal 2 per ✦, then ✦ drops to 1 |
+| Wither | Spell | uncommon | Deal 0.5% of the foe's current health per ✦ |
 | Meteor | Spell | rare | Deal 45; once per fight |
 | Mana Rune | Rune | rare | +1 ✦ at the start of each turn this fight |
-| Curse | Curse | — | Can't be played (Bog Witch) |
+| Curse | Curse | — | Dispel this Curse; +1 Card (Bog Witch; all vanish when the fight ends) |
 
 Spellstorm, Conflagrate, Frostbolt, Siphon and Ponder are new in version 2.
 
@@ -101,18 +111,18 @@ Spellstorm, Conflagrate, Frostbolt, Siphon and Ponder are new in version 2.
 
 | Boss | Curse | Counters |
 |---|---|---|
-| Bog Witch | 2 Curses shuffled into your draw pile each turn | thin decks |
+| Bog Witch | 2 Curses shuffled into your draw pile each turn (1 ✦ to dispel; gone after the fight) | thin decks |
 | Ogre King | draw 1 fewer card | everything, gently |
 | Snow Queen | your finest card is frozen for the fight | one key card |
 | Bookworm | cards your spells draw are eaten (4 a turn; health ×1.15) | draw engines |
 | Null Rift | ✦ can't rise above 10 per circle | Mana engines |
 | Time Djinn | 3 turns, not 5 (health ×0.8) | slow ramps |
-| Wraith | the first hit each turn does nothing | one big hit a turn |
+| Wraith | the first hit each turn does nothing (just the first of a multi-hit spell) | one big hit a turn |
 | Ancient Dragon | heals 20% each turn | slow decks |
 | Goblin Thief | steals a random card from your hand each turn, for the fight | small hands |
 | Toll Golem | discard 2 cards each turn | big hands |
 | Iron Bureaucrat | every card costs 2 ✦ | wide decks |
-| Mirror Knight | hits under a fifth of its health do nothing | many small hits (Burn still works) |
+| Mirror Knight | spells dealing under a fifth of its health do nothing; a multi-hit spell counts its total (health ×1.15) | many small hits (Burn still works) |
 
 ## Relics
 
@@ -146,7 +156,7 @@ Wide Sleeves (+1 hand), Mana Crystal (+1 ✦ a turn), Silver Clasp (rewards offe
 - **Is half carry-over fun?** It's the main new decision and no person has tried it. The alternative is to keep Mana resetting and accept that fights are decided by the combo turn.
 - **Late circles stay short** for decks that break. More Bosses that counter a broken engine (like Null Rift) would push back without punishing everyone else.
 - **A Balatro-style shop** could come back as a small stop after each Boss, selling relics. It would need a currency, and Arcana was removed to keep cards scarce.
-- **The card pool** is 28 cards. Rarity hides the rares, but a few runs will show every common.
+- **The card pool** is 29 cards. Rarity hides the rares, but a few runs will show every common.
 
 ## Look
 

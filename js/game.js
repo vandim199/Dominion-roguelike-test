@@ -26,7 +26,7 @@ const hasR  = k => !!G && G.relics.some(r=>r.key===k);
 const cname = c => DB[c.key].n+plus(c.lv);
 const opsOf = c => DB[c.key].ops(c.lv,c);
 const ctext = c => opsOf(c).map(opText);
-const isSpell = c => opsOf(c).some(o=>['dmg','chain','burn','nova','handdmg','burndmg'].includes(o[0]));
+const isSpell = c => opsOf(c).some(o=>['dmg','chain','burn','nova','handdmg','burndmg','pct'].includes(o[0]));
 const baseCost = c => { const d=DB[c.key]; return d.c + (d.c||2)*(tierMult(c.lv)-1) + d.step*c.lv; };
 const allCards = () => [...G.deck,...G.hand,...G.discard,...G.inPlay,...G.runes,...(G.stolen||[])];
 const deckSize = () => allCards().length + G.exhausted.length;
@@ -82,7 +82,7 @@ function draw(n,bySpell){
   return got;
 }
 function gatherDeck(){
-  G.deck=shuffle([...G.deck,...G.hand,...G.discard,...G.inPlay,...G.runes,...G.exhausted,...(G.stolen||[])]);
+  G.deck=shuffle([...G.deck,...G.hand,...G.discard,...G.inPlay,...G.runes,...G.exhausted,...(G.stolen||[])].filter(c=>c.key!=='curse'));
   G.hand=[]; G.discard=[]; G.inPlay=[]; G.runes=[]; G.exhausted=[]; G.stolen=[];
   G.deck.forEach(c=>{ c.frozen=false; c.manarune=0; });
 }
@@ -163,10 +163,13 @@ function hitMult(S){
   return m;
 }
 function hitBase(S,b){ return b+S.focus+(hasR('lens')?2:0)+(hasR('crescendo')?S.played:0); }
-function hit(S,b,dry){
-  let d=Math.floor(hitBase(S,b)*hitMult(S));
+// n: how many hits this one belongs to. The Mirror Knight judges a multi-hit spell by its total.
+function hit(S,b,dry,n){ return land(S,Math.floor(hitBase(S,b)*hitMult(S)),dry,n||1); }
+// A hit worth p% of the foe's current health per Mana (hitMult carries the Mana).
+function hitPct(S,p,dry){ const hp=Math.max(0,dry?G.foe.hp-S.dealt:G.foe.hp); return land(S,Math.floor(hp*p/100*hitMult(S)),dry,1); }
+function land(S,d,dry,n){
   if(boss('wraith')&&!S.flags.firstHit){ S.flags.firstHit=true; if(!dry) log('The hit passes through the Wraith.','bad'); return 0; }
-  if(boss('mirror')&&d<G.foe.max*0.2){ if(!dry) log(`${fmt(d)} glances off the Mirror Knight.`,'bad'); return 0; }
+  if(boss('mirror')&&d*n<G.foe.max*0.2){ if(!dry) log(`${n>1?`${n} × ${fmt(d)}`:fmt(d)} glances off the Mirror Knight.`,'bad'); return 0; }
   S.dealt+=d;
   if(!dry){ G.foe.hp-=d; G.stats.dealt+=d; if(d>G.stats.best) G.stats.best=d; fx('hit',d); }
   return d;
@@ -195,7 +198,9 @@ function applyOp(S,o,c,dry){
     case 'draw': if(dry) S.drawn+=a; else draw(a,true); break;
     case 'cycle': S.drawn+=a; break;
     case 'trash': break;
-    case 'dmg': for(let i=0;i<(b||1);i++) hit(S,a,dry); break;
+    case 'dmg': for(let i=0;i<(b||1);i++) hit(S,a,dry,b||1); break;
+    case 'pct': hitPct(S,a,dry); break;
+    case 'dispel': break;
     case 'chain': if(S.spells) hit(S,a*S.spells,dry); break;
     case 'handdmg': { const n=dry?S.handN-1:G.hand.length; if(n>0) hit(S,a*n,dry); } break;
     case 'burndmg': if(S.burn) hit(S,a*S.burn,dry); break;
@@ -244,6 +249,7 @@ async function playCard(c){
     const t=DB[c.key].t, ops=opsOf(c);
     if(t==='rune'){ pull(G.inPlay,c); G.runes.push(c); }
     else if(ops.some(o=>o[0]==='exhaust')){ pull(G.inPlay,c); G.exhausted.push(c); }
+    else if(ops.some(o=>o[0]==='dispel')) pull(G.inPlay,c);
     log(`${DB[c.key].art} ${cname(c)}${times>1?` (cast ${times===2?'twice':times+' times'})`:''}${G.dealt?` hits for ${fmt(G.dealt)}`:''}. ${G.mana} ${MANA} left.`, G.dealt?'dmg':'');
     checkKill();
   } finally { busy=false; }

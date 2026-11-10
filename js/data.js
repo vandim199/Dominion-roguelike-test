@@ -81,6 +81,7 @@ def('conflag',{n:'Conflagrate', c:5, t:'spell', art:'🌋', r:'uncommon', ops:l=
 def('hex',    {n:'Hex',         c:4, t:'spell', art:'🧿', r:'uncommon', ops:l=>[['vuln',50+25*l],['mana',1]]});
 def('empower',{n:'Empower',     c:4, t:'spell', art:'💪', r:'uncommon', ops:l=>[['mana',1+l],['empower',2]]});
 def('cataclysm',{n:'Cataclysm', c:8, t:'spell', art:'💥', r:'rare', ops:l=>[['nova',2*tierMult(l)]]});
+def('wither', {n:'Wither',      c:5, t:'spell', art:'🥀', r:'uncommon', ops:l=>[['pct',0.5+0.25*l]]});
 def('meteor', {n:'Meteor',      c:7, t:'spell', art:'🌠', r:'rare', ops:l=>[['dmg',45*tierMult(l)],['exhaust']]});
 
 // --- Runes: stay out for the rest of the fight ---
@@ -88,7 +89,8 @@ def('focus',  {n:'Focus Rune',  c:5, t:'rune', art:'🔷', r:'uncommon', ops:l=>
 def('wellrune',{n:'Mana Rune',  c:6, t:'rune', art:'🔶', r:'rare', ops:l=>[['manarune',1+l]]});
 
 // --- Junk ---
-def('curse',  {n:'Curse',       c:0, t:'curse', r:'junk', noLv:true, art:'🐈‍⬛', ops:()=>[], unplayable:true});
+// Curses (from the Bog Witch) can be dispelled for 1 Mana, and all vanish when the fight ends.
+def('curse',  {n:'Curse',       c:0, t:'curse', r:'junk', noLv:true, art:'🐈‍⬛', ops:()=>[['dispel'],['draw',1]]});
 
 const POOL={common:[],uncommon:[],rare:[]};
 for(const k in DB){ const r=DB[k].r; if(POOL[r]) POOL[r].push(k); }
@@ -109,6 +111,8 @@ function opText(o){
     case 'handdmg':return `Deal ${fmt(a)} per other card in your hand`;
     case 'burndmg':return a===1?"Deal damage equal to the foe's Burn":`Deal ${a}× the foe's Burn`;
     case 'burn':   return `Burn ${fmt(a)}`;
+    case 'pct':    return `Deal ${a}% of the foe's current health per ${MANA}`;
+    case 'dispel': return 'Dispel this Curse';
     case 'vuln':   return `Foe takes +${a}% damage this turn`;
     case 'empower':return `Your next spell hits ×${a}`;
     case 'nova':   return `Deal ${fmt(a)} per ${MANA}, then ${MANA} drops to 1`;
@@ -125,6 +129,8 @@ const OP_HELP={
   nova:`Counts your ${MANA} twice: once in the card, once as the multiplier.`,
   chain:'A spell is any card that deals damage or Burn.',
   focus:`Added to each hit before the ${MANA} multiplier.`,
+  pct:`Your ${MANA} sets the percentage instead of multiplying the damage: at 4 ${MANA}, 0.5% per ${MANA} is 2% of the foe's current health. Other multipliers (Empower, Hex, relics) still apply; Focus and +damage don't.`,
+  dispel:`Curses vanish when the fight ends.`,
   echo:`The echoed card is paid for once. Echoes don't stack: a second Twincast only keeps the larger one.`,
   burndmg:`Multiplied by your ${MANA} like any hit.`,
 };
@@ -167,18 +173,18 @@ const ELITES=[
   {n:'Ogre Mage',art:'👹'},{n:'Wyvern',art:'🐲'},{n:'Golem',art:'🪨'},{n:'Banshee',art:'👻'},
 ];
 const BOSSES={
-  witch:  {n:'Bog Witch',    art:'🧙', tx:'At the start of each of your turns, 2 Curses are shuffled into your draw pile.'},
+  witch:  {n:'Bog Witch',    art:'🧙', tx:`At the start of each of your turns, 2 Curses are shuffled into your draw pile. Play one for 1 ${MANA} to dispel it and draw a card; they all vanish when the fight ends.`},
   ogre:   {n:'Ogre King',    art:'👑', tx:'You draw 1 fewer card each turn.'},
   queen:  {n:'Snow Queen',   art:'🧊', tx:'Your finest card is frozen in ice for this fight.'},
   worm:   {n:'Bookworm',     art:'🐛', tx:'Cards your spells would draw are eaten (the first 4 each turn).', hp:1.15},
   rift:   {n:'Null Rift',    art:'🌌', tx:`Your ${MANA} can never rise above 10 per circle.`, txc:c=>`Your ${MANA} can never rise above ${10*c}.`},
   djinn:  {n:'Time Djinn',   art:'🧞', tx:'You have 3 turns, not 5.', hp:0.8},
-  wraith: {n:'Wraith',       art:'👻', tx:'The first hit each turn passes through it.'},
+  wraith: {n:'Wraith',       art:'👻', tx:'The first hit each turn passes through it (of a multi-hit spell, only the first hit).'},
   dragon: {n:'Ancient Dragon',art:'🐉',tx:'Heals 20% of its health at the end of each of your turns.'},
   goblin: {n:'Goblin Thief', art:'🦹', tx:'At the start of each turn, steals a random card from your hand until the fight ends.'},
   toll:   {n:'Toll Golem',   art:'🗿', tx:'At the start of each turn, discard 2 cards of your choice.'},
   heavy:  {n:'Iron Bureaucrat',art:'📜',tx:`Every card costs 2 ${MANA} to play.`},
-  mirror: {n:'Mirror Knight',art:'🪞', tx:'Hits for less than a fifth of its health do nothing.'},
+  mirror: {n:'Mirror Knight',art:'🪞', tx:'Spells dealing less than a fifth of its health do nothing (a multi-hit spell counts all its hits together).', hp:1.15},
 };
 const BOSS_KEYS=Object.keys(BOSSES);
 const bossTx = (k,c) => BOSSES[k].txc ? BOSSES[k].txc(c) : BOSSES[k].tx;

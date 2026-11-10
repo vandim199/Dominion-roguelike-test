@@ -65,7 +65,7 @@ const TYPE_NAME={mana:'Mana',spell:'Spell',rune:'Rune',curse:'Curse'};
 const RAR_NAME={uncommon:'Uncommon',rare:'Rare'};
 // What Twincast, Empower, Twin Wand and Owl's Eye will do to this card if it's played next:
 // times = how often it resolves, dmg = what its hits are multiplied by. null when nothing.
-const DMG_OPS=['dmg','chain','burn','nova','handdmg','burndmg'];
+const DMG_OPS=['dmg','chain','burn','nova','handdmg','burndmg','pct'];
 function boostOf(c){
   if(!G||G.won||G.phase!=='turn'||DB[c.key].unplayable||c.frozen) return null;
   const times=1+G.echo+(hasR('twin')&&!G.flags.twin?1:0);
@@ -80,7 +80,7 @@ function cardEl(c,where,extra){
   let pv=null, bo=null;
   if(where==='hand'&&G&&!d.unplayable&&!G.won&&G.phase==='turn'){ pv=predict(c); bo=boostOf(c); }
   // A boosted card shows its factor on each line it changes, and a seal in the corner.
-  const fac=o=>!bo||['echo','empower','exhaust','cycle','trash'].includes(o[0])?1:bo.times*(DMG_OPS.includes(o[0])?bo.dmg:1);
+  const fac=o=>!bo||['echo','empower','exhaust','cycle','trash','dispel'].includes(o[0])?1:bo.times*(DMG_OPS.includes(o[0])?bo.dmg:1);
   const lines=ops.map(o=>`<li class="op op-${o[0]}">${opText(o)}${fac(o)>1?` <em class="x">×${fac(o)}</em>`:''}</li>`).join('')||`<li class="op">${d.unplayable?'Cannot be played.':''}</li>`;
   if(bo){ el.classList.add('boosted');
     const why=[]; if(bo.times>1) why.push(bo.times===2?'resolves twice':`resolves ${bo.times} times`); if(bo.dmg>1) why.push(`hits ×${bo.dmg}`);
