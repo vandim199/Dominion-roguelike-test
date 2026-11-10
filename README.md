@@ -8,7 +8,9 @@ The full design, card list and balance results are in [`docs/SPELLBOOK.md`](docs
 
 Open `index.html` in a browser, or serve the folder (e.g. GitHub Pages, or `python -m http.server`). No build step. It can be added to a phone's home screen.
 
-Each card in your hand shows what it would do if played now: damage ⚔, Burn 🔥, and your Mana before and after. Tap or click to play; right-click (or turn on "tap to read" in Settings) to read a card first. Keys: **E** ends the turn, **1–9** play a card, **+ / −** change the UI size.
+Each card in your hand shows what it would do if played now: damage ⚔, Burn 🔥, and your Mana before and after. When Twincast, Empower or a relic will boost the next card, the cards it would change glow and carry a gold **2×** seal. Tap or click to play; right-click (or turn on "tap to read" in Settings) to read a card first. Keys: **E** ends the turn, **1–9** play a card, **+ / −** change the UI size.
+
+Reward choices can be taken back: raising a card shows it before and after and has a Back button, relics are confirmed, and skipping a reward takes two taps.
 
 **Saving is automatic.** The run is saved in the browser whenever the game waits for you and at each stop between fights. **Continue** on the title screen picks it up. Randomness is seeded and saved with the run, so a reload can't reroll anything. The save is deleted when the run ends.
 

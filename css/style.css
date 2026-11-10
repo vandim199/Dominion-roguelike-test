@@ -222,3 +222,29 @@ button:disabled{opacity:.45;cursor:default}
 /* With no market the foe has the board to itself: keep it a sensible size, centred. */
 #board{align-items:center;justify-content:center}
 #foe{max-width:48rem;max-height:17rem;width:100%}
+
+/* Overlays scroll from the top: centring with auto margins instead of justify-content, so a tall
+   list (your deck) is never cut off above the fold. */
+#veil.on,#inspect.on,#menu.on,#title.on,#how.on,#over.on{justify-content:flex-start}
+#veil.on>:first-child,#inspect.on>:first-child,#menu.on>:first-child,#title.on>:first-child,#how.on>:first-child,#over.on>:first-child{margin-top:auto}
+#veil.on>:last-child,#inspect.on>:last-child,#menu.on>:last-child,#title.on>:last-child,#how.on>:last-child,#over.on>:last-child{margin-bottom:auto}
+#pool{flex:0 0 auto}
+/* The buttons (and the before → after preview) stay in reach while a long list scrolls. */
+.mfoot{position:sticky;bottom:0;margin:0 -1rem;padding:.8rem 1rem .3rem;align-self:stretch;display:flex;flex-direction:column;align-items:center;gap:.5rem;
+}
+#veil.tall .mfoot{background:linear-gradient(180deg,#0a071800,#0a0718ee 1.2rem)}
+#mPrev{display:flex;align-items:center;gap:.6rem}
+#mPrev:empty{display:none}
+#mPrev .card{width:7.6rem;min-height:9.6rem;font-size:.86em;cursor:default}
+#mPrev .arrow{font-size:1.6rem;color:var(--gold2);text-shadow:0 0 .6rem #E2BC62}
+.relicopt.selected{border-color:var(--mana);box-shadow:0 0 0 2px var(--mana),0 0 1rem #7FD8FF55}
+.mbtn.warn{background:linear-gradient(180deg,#9a4430,#6a2a1c);border-color:#ff9a7a88}
+/* Boosted cards: Twincast, Empower, Twin Wand or Owl's Eye will act on the next card played. */
+.card.boosted{box-shadow:0 .3rem .7rem #000a,inset 0 0 1.4rem #a07a3a33,0 0 0 2px var(--gold2),0 0 1.1rem #F7E28Acc}
+.seal{position:absolute;bottom:.4rem;right:.4rem;z-index:2;display:flex;flex-direction:column;gap:.1rem;pointer-events:none;animation:sealin .35s ease-out}
+.seal b{display:block;min-width:2.3rem;padding:.12rem .35rem 0;border-radius:.6rem .6rem 0 0;text-align:center;font-family:var(--head);font-weight:800;font-size:1rem;line-height:1.1;color:#3a2600;
+  background:radial-gradient(circle at 35% 30%,#fff3c0,#e0a92c);box-shadow:0 .15rem .35rem #0008}
+.seal small{display:block;margin-top:-.1rem;padding:0 .3rem .1rem;border-radius:0 0 .6rem .6rem;text-align:center;font-size:.55rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#3a2600;background:#e0a92c;box-shadow:0 .15rem .35rem #0008}
+@keyframes sealin{from{transform:scale(1.8) rotate(-15deg);opacity:0}}
+.ops em.x{font-style:normal;font-weight:800;color:#8a5a00;background:#ffd76a66;border-radius:.25rem;padding:0 .2rem;white-space:nowrap}
+.L-narrow #hand .seal b{min-width:1.9rem;font-size:.85rem}

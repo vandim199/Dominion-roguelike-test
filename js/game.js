@@ -34,7 +34,7 @@ const circleOf = f => Math.floor(f/TUNE.fightsPerCircle)+1;
 const turnsMax = () => TUNE.turns+(hasR('hourglass')?1:0)-(hasR('glass')?1:0)-(boss('djinn')?2:0);
 const handSize = () => TUNE.handSize+(hasR('robes')?1:0)-(boss('ogre')?1:0);
 const boss = k => !!G && !!G.foe && G.foe.boss===k;
-const manaCap = () => boss('rift') ? 10 : Infinity;
+const manaCap = () => boss('rift') ? 10*G.foe.circle : Infinity;
 const cardWorth = c => DB[c.key].noLv ? -1 : baseCost(c);
 const playCost = () => boss('heavy') ? 2 : 1;
 
@@ -84,7 +84,7 @@ function draw(n,bySpell){
 function gatherDeck(){
   G.deck=shuffle([...G.deck,...G.hand,...G.discard,...G.inPlay,...G.runes,...G.exhausted,...(G.stolen||[])]);
   G.hand=[]; G.discard=[]; G.inPlay=[]; G.runes=[]; G.exhausted=[]; G.stolen=[];
-  G.deck.forEach(c=>{ c.frozen=false; });
+  G.deck.forEach(c=>{ c.frozen=false; c.manarune=0; });
 }
 function trashCard(c){ G.trash.push(c); }
 
@@ -95,21 +95,21 @@ async function startFight(){
   G.fight++; const f=G.fight, c=circleOf(f), slot=f%TUNE.fightsPerCircle;
   gatherDeck();
   const kind = slot===2?'boss':slot===1?'elite':'minion';
-  let hp=TUNE.hp0*TUNE.hpGrowth(f)*(kind==='boss'?TUNE.bossHp:kind==='elite'?TUNE.eliteHp:1);
-  hp=niceHp(hp);
   if(slot===0||!G.nextBoss){
     let pool=BOSS_KEYS.filter(k=>!G.bossesSeen.includes(k)); if(!pool.length){ G.bossesSeen=[]; pool=BOSS_KEYS.slice(); }
     G.nextBoss=pick(pool); G.bossesSeen.push(G.nextBoss);
   }
+  let hp=TUNE.hp0*TUNE.hpGrowth(f)*(kind==='boss'?TUNE.bossHp*(BOSSES[G.nextBoss].hp||1):kind==='elite'?TUNE.eliteHp:1);
+  hp=niceHp(hp);
   let foe;
-  if(kind==='boss') foe={...BOSSES[G.nextBoss],boss:G.nextBoss};
+  if(kind==='boss') foe={...BOSSES[G.nextBoss],boss:G.nextBoss,tx:bossTx(G.nextBoss,c)};
   else foe={...pick(kind==='elite'?ELITES:MINIONS)};
   G.foe={...foe,kind,hp,max:hp,circle:c};
   G.burn=0; G.focus=0; G.turn=0; G.carry=0; G.won=false; G.phase='turn';
   log(`Circle ${c} · ${kind==='boss'?'Boss':kind==='elite'?'Elite':'Foe'} ${f%3+1}/3`,'wave');
   log(`${foe.art} ${foe.n} appears with ${fmt(hp)} health. You have ${plural(turnsMax(),'turn')}.`,'hl');
   if(foe.boss) log(`${foe.n}: ${foe.tx}`,'bad');
-  else if(slot===0) log(`This circle's Boss: ${BOSSES[G.nextBoss].art} ${BOSSES[G.nextBoss].n}. ${BOSSES[G.nextBoss].tx}`);
+  else if(slot===0) log(`This circle's Boss: ${BOSSES[G.nextBoss].art} ${BOSSES[G.nextBoss].n}. ${bossTx(G.nextBoss,c)}`);
   if(boss('queen')) freezeBest(1);
   fx('foe',G.foe);
   await startTurn();
@@ -205,7 +205,7 @@ function applyOp(S,o,c,dry){
     case 'vuln': S.vuln+=a; break;
     case 'empower': S.empower*=a; break;
     case 'focus': S.focus+=a; break;
-    case 'manarune': if(!dry) c.manarune=a; S.runeMana=(S.runeMana||0)+a; break;
+    case 'manarune': if(!dry) c.manarune=(c.manarune||0)+a; S.runeMana=(S.runeMana||0)+a; break;
     case 'exhaust': break;
   }
 }
@@ -229,6 +229,7 @@ async function resolveCard(c){
     if(CHOICE_OPS.includes(o[0])) await choiceOp(o,c); else applyOp(G,o,c,false);
   }
   postCard(G,c);
+  return times;
 }
 
 async function playCard(c){
@@ -238,12 +239,12 @@ async function playCard(c){
     const cost=playCost();
     pull(G.hand,c); G.inPlay.push(c);
     G.dealt=0; G.drawn=0; G.burnAdd=0;
-    await resolveCard(c);
+    const times=await resolveCard(c);
     G.mana=Math.max(0,G.mana-cost);
     const t=DB[c.key].t, ops=opsOf(c);
     if(t==='rune'){ pull(G.inPlay,c); G.runes.push(c); }
     else if(ops.some(o=>o[0]==='exhaust')){ pull(G.inPlay,c); G.exhausted.push(c); }
-    log(`${DB[c.key].art} ${cname(c)}${G.dealt?` hits for ${fmt(G.dealt)}`:''}. ${G.mana} ${MANA} left.`, G.dealt?'dmg':'');
+    log(`${DB[c.key].art} ${cname(c)}${times>1?` (cast ${times===2?'twice':times+' times'})`:''}${G.dealt?` hits for ${fmt(G.dealt)}`:''}. ${G.mana} ${MANA} left.`, G.dealt?'dmg':'');
     checkKill();
   } finally { busy=false; }
   render(); saveNow();
@@ -313,10 +314,14 @@ async function campFlow(){
   const C=G.camp;
   if(C.step==='card'){
     const raise=TUNE.raiseOn.includes(C.kind);
-    const ch=await chooseCards(C.offers,{min:0,max:1,why:'reward',title:'Spoils',sub:raise?'Take one card into your deck, or raise a card you have.':'Take one card into your deck, or none.',
-      extra:raise?[['upgrade','✨ Raise a card a tier instead']]:[]});
-    if(ch==='upgrade') await raiseCard('Raise a card','Raise one card in your deck a tier.');
-    else if(ch[0]){ G.deck.push(ch[0]); log(`${cname(ch[0])} joins your deck.`,'good'); }
+    // Raising a card can be backed out of, back to the same offers.
+    for(;;){
+      const ch=await chooseCards(C.offers,{min:0,max:1,why:'reward',title:'Spoils',sub:raise?'Take one card into your deck, or raise a card you have.':'Take one card into your deck, or none.',
+        extra:raise?[['upgrade','✨ Raise a card a tier instead']]:[]});
+      if(ch==='upgrade'){ if(await raiseCard('Raise a card','Raise one card in your deck a tier.','← Back to the spoils')==='back') continue; }
+      else if(ch[0]){ G.deck.push(ch[0]); log(`${cname(ch[0])} joins your deck.`,'good'); }
+      break;
+    }
     C.step=C.relics?'relic':C.sanctum?'sanctum':'next'; saveNow();
   }
   if(C.step==='relic'){ await relicDraft(C.relics); C.step=C.sanctum?'sanctum':'next'; saveNow(); }
@@ -337,35 +342,49 @@ function rollRelics(n){
 async function relicDraft(offers){
   if(!offers.length) return;
   const full=G.relics.length>=TUNE.relicSlots;
-  const k=await chooseRelic(offers,'Choose a relic',full?`Your ${TUNE.relicSlots} relic slots are full: taking one means letting another go.`:`Relics ${G.relics.length}/${TUNE.relicSlots}.`);
-  if(!k) return;
-  if(full){
-    const out=await chooseRelic(G.relics.map(r=>r.key),`Give up a relic for ${RELICS[k].n}?`,'Pick the relic to let go.',{skip:'Keep mine'});
-    if(!out) return; G.relics=G.relics.filter(r=>r.key!==out);
+  let k;
+  for(;;){
+    k=await chooseRelic(offers,'Choose a relic',full?`Your ${TUNE.relicSlots} relic slots are full: taking one means letting another go.`:`Relics ${G.relics.length}/${TUNE.relicSlots}.`);
+    if(!k) return;
+    if(full){
+      const out=await chooseRelic(G.relics.map(r=>r.key),`Give up a relic for ${RELICS[k].n}?`,'Pick the relic to let go.',{skip:'← Back',swap:true});
+      if(!out) continue; G.relics=G.relics.filter(r=>r.key!==out);
+    }
+    break;
   }
   G.relics.push({key:k,age:0}); log(`${RELICS[k].art} ${RELICS[k].n} is yours.`,'good'); render();
 }
 function deckSummary(){ const a=[...G.deck,...G.discard,...G.hand], by=t=>a.filter(c=>c.t===t).length;
   return `${a.length} cards: ${by('spell')} spells, ${by('mana')} mana, ${by('rune')} runes${by('curse')?`, ${by('curse')} curses`:''}`; }
-async function raiseCard(title,sub){
+// Returns 'back' when the player backs out, so the caller can offer its choice again.
+async function raiseCard(title,sub,back){
   gatherDeck();
   const s=await chooseCards(G.deck.slice().sort((a,b)=>cname(a).localeCompare(cname(b))).filter(c=>!DB[c.key].noLv),
-    {min:0,max:1,why:'temper',title,sub,badge:c=>DB[c.key].n+plus(c.lv+1)});
+    {min:1,max:1,why:'temper',title,sub,back,badge:c=>DB[c.key].n+plus(c.lv+1),preview:c=>({...c,lv:c.lv+1})});
+  if(s==='back') return 'back';
   if(s[0]){ const w=cname(s[0]); s[0].lv++; log(`${w} becomes ${cname(s[0])}.`,'good'); }
+  return 'done';
 }
 async function sanctum(){ await sanctumRite(); if(hasR('stone')) await sanctumRite(); }
+// Each rite's card choice has a Back button that returns to the list of rites.
 async function sanctumRite(){
-  const o=await chooseOption('🕯 The Sanctum',`${deckSummary()}. Choose one rite.`,[
-    ['purge','🕳 Purge: banish up to 2 cards'],['temper','✨ Empower: raise a card one tier'],
-    ['copy','📜 Transcribe: copy a card'],['heal',`❤ Rest: recover a heart (${G.hearts}/${TUNE.hearts})`],['skip','Move on']]);
-  gatherDeck();
-  const sorted=()=>G.deck.slice().sort((a,b)=>cname(a).localeCompare(cname(b)));
-  if(o==='purge'){ const s=await chooseCards(sorted(),{min:0,max:2,why:'purge',title:'Purge',sub:'Banish up to 2 cards for good.'});
-    s.forEach(c=>{pull(G.deck,c);trashCard(c);}); if(s.length) log(`Purged: ${s.map(cname).join(', ')}.`); }
-  else if(o==='temper') await raiseCard('Empower','Raise one card a tier.');
-  else if(o==='copy'){ const s=await chooseCards(sorted().filter(c=>!DB[c.key].noLv),{min:0,max:1,why:'copy',title:'Transcribe',sub:'Add a copy of one card.'});
-    if(s[0]){ G.deck.push(mk(s[0].key,s[0].lv)); log(`You transcribe ${cname(s[0])}.`,'good'); } }
-  else if(o==='heal'){ G.hearts=Math.min(TUNE.hearts,G.hearts+1); log(`You rest: ${plural(G.hearts,'heart')}.`,'good'); }
+  const back='← Back to the Sanctum';
+  for(;;){
+    const o=await chooseOption('🕯 The Sanctum',`${deckSummary()}. Choose one rite.`,[
+      ['purge','🕳 Purge: banish up to 2 cards'],['temper','✨ Empower: raise a card one tier'],
+      ['copy','📜 Transcribe: copy a card'],['heal',`❤ Rest: recover a heart (${G.hearts}/${TUNE.hearts})`],['skip','Move on']]);
+    gatherDeck();
+    const sorted=()=>G.deck.slice().sort((a,b)=>cname(a).localeCompare(cname(b)));
+    if(o==='purge'){ const s=await chooseCards(sorted(),{min:1,max:2,why:'purge',title:'Purge',sub:'Banish 1 or 2 cards for good.',back});
+      if(s==='back') continue;
+      s.forEach(c=>{pull(G.deck,c);trashCard(c);}); if(s.length) log(`Purged: ${s.map(cname).join(', ')}.`); }
+    else if(o==='temper'){ if(await raiseCard('Empower','Raise one card a tier.',back)==='back') continue; }
+    else if(o==='copy'){ const s=await chooseCards(sorted().filter(c=>!DB[c.key].noLv),{min:1,max:1,why:'copy',title:'Transcribe',sub:'Add a copy of one card.',back});
+      if(s==='back') continue;
+      if(s[0]){ G.deck.push(mk(s[0].key,s[0].lv)); log(`You transcribe ${cname(s[0])}.`,'good'); } }
+    else if(o==='heal'){ G.hearts=Math.min(TUNE.hearts,G.hearts+1); log(`You rest: ${plural(G.hearts,'heart')}.`,'good'); }
+    break;
+  }
 }
 
 function lose(title,text){

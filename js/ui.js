@@ -22,7 +22,7 @@ function layout(){
   $('sEff').textContent=`Text is ${Math.round(px)}px at this size.`;
 }
 function setScale(s){ UI.scale=clamp(Math.round(s*20)/20,0.6,1.6); $('sRange').value=Math.round(UI.scale*100); saveUI(); layout(); }
-addEventListener('resize',layout);
+addEventListener('resize',()=>{ layout(); if(typeof fitVeil==='function') fitVeil(); });
 
 /* ---------- log, toasts, effects ---------- */
 function addLogLine(m,cls){
@@ -63,14 +63,28 @@ function downloadLog(){
 /* ---------- cards ---------- */
 const TYPE_NAME={mana:'Mana',spell:'Spell',rune:'Rune',curse:'Curse'};
 const RAR_NAME={uncommon:'Uncommon',rare:'Rare'};
+// What Twincast, Empower, Twin Wand and Owl's Eye will do to this card if it's played next:
+// times = how often it resolves, dmg = what its hits are multiplied by. null when nothing.
+const DMG_OPS=['dmg','chain','burn','nova','handdmg','burndmg'];
+function boostOf(c){
+  if(!G||G.won||G.phase!=='turn'||DB[c.key].unplayable||c.frozen) return null;
+  const times=1+G.echo+(hasR('twin')&&!G.flags.twin?1:0);
+  const dmg=isSpell(c)?G.empower*(hasR('familiar')&&!G.flags.owl?2:1):1;
+  return times>1||dmg>1 ? {times,dmg} : null;
+}
 // One card's face. where: 'hand' (live preview) or 'pick'.
 function cardEl(c,where,extra){
   const d=DB[c.key], el=document.createElement('div');
   el.className=`card t-${d.t} r-${d.r}${c.lv?' up':''}${c.frozen?' frozen':''}`;
   const ops=opsOf(c);
-  let pv=null;
-  if(where==='hand'&&G&&!d.unplayable&&!G.won&&G.phase==='turn') pv=predict(c);
-  const lines=ops.map(o=>`<li class="op op-${o[0]}">${opText(o)}</li>`).join('')||`<li class="op">${d.unplayable?'Cannot be played.':''}</li>`;
+  let pv=null, bo=null;
+  if(where==='hand'&&G&&!d.unplayable&&!G.won&&G.phase==='turn'){ pv=predict(c); bo=boostOf(c); }
+  // A boosted card shows its factor on each line it changes, and a seal in the corner.
+  const fac=o=>!bo||['echo','empower','exhaust','cycle','trash'].includes(o[0])?1:bo.times*(DMG_OPS.includes(o[0])?bo.dmg:1);
+  const lines=ops.map(o=>`<li class="op op-${o[0]}">${opText(o)}${fac(o)>1?` <em class="x">×${fac(o)}</em>`:''}</li>`).join('')||`<li class="op">${d.unplayable?'Cannot be played.':''}</li>`;
+  if(bo){ el.classList.add('boosted');
+    const why=[]; if(bo.times>1) why.push(bo.times===2?'resolves twice':`resolves ${bo.times} times`); if(bo.dmg>1) why.push(`hits ×${bo.dmg}`);
+    el.title=`Played next, this card ${why.join(' and ')}.`; }
   let foot='';
   if(!d.unplayable) foot=`<span class="cost">${playCost()} ${MANA}</span>`;
   let badge='';
@@ -81,7 +95,8 @@ function cardEl(c,where,extra){
     bits.push(`<b class="bm">${MANA} ${G.mana}→${pv.mana}</b>`);
     badge=`<div class="pv">${bits.join('')}</div>`;
   }
-  el.innerHTML=`<div class="ch"><span class="cart">${d.art}</span><span class="cn">${d.n}<i>${plus(c.lv)}</i></span></div>
+  const seal=bo?`<div class="seal">${bo.times>1?`<b>${bo.times}×</b><small>cast</small>`:''}${bo.dmg>1?`<b>×${bo.dmg}</b><small>dmg</small>`:''}</div>`:'';
+  el.innerHTML=`${seal}<div class="ch"><span class="cart">${d.art}</span><span class="cn">${d.n}<i>${plus(c.lv)}</i></span></div>
     <div class="ctype">${TYPE_NAME[d.t]}${RAR_NAME[d.r]?` · <b>${RAR_NAME[d.r]}</b>`:''}</div><ol class="ops">${lines}</ol>${badge}<div class="cf">${foot}${extra||''}</div>`;
   el.oncontextmenu=e=>{ e.preventDefault(); inspect(c,where); };
   return el;
@@ -93,8 +108,8 @@ function render(){
   const f=G.foe, circ=circleOf(Math.max(0,G.fight));
   $('cCircle').textContent=`Circle ${circ} · ${f?(f.kind==='boss'?'Boss':f.kind==='elite'?'Elite':'Foe')+' '+(G.fight%3+1)+'/3':''}${G.endless?' · Endless':''}`;
   $('cHearts').textContent='❤'.repeat(Math.max(0,G.hearts))+'♡'.repeat(Math.max(0,TUNE.hearts-G.hearts));
-  const nb=G.nextBoss&&BOSSES[G.nextBoss];
-  $('cBoss').textContent=nb?`Boss: ${nb.art} ${nb.n}`:''; $('cBoss').title=nb?nb.tx:''; $('cBoss').onclick=()=>nb&&toast(`${nb.n}: ${nb.tx}`);
+  const nb=G.nextBoss&&BOSSES[G.nextBoss], ntx=nb?bossTx(G.nextBoss,circ):'';
+  $('cBoss').textContent=nb?`Boss: ${nb.art} ${nb.n}`:''; $('cBoss').title=ntx; $('cBoss').onclick=()=>nb&&toast(`${nb.n}: ${ntx}`);
   // relics
   const R=$('relics'); R.innerHTML='';
   G.relics.forEach(r=>{ const j=RELICS[r.key], b=document.createElement('button'); b.className='relic r-'+j.r; b.textContent=j.art;
@@ -152,14 +167,33 @@ function inspect(c,where,i){
 function closeInspect(){ $('inspect').classList.remove('on'); }
 
 /* ---------- choices (game.js awaits these) ---------- */
-function openVeil(title,sub){ $('mTitle').textContent=title; $('mSub').textContent=sub||''; $('pool').innerHTML=''; $('mOpts').innerHTML=''; $('mBtns').innerHTML=''; $('veil').classList.add('on'); }
+function openVeil(title,sub){ $('mTitle').textContent=title; $('mSub').textContent=sub||''; ['pool','mOpts','mPrev','mBtns'].forEach(id=>$(id).innerHTML=''); $('veil').scrollTop=0; $('veil').classList.add('on'); requestAnimationFrame(fitVeil); }
+// When the list is taller than the screen, the buttons get a backdrop so cards scrolling under them stay out of the way.
+function fitVeil(){ const v=$('veil'); v.classList.toggle('tall',v.scrollHeight>v.clientHeight+2); }
+// A skip that loses a reward takes two taps, so a stray click can't throw it away.
+function guardSkip(b,label,go){
+  let armed=false; b.textContent=label;
+  b.onclick=()=>{ if(armed) return go(); armed=true; b.textContent='Really skip? Tap again'; b.classList.add('warn');
+    setTimeout(()=>{ armed=false; b.textContent=label; b.classList.remove('warn'); },2500); };
+}
 function closeVeil(){ $('veil').classList.remove('on'); }
+// o.back adds a button that resolves 'back'; o.preview(c) shows the chosen card before → after.
 function chooseCards(list,o){
   return new Promise(res=>{
     openVeil(o.title,o.sub);
-    const chosen=new Set(), P=$('pool'), B=$('mBtns');
+    const chosen=new Set(), P=$('pool'), B=$('mBtns'), V=$('mPrev');
+    const done=v=>{ closeVeil(); res(v); };
     const ok=document.createElement('button'); ok.className='mbtn go';
-    const upd=()=>{ ok.disabled=chosen.size<o.min; ok.textContent=o.max===1&&o.min===0&&!chosen.size?'Skip':`Confirm${o.max>1?` (${chosen.size})`:''}`; };
+    const skipping=()=>o.max===1&&o.min===0&&!chosen.size;
+    const upd=()=>{
+      ok.disabled=chosen.size<o.min; ok.classList.remove('warn');
+      if(skipping()&&o.why==='reward') guardSkip(ok,'Skip the reward',()=>done([]));
+      else { ok.textContent=skipping()?'Skip':`Confirm${o.max>1?` (${chosen.size})`:''}`; ok.onclick=()=>done([...chosen]); }
+      V.innerHTML='';
+      if(o.preview&&chosen.size===1){ const c=[...chosen][0];
+        V.append(cardEl(c,'pick'),Object.assign(document.createElement('span'),{className:'arrow',textContent:'➜'}),cardEl(o.preview(c),'pick')); }
+      requestAnimationFrame(fitVeil);
+    };
     list.forEach(c=>{
       const el=cardEl(c,'pick',o.badge?`<span class="badge">${o.badge(c)}</span>`:'');
       el.onclick=()=>{
@@ -171,8 +205,8 @@ function chooseCards(list,o){
       let t=0; el.onpointerdown=()=>{ t=setTimeout(()=>inspectOnly(c),550); }; el.onpointerup=el.onpointerleave=()=>clearTimeout(t);
       P.appendChild(el);
     });
-    ok.onclick=()=>{ closeVeil(); res([...chosen]); };
-    for(const [v,label] of o.extra||[]){ const b=document.createElement('button'); b.className='mbtn alt'; b.textContent=label; b.onclick=()=>{ closeVeil(); res(v); }; B.appendChild(b); }
+    if(o.back){ const b=document.createElement('button'); b.className='mbtn'; b.textContent=o.back; b.onclick=()=>done('back'); B.appendChild(b); }
+    for(const [v,label] of o.extra||[]){ const b=document.createElement('button'); b.className='mbtn alt'; b.textContent=label; b.onclick=()=>done(v); B.appendChild(b); }
     B.appendChild(ok); upd();
   });
 }
@@ -183,14 +217,22 @@ function chooseOption(title,sub,opts){
     for(const [k,t] of opts){ const b=document.createElement('button'); b.className='opt'; b.textContent=t; b.onclick=()=>{ closeVeil(); res(k); }; $('mOpts').appendChild(b); }
   });
 }
+// Pick a relic, then confirm: a first tap only selects, so it can be changed.
 function chooseRelic(keys,title,sub,o){
+  o=o||{};
   return new Promise(res=>{
     openVeil(title,sub);
+    let sel=null; const done=v=>{ closeVeil(); res(v); };
+    const ok=document.createElement('button'); ok.className='mbtn go';
+    const upd=()=>{ ok.disabled=!sel; ok.textContent=!sel?(o.swap?'Choose one to let go':'Choose a relic'):o.swap?`Let ${RELICS[sel].n} go`:`Take ${RELICS[sel].n}`; };
     for(const k of keys){ const j=RELICS[k], b=document.createElement('button'); b.className='opt relicopt r-'+j.r;
       b.innerHTML=`<span class="ra">${j.art}</span><span><b>${j.n}</b> <i>${j.r}</i><br>${j.tx}</span>`;
-      b.onclick=()=>{ closeVeil(); res(k); }; $('mOpts').appendChild(b); }
-    const s=document.createElement('button'); s.className='mbtn'; s.textContent=(o&&o.skip)||'Skip';
-    s.onclick=()=>{ closeVeil(); res(null); }; $('mBtns').appendChild(s);
+      b.onclick=()=>{ sel=sel===k?null:k; $('mOpts').querySelectorAll('.relicopt').forEach(x=>x.classList.toggle('selected',x===b&&sel===k)); upd(); };
+      $('mOpts').appendChild(b); }
+    ok.onclick=()=>sel&&done(sel);
+    const s=document.createElement('button'); s.className='mbtn';
+    if(o.skip) { s.textContent=o.skip; s.onclick=()=>done(null); } else guardSkip(s,'Skip',()=>done(null));
+    $('mBtns').append(s,ok); upd();
   });
 }
 function onRunEnd(title,text){

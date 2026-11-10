@@ -62,7 +62,7 @@ def('reshuffle',{n:'Clear Mind',c:2, t:'mana', art:'🍃', ops:l=>[['mana',1],['
 def('banish', {n:'Banish',      c:2, t:'mana', art:'🕳', ops:l=>[['trash',2+l]]});
 def('wellspring',{n:'Wellspring',c:5,t:'mana', art:'⛲', r:'uncommon', ops:l=>[['mana',4+2*l]]});
 def('familiar',{n:'Familiar',   c:5, t:'mana', art:'🦉', r:'uncommon', ops:l=>[['draw',2+Math.floor(l/2)],['mana',1+Math.ceil(l/2)]]});
-def('echo',   {n:'Twincast',    c:5, t:'mana', art:'👥', r:'uncommon', ops:l=>[['echo',1+l]]});
+def('echo',   {n:'Twincast',    c:5, t:'mana', art:'👥', r:'uncommon', ops:l=>[['mana',1],['echo',1+l]]});
 def('amplify',{n:'Amplify',     c:8, t:'mana', art:'🔆', r:'rare', ops:l=>l?[['mana',2*l],['double',2]]:[['double',2]]});
 
 // --- Damage ---
@@ -156,7 +156,8 @@ const RARITY={common:60,uncommon:30,rare:10};
 
 /* ==========================================================
    FOES. Minions and Elites are plain health bars; Bosses bend
-   a rule for their fight.
+   a rule for their fight. hp scales a Boss's health, to even
+   out how hard their rules are.
    ========================================================== */
 const MINIONS=[
   {n:'Goblin Hexer',art:'👺'},{n:'Will-o-Wisp',art:'🔥'},{n:'Skeleton',art:'💀'},{n:'Bog Slime',art:'🟢'},
@@ -169,9 +170,9 @@ const BOSSES={
   witch:  {n:'Bog Witch',    art:'🧙', tx:'At the start of each of your turns, 2 Curses are shuffled into your draw pile.'},
   ogre:   {n:'Ogre King',    art:'👑', tx:'You draw 1 fewer card each turn.'},
   queen:  {n:'Snow Queen',   art:'🧊', tx:'Your finest card is frozen in ice for this fight.'},
-  worm:   {n:'Bookworm',     art:'🐛', tx:'Cards your spells would draw are eaten (the first 4 each turn).'},
-  rift:   {n:'Null Rift',    art:'🌌', tx:`Your ${MANA} can never rise above 10.`},
-  djinn:  {n:'Time Djinn',   art:'🧞', tx:'You have 3 turns, not 5.'},
+  worm:   {n:'Bookworm',     art:'🐛', tx:'Cards your spells would draw are eaten (the first 4 each turn).', hp:1.15},
+  rift:   {n:'Null Rift',    art:'🌌', tx:`Your ${MANA} can never rise above 10 per circle.`, txc:c=>`Your ${MANA} can never rise above ${10*c}.`},
+  djinn:  {n:'Time Djinn',   art:'🧞', tx:'You have 3 turns, not 5.', hp:0.8},
   wraith: {n:'Wraith',       art:'👻', tx:'The first hit each turn passes through it.'},
   dragon: {n:'Ancient Dragon',art:'🐉',tx:'Heals 20% of its health at the end of each of your turns.'},
   goblin: {n:'Goblin Thief', art:'🦹', tx:'At the start of each turn, steals a random card from your hand until the fight ends.'},
@@ -180,3 +181,4 @@ const BOSSES={
   mirror: {n:'Mirror Knight',art:'🪞', tx:'Hits for less than a fifth of its health do nothing.'},
 };
 const BOSS_KEYS=Object.keys(BOSSES);
+const bossTx = (k,c) => BOSSES[k].txc ? BOSSES[k].txc(c) : BOSSES[k].tx;

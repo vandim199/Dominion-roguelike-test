@@ -13,6 +13,18 @@ The first version kept Dominion's market: Arcana from cards, six cards for sale,
 - **A fight ends the moment the foe falls.** No Arcana to collect, so no cleanup turn.
 - **Twincast doesn't compound.** A second Twincast keeps only the larger echo, and Amplify is always ×2 (upgrades add Mana first).
 
+## Version 2.1: clearer boosts, fairer Bosses, choices you can take back
+
+From the first human play of version 2: the game is better without the market, but Bosses felt uneven, Twincast seemed not to work, and a stray click could throw away a reward.
+
+- **Twincast is +1 ✦, then "your next card resolves twice".** It worked before, but paying its 1 ✦ lowered the multiplier, so "twice" looked like ×1.3 (a Zap at 3 ✦ went from 9 to 12). Now it pays for itself and twice really is twice (9 → 18). Its runs now win the most fights of any card for the mage bot.
+- **Boosted cards say so.** While Twincast, Empower, Twin Wand or Owl's Eye will act on the next card, every card in hand it would change glows and carries a gold seal (**2× cast**, **×2 dmg**, or both), and each line it changes shows its factor (*Deal 3 ×2*). The ⚔ preview already included it. The log says when a card was cast twice.
+- **Null Rift's cap grows: 10 ✦ per circle** (10, 20, 30…). A flat 10 was fair in circle 1 (71% beaten) and almost unbeatable late (10% in circles 6–8). Now 80 / 67 / 41%.
+- **Bosses have a health factor** (`hp` in `BOSSES`): Time Djinn ×0.8, Bookworm ×1.15. Over 300 mage-bot runs, Boss win rates went from 23–74% to 56–73%.
+- **Every reward choice can be taken back.** Raising a card shows the card before → after once you pick it, and has **Back to the spoils**. Relics are picked, then confirmed (**Take Glass Wand**); letting a relic go when your slots are full has **Back**. Each Sanctum rite has **Back to the Sanctum**, and Purge and Transcribe need a card (no silent skip). Skipping a card reward or a relic takes two taps.
+- Twincast on a Mana Rune now gives both runes' Mana (it used to keep only one).
+- Overlays (your deck, rewards) scroll from the top, so a long deck is no longer cut off above the fold, and their buttons stay on screen while you scroll.
+
 ## The rules
 
 | | Classic Coinkeep | Spellkeep |
@@ -67,7 +79,7 @@ Every card costs 1 ✦.
 | Ignite | Spell | common | Burn 1 (×✦ when applied, ticks every turn) |
 | Wellspring | Mana | uncommon | +4 ✦ |
 | Familiar | Mana | uncommon | +2 Cards; +1 ✦ |
-| Twincast | Mana | uncommon | Your next card resolves twice |
+| Twincast | Mana | uncommon | +1 ✦; your next card resolves twice |
 | Surge | Spell | uncommon | +3 ✦; Deal 6 |
 | Wild Magic | Spell | uncommon | Deal 12; +3 ✦ |
 | Fireball | Spell | uncommon | Deal 22; −2 ✦ |
@@ -92,9 +104,9 @@ Spellstorm, Conflagrate, Frostbolt, Siphon and Ponder are new in version 2.
 | Bog Witch | 2 Curses shuffled into your draw pile each turn | thin decks |
 | Ogre King | draw 1 fewer card | everything, gently |
 | Snow Queen | your finest card is frozen for the fight | one key card |
-| Bookworm | cards your spells draw are eaten (4 a turn) | draw engines |
-| Null Rift | ✦ can't rise above 10 | Mana engines |
-| Time Djinn | 3 turns, not 5 | slow ramps |
+| Bookworm | cards your spells draw are eaten (4 a turn; health ×1.15) | draw engines |
+| Null Rift | ✦ can't rise above 10 per circle | Mana engines |
+| Time Djinn | 3 turns, not 5 (health ×0.8) | slow ramps |
 | Wraith | the first hit each turn does nothing | one big hit a turn |
 | Ancient Dragon | heals 20% each turn | slow decks |
 | Goblin Thief | steals a random card from your hand each turn, for the fight | small hands |
@@ -108,13 +120,13 @@ Wide Sleeves (+1 hand), Mana Crystal (+1 ✦ a turn), Silver Clasp (rewards offe
 
 ## Balance tests
 
-`node sim/sim.js`, 60 seeded runs per bot. Only bots and one person have played it, so this is a calibration, not a verdict. The one human log so far (version 1) beat the best bot on every Boss, so the target is set a little above the bot.
+`node sim/sim.js`, 100 seeded runs per bot (version 2.1). Only bots and one person have played it, so this is a calibration, not a verdict. The one human log so far (version 1) beat the best bot on every Boss, so the target is set a little above the bot.
 
 | Bot | Fights won (of 24) | Beat circle 8 |
 |---|---|---|
-| mage: looks ahead over every order of its hand | 13.1 (median 14) | 30% |
-| burner: Burn and big spells | 10.3 | 10% |
-| naive: picks cards like mage, casts in a random order | 5.9 | 2% |
+| mage: looks ahead over every order of its hand | 13.7 (median 14) | 24% |
+| burner: Burn and big spells | 11.2 | 9% |
+| naive: picks cards like mage, casts in a random order | 6.5 | 3% |
 | random | 2.4 | 0% |
 
 **Sequencing is still the skill.** Mage and naive pick the same cards and differ only in casting order: 13 fights won against 6.
@@ -123,7 +135,9 @@ Wide Sleeves (+1 hand), Mana Crystal (+1 ✦ a turn), Silver Clasp (rewards offe
 
 **The clock bites.** For the mage bot the first foe falls on turn 4.7, the first Elite on 3.6, the first Boss on 3.9 (67% won). In circles 3–4 fights take 2.5–3 turns. Late fights are still short for runs that get there: those are the decks whose engine broke, and the decks that didn't break are already dead. Balatro's late game works the same way.
 
-**Bosses** (mage win rate): Null Rift 29% (its cap has since gone from 8 to 10), Time Djinn 46%, Iron Bureaucrat 50%, Snow Queen 54%, Bog Witch 62%, Bookworm 65%, Toll Golem 67%, Ogre King 71%, Wraith 71%, Mirror Knight 77%, Goblin Thief 80%, Ancient Dragon 86%.
+**Bosses** (mage win rate, version 2.1, 100 runs): Time Djinn 51%, Snow Queen 51%, Bog Witch 59%, Iron Bureaucrat 62%, Bookworm 64%, Toll Golem 68%, Ogre King 69%, Null Rift 71%, Wraith 77%, Ancient Dragon 79%, Mirror Knight 81%, Goblin Thief 86%. At 300 runs the spread is narrower (56–73%): the easy end moves around from sample to sample. In version 2 Null Rift was 30%, and 10% in circles 6–8.
+
+**Still lopsided.** Amplify, Cataclysm and Meteor are the most-taken cards and runs that find them win more; once a deck doubles its Mana every turn, late fights end with 10–100× overkill. Commons (Channel, Ponder, Clear Mind, Ley Line) are almost never taken over an uncommon. Mana Crystal and Silver Clasp are the weakest relics. These are left alone until a human log says whether the runaway late game is fun or a problem.
 
 **Tuning history.** Version 1: health 24 × 1.48 a fight → 45 × 1.43, Bosses sharpened; the human player still killed most foes on turns 1–2 from circle 2. Version 2: tried 3-, 4- and 5-turn fights at growth 1.45 to 1.6 without carry-over (no change in when fights end), then full, half and no carry-over at growth 1.45 to 1.85. Snow Queen (2 cards frozen) and a Goblin Thief that stole your best card were brutal in thin decks and were softened; Time Djinn went from 4 turns to 3.
 
