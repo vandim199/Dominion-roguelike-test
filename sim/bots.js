@@ -51,7 +51,7 @@ function score(S,ctx){
   const k=Math.min(S.drawn,S.mana); let dd=0;
   for(let j=0;j<k;j++) dd+=ctx.ds.d*(S.mana-j);
   dmg+=dd*0.7;
-  dmg+=(S.focus-G.focus)*3*Math.max(2,S.mana)*ctx.after;
+  dmg+=((1+S.focus/100)/(1+G.focus/100)-1)*ctx.need*0.3*Math.min(ctx.after,2);
   dmg+=S.runeMana*ctx.ds.d*4*ctx.after;
   // Mana kept for later turns is worth what it will multiply then.
   const keep=Math.min(1,TUNE.carry+(hasR('battery')?0.5:0));
@@ -60,9 +60,9 @@ function score(S,ctx){
 }
 function bestLine(){
   const playable=G.hand.filter(c=>!DB[c.key].unplayable&&!c.frozen);
-  if(!playable.length||G.mana<playCost()) return null;
+  if(!playable.some(c=>G.mana>=playCost(c))) return null;
   const left=turnsMax()-G.turn;
-  const need=Math.max(1,G.foe.hp - G.burn*(left+1));
+  const need=Math.max(1,G.foe.hp - G.burn*(left+1) - (hasR('sickle')?G.foe.max*0.15:0));
   const ctx={need, ticks:left+1, after:left, ds:drawStats()};
   let best={v:score(lightState(),ctx),first:null};
   const lim=Math.min(playable.length,7); let nodes=0;
@@ -71,7 +71,7 @@ function bestLine(){
     const seen=new Set();
     for(const c of rest){
       const id=c.key+'|'+c.lv; if(seen.has(id)) continue; seen.add(id);
-      const cost=playCost();
+      const cost=playCost(c);
       if(S.mana<cost) continue;
       nodes++;
       const T={...S,flags:{...S.flags}};
@@ -124,7 +124,7 @@ async function chooseCards(list,o){
   return list.slice(0,o.min);
 }
 function avgWorth(){ const a=allCards().filter(c=>!DB[c.key].noLv); return a.reduce((s,c)=>s+desire(c),0)/Math.max(1,a.length); }
-const RELIC_RANK=['vintage','glass','twin','staff','crystalball','familiar','stone','overflow','ember','lens','crescendo','battery','robes','hourglass','ascetic','quill','clasp','haste'];
+const RELIC_RANK=['vintage','glass','pendulum','metronome','twin','avalanche','staff','crystalball','familiar','die','stone','overflow','shard','sickle','ember','leech','inkwell','lens','crescendo','ouroboros','battery','robes','satchel','hourglass','pages','ascetic','quill','clasp','haste'];
 async function chooseRelic(keys,title,sub,opts){
   if(opts&&opts.skip) return keys.slice().sort((a,b)=>RELIC_RANK.indexOf(b)-RELIC_RANK.indexOf(a))[0];
   const k = BOT==='random'||Math.random()<0.4 ? pick(keys) : keys.slice().sort((a,b)=>RELIC_RANK.indexOf(a)-RELIC_RANK.indexOf(b))[0];

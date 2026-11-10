@@ -28,11 +28,11 @@ The first version kept Dominion's market: Arcana from cards, six cards for sale,
 
 **Sequencing.** That rule makes order the main decision, at three levels:
 
-1. *Inside a card.* Surge is "+3 ✦, then Deal 6": it hits with the new Mana. Wild Magic is "Deal 12, then +3 ✦": a bigger number, but it hits before the Mana arrives. Fireball is "Deal 22, then −2 ✦": cast it last.
+1. *Inside a card.* Surge is "+3 ✦, then Deal 6": it hits with the new Mana. Wild Magic is "Deal 12, then +3 ✦": a bigger number, but it hits before the Mana arrives. Fireball deals triple if it's the last card in your hand: cast it last.
 2. *Inside a turn.* Mana cards first, then big spells while ✦ is high, then cheap ones. Draw costs a Mana now to find cards. Empower, Hex and Twincast change the next card. Cataclysm deals 2 per ✦ *and* is multiplied by ✦, then drops you to 1.
 3. *Across a fight.* Unspent Mana half carries over, so every card is also a question of now or later. Burn is multiplied once, when applied, then ticks every turn for the rest of the fight. Runes last the fight. Meteor is once per fight.
 
-**Run shape.** 8 circles, each a Foe, an Elite (×1.5 health) and a Boss (×2.2 health, plus a curse on the rules). Health grows ×1.65 a fight. Beat the 8th Boss to win, then play on into endless circles if you like. 3 hearts: a foe still standing after its last turn costs one. Elites and Bosses offer a relic (5 slots). After a Boss, the Sanctum offers one rite: purge 2 cards, raise one a tier, copy one, or recover a heart. Each circle's Boss is announced at its first fight.
+**Run shape.** 8 circles, each a Foe, an Elite (×1.5 health) and a Boss (×2.2 health, plus a curse on the rules). Health grows ×1.82 a fight. Beat the 8th Boss to win, then play on into endless circles if you like. 3 hearts: a foe still standing after its last turn costs one. Elites and Bosses offer a relic (5 slots). After a Boss, the Sanctum offers one rite: purge 2 cards, raise one a tier, copy one, or recover a heart. Each circle's Boss is announced at its first fight.
 
 ## Why carry-over
 
@@ -61,29 +61,32 @@ Every card costs 1 ✦.
 | Clear Mind | Mana | common | +1 ✦; discard any, draw that many |
 | Banish | Mana | common | Banish up to 2 cards from your hand |
 | Firebolt | Spell | common | Deal 7 |
-| Magic Missiles | Spell | common | Deal 3, three times |
+| Magic Missiles | Spell | common | Deal 4, three times |
 | Frostbolt | Spell | common | Deal 5; +1 Card |
 | Siphon | Spell | common | Deal 4; +1 ✦ |
-| Ignite | Spell | common | Burn 1 (×✦ when applied, ticks every turn) |
+| Ignite | Spell | common | Burn 3 (×✦ when applied, ticks every turn) |
+| Tome Slam | Spell | common | Deal 1 per card you own |
 | Wellspring | Mana | uncommon | +4 ✦ |
 | Familiar | Mana | uncommon | +2 Cards; +1 ✦ |
 | Twincast | Mana | uncommon | Your next card resolves twice |
+| Ritual | Mana | uncommon | +1 ✦ per card played this turn, this one included |
+| Mirror Image | Mana | uncommon | Repeat the last other card you played this turn |
 | Surge | Spell | uncommon | +3 ✦; Deal 6 |
 | Wild Magic | Spell | uncommon | Deal 12; +3 ✦ |
-| Fireball | Spell | uncommon | Deal 22; −2 ✦ |
-| Chain Lightning | Spell | uncommon | Deal 5 per spell already cast this turn |
-| Spellstorm | Spell | uncommon | Deal 3 per other card in your hand |
-| Conflagrate | Spell | uncommon | Deal damage equal to the foe's Burn |
-| Hex | Spell | uncommon | Foe takes +50% damage this turn; +1 ✦ |
+| Fireball | Spell | uncommon | Deal 15, ×3 if it's the last card in your hand |
+| Chain Lightning | Spell | uncommon | Deal 5 per card played this turn, this one included |
+| Spellstorm | Spell | uncommon | Deal 5 per card in your hand, this one included |
+| Conflagrate | Spell | uncommon | Deal 2× the foe's Burn |
+| Hex | Spell | uncommon | Foe takes ×2 damage this turn (Hexes multiply); +1 ✦ |
 | Empower | Spell | uncommon | +1 ✦; your next spell hits ×2 |
-| Focus Rune | Rune | uncommon | Every hit deals +2 this fight |
+| Focus Rune | Rune | uncommon | Every hit deals ×1.5 for the rest of the fight |
 | Amplify | Mana | rare | Double your ✦ |
 | Cataclysm | Spell | rare | Deal 2 per ✦, then ✦ drops to 1 |
 | Meteor | Spell | rare | Deal 45; once per fight |
-| Mana Rune | Rune | rare | +1 ✦ at the start of each turn this fight |
+| Mana Rune | Rune | rare | Double your ✦ at the start of each later turn this fight |
 | Curse | Curse | — | Can't be played (Bog Witch) |
 
-Spellstorm, Conflagrate, Frostbolt, Siphon and Ponder are new in version 2.
+Spellstorm, Conflagrate, Frostbolt, Siphon and Ponder are new in version 2. Version 2.1 added Tome Slam, Ritual and Mirror Image and reworked the cards nobody took: Chain Lightning counts every card (not just spells), Spellstorm counts itself (it used to deal nothing from an empty hand), Hex and Focus Rune multiply, Mana Rune doubles, Fireball became a finisher, and Ignite/Conflagrate hit hard enough to be a second route to Cataclysm-sized numbers (Burn is ×✦ once, Conflagrate ×✦ again).
 
 ## Bosses
 
@@ -106,18 +109,20 @@ Spellstorm, Conflagrate, Frostbolt, Siphon and Ponder are new in version 2.
 
 Wide Sleeves (+1 hand), Mana Crystal (+1 ✦ a turn), Silver Clasp (rewards offer 4 cards), Focusing Lens (+2 a hit), Quicksilver (+2 ✦ on each fight's first turn), Scholar's Quill (reward cards one tier higher), Ember Heart (Burn ×2), Leyden Jar (all unspent ✦ carries over, not half), Overflow Sigil (unspent ✦ strikes at end of turn), Twin Wand (first card each turn twice), Owl's Eye (first spell each turn ×2), Ascetic's Bead (×2 damage with 12 cards or fewer), Hourglass (6 turns), Crescendo (+1 a hit per card played), Philosopher's Stone (Sanctum rites twice), Glass Wand (damage ×3, one turn less), Archmage Staff (Mana cards +1 ✦), Old Grimoire (damage grows with each Boss beaten).
 
+Added in 2.1, because 18 relics repeated within a run (an *attack* is a card that deals damage or Burn): Spellthief's Ring (attacks cost 1 ✦ less), Inkwell (Mana cards also deal 4), Pendulum (an attack right after a non-attack doubles your ✦ first; the player's idea), Avalanche (+50% a hit per attack already played this turn), Ouroboros (reshuffling doubles your ✦), Mirror Shard (the last card in your hand resolves twice), Loaded Die (starting ✦ ×1, ×2 or ×3 each turn), Reaper's Sickle (foes fall below 15% health), Twin Pages (reward cards come in pairs), Metronome (every third card in a turn doubles your ✦ first), Bottomless Satchel (your hand is kept between turns).
+
 ## Balance tests
 
 `node sim/sim.js`, 60 seeded runs per bot. Only bots and one person have played it, so this is a calibration, not a verdict. The one human log so far (version 1) beat the best bot on every Boss, so the target is set a little above the bot.
 
 | Bot | Fights won (of 24) | Beat circle 8 |
 |---|---|---|
-| mage: looks ahead over every order of its hand | 13.1 (median 14) | 30% |
-| burner: Burn and big spells | 10.3 | 10% |
-| naive: picks cards like mage, casts in a random order | 5.9 | 2% |
-| random | 2.4 | 0% |
+| mage: looks ahead over every order of its hand | 14.1 (median 16) | 33% |
+| burner: Burn and big spells | 12.4 | 22% |
+| naive: picks cards like mage, casts in a random order | 7.3 | 5% |
+| random | 1.9 | 0% |
 
-**Sequencing is still the skill.** Mage and naive pick the same cards and differ only in casting order: 13 fights won against 6.
+**Sequencing is still the skill.** Mage and naive pick the same cards and differ only in casting order: 14 fights won against 7.
 
 **New cards matter.** The mage bot takes about 10 new cards and 3 raises a run and ends with an 18-card deck.
 
@@ -125,14 +130,14 @@ Wide Sleeves (+1 hand), Mana Crystal (+1 ✦ a turn), Silver Clasp (rewards offe
 
 **Bosses** (mage win rate): Null Rift 29% (its cap has since gone from 8 to 10), Time Djinn 46%, Iron Bureaucrat 50%, Snow Queen 54%, Bog Witch 62%, Bookworm 65%, Toll Golem 67%, Ogre King 71%, Wraith 71%, Mirror Knight 77%, Goblin Thief 80%, Ancient Dragon 86%.
 
-**Tuning history.** Version 1: health 24 × 1.48 a fight → 45 × 1.43, Bosses sharpened; the human player still killed most foes on turns 1–2 from circle 2. Version 2: tried 3-, 4- and 5-turn fights at growth 1.45 to 1.6 without carry-over (no change in when fights end), then full, half and no carry-over at growth 1.45 to 1.85. Snow Queen (2 cards frozen) and a Goblin Thief that stole your best card were brutal in thin decks and were softened; Time Djinn went from 4 turns to 3.
+**Tuning history.** Version 2.1: the reworked cards took the mage bot from 21% to 37% and the new relics to 68%, so health growth went from 1.65 to 1.82 a fight (back to 32%). Version 1: health 24 × 1.48 a fight → 45 × 1.43, Bosses sharpened; the human player still killed most foes on turns 1–2 from circle 2. Version 2: tried 3-, 4- and 5-turn fights at growth 1.45 to 1.6 without carry-over (no change in when fights end), then full, half and no carry-over at growth 1.45 to 1.85. Snow Queen (2 cards frozen) and a Goblin Thief that stole your best card were brutal in thin decks and were softened; Time Djinn went from 4 turns to 3.
 
 ## Open questions
 
 - **Is half carry-over fun?** It's the main new decision and no person has tried it. The alternative is to keep Mana resetting and accept that fights are decided by the combo turn.
 - **Late circles stay short** for decks that break. More Bosses that counter a broken engine (like Null Rift) would push back without punishing everyone else.
 - **A Balatro-style shop** could come back as a small stop after each Boss, selling relics. It would need a currency, and Arcana was removed to keep cards scarce.
-- **The card pool** is 28 cards. Rarity hides the rares, but a few runs will show every common.
+- **The card pool** is 31 cards. Rarity hides the rares, but a few runs will show every common.
 
 ## Look
 

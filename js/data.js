@@ -32,7 +32,7 @@ const TUNE = {
   fightsPerCircle:3,                         // minion, elite, boss
   circles:8,                                 // beat the 8th boss to win; endless after
   hp0:40,                                    // the first minion's health
-  growth:1.65,                               // health ×growth each fight
+  growth:1.82,                               // health ×growth each fight
   hpGrowth: f => Math.pow(TUNE.growth, f),   // f = fights before this one
   eliteHp:1.5, bossHp:2.2,
   maxTier: c => c-1,                         // reward cards climb one tier a circle
@@ -63,29 +63,32 @@ def('banish', {n:'Banish',      c:2, t:'mana', art:'🕳', ops:l=>[['trash',2+l]
 def('wellspring',{n:'Wellspring',c:5,t:'mana', art:'⛲', r:'uncommon', ops:l=>[['mana',4+2*l]]});
 def('familiar',{n:'Familiar',   c:5, t:'mana', art:'🦉', r:'uncommon', ops:l=>[['draw',2+Math.floor(l/2)],['mana',1+Math.ceil(l/2)]]});
 def('echo',   {n:'Twincast',    c:5, t:'mana', art:'👥', r:'uncommon', ops:l=>[['echo',1+l]]});
+def('ritual', {n:'Ritual',      c:4, t:'mana', art:'🪬', r:'uncommon', ops:l=>[['manaplayed',1+l]]});
+def('mirror', {n:'Mirror Image',c:5, t:'mana', art:'🔁', r:'uncommon', ops:l=>l?[['mana',l],['replay']]:[['replay']]});
 def('amplify',{n:'Amplify',     c:8, t:'mana', art:'🔆', r:'rare', ops:l=>l?[['mana',2*l],['double',2]]:[['double',2]]});
 
 // --- Damage ---
 def('zap',    {n:'Zap',         c:1, t:'spell', art:'⚡', r:'basic', ops:l=>[['dmg',3*tierMult(l)]]});
 def('firebolt',{n:'Firebolt',   c:3, t:'spell', art:'🔥', ops:l=>[['dmg',7*tierMult(l)]]});
-def('missiles',{n:'Magic Missiles',c:4,t:'spell',art:'✴', ops:l=>[['dmg',3*tierMult(l),3]]});
+def('missiles',{n:'Magic Missiles',c:4,t:'spell',art:'✴', ops:l=>[['dmg',4*tierMult(l),3]]});
 def('frostbolt',{n:'Frostbolt', c:3, t:'spell', art:'❄', ops:l=>[['dmg',5*tierMult(l)],['draw',1]]});
 def('siphon', {n:'Siphon',      c:3, t:'spell', art:'🩸', ops:l=>[['dmg',4*tierMult(l)],['mana',1]]});
-def('ignite', {n:'Ignite',      c:4, t:'spell', art:'🕯', ops:l=>[['burn',tierMult(l)]]});
+def('ignite', {n:'Ignite',      c:4, t:'spell', art:'🕯', ops:l=>[['burn',3*tierMult(l)]]});
+def('tome',   {n:'Tome Slam',   c:3, t:'spell', art:'📚', ops:l=>[['deckdmg',tierMult(l)]]});
 def('surge',  {n:'Surge',       c:5, t:'spell', art:'🌩', r:'uncommon', ops:l=>[['mana',3],['dmg',6*tierMult(l)]]});
 def('wild',   {n:'Wild Magic',  c:4, t:'spell', art:'🎇', r:'uncommon', ops:l=>[['dmg',12*tierMult(l)],['mana',3]]});
-def('fireball',{n:'Fireball',   c:6, t:'spell', art:'☄', r:'uncommon', ops:l=>[['dmg',22*tierMult(l)],['lose',2]]});
+def('fireball',{n:'Fireball',   c:6, t:'spell', art:'☄', r:'uncommon', ops:l=>[['finale',15*tierMult(l)]]});
 def('chain',  {n:'Chain Lightning',c:5,t:'spell',art:'⛓', r:'uncommon', ops:l=>[['chain',5*tierMult(l)]]});
-def('storm',  {n:'Spellstorm',  c:5, t:'spell', art:'🌪', r:'uncommon', ops:l=>[['handdmg',3*tierMult(l)]]});
-def('conflag',{n:'Conflagrate', c:5, t:'spell', art:'🌋', r:'uncommon', ops:l=>[['burndmg',1+l]]});
-def('hex',    {n:'Hex',         c:4, t:'spell', art:'🧿', r:'uncommon', ops:l=>[['vuln',50+25*l],['mana',1]]});
+def('storm',  {n:'Spellstorm',  c:5, t:'spell', art:'🌪', r:'uncommon', ops:l=>[['handdmg',5*tierMult(l)]]});
+def('conflag',{n:'Conflagrate', c:5, t:'spell', art:'🌋', r:'uncommon', ops:l=>[['burndmg',2*tierMult(l)]]});
+def('hex',    {n:'Hex',         c:4, t:'spell', art:'🧿', r:'uncommon', ops:l=>[['vuln',100+50*l],['mana',1]]});
 def('empower',{n:'Empower',     c:4, t:'spell', art:'💪', r:'uncommon', ops:l=>[['mana',1+l],['empower',2]]});
 def('cataclysm',{n:'Cataclysm', c:8, t:'spell', art:'💥', r:'rare', ops:l=>[['nova',2*tierMult(l)]]});
 def('meteor', {n:'Meteor',      c:7, t:'spell', art:'🌠', r:'rare', ops:l=>[['dmg',45*tierMult(l)],['exhaust']]});
 
 // --- Runes: stay out for the rest of the fight ---
-def('focus',  {n:'Focus Rune',  c:5, t:'rune', art:'🔷', r:'uncommon', ops:l=>[['focus',2*tierMult(l)]]});
-def('wellrune',{n:'Mana Rune',  c:6, t:'rune', art:'🔶', r:'rare', ops:l=>[['manarune',1+l]]});
+def('focus',  {n:'Focus Rune',  c:5, t:'rune', art:'🔷', r:'uncommon', ops:l=>[['focus',50+25*l]]});
+def('wellrune',{n:'Mana Rune',  c:6, t:'rune', art:'🔶', r:'rare', ops:l=>[['manarune',l]]});
 
 // --- Junk ---
 def('curse',  {n:'Curse',       c:0, t:'curse', r:'junk', noLv:true, art:'🐈‍⬛', ops:()=>[], unplayable:true});
@@ -105,16 +108,20 @@ function opText(o){
     case 'echo':   return a===1?'Your next card resolves twice':`Your next card resolves ${a+1} times`;
     case 'trash':  return `Banish up to ${a} cards from your hand`;
     case 'dmg':    return b?`Deal ${fmt(a)}, ${b} times`:`Deal ${fmt(a)}`;
-    case 'chain':  return `Deal ${fmt(a)} per spell already cast this turn`;
-    case 'handdmg':return `Deal ${fmt(a)} per other card in your hand`;
-    case 'burndmg':return a===1?"Deal damage equal to the foe's Burn":`Deal ${a}× the foe's Burn`;
+    case 'chain':  return `Deal ${fmt(a)} per card played this turn, this one included`;
+    case 'handdmg':return `Deal ${fmt(a)} per card in your hand, this one included`;
+    case 'burndmg':return a===1?"Deal damage equal to the foe's Burn":`Deal ${fmt(a)}× the foe's Burn`;
+    case 'finale': return `Deal ${fmt(a)}, ×3 if it's the last card in your hand`;
+    case 'deckdmg':return `Deal ${fmt(a)} per card you own`;
+    case 'manaplayed':return `+${a} ${MANA} per card played this turn, this one included`;
+    case 'replay': return 'Repeat the last other card you played this turn';
     case 'burn':   return `Burn ${fmt(a)}`;
-    case 'vuln':   return `Foe takes +${a}% damage this turn`;
+    case 'vuln':   return `Foe takes ×${1+a/100} damage this turn`;
     case 'empower':return `Your next spell hits ×${a}`;
     case 'nova':   return `Deal ${fmt(a)} per ${MANA}, then ${MANA} drops to 1`;
     case 'exhaust':return 'Once per fight';
-    case 'focus':  return `Every hit deals +${fmt(a)} this fight`;
-    case 'manarune':return `+${a} ${MANA} at the start of each turn this fight`;
+    case 'focus':  return `Every hit deals ×${1+a/100} for the rest of this fight`;
+    case 'manarune':return `At the start of each later turn this fight: ${a?`+${a} ${MANA}, then `:''}double your ${MANA}`;
   }
   return k;
 }
@@ -123,8 +130,14 @@ const OP_HELP={
   dmg:`Damage is multiplied by the ${MANA} you hold when it lands.`,
   burn:`Burn is multiplied by your ${MANA} once, when applied. The foe takes all its Burn at the end of each of your turns, for the rest of the fight.`,
   nova:`Counts your ${MANA} twice: once in the card, once as the multiplier.`,
-  chain:'A spell is any card that deals damage or Burn.',
-  focus:`Added to each hit before the ${MANA} multiplier.`,
+  chain:'Counts every card you played this turn, Mana cards too.',
+  handdmg:'Counts itself, so it never deals nothing.',
+  vuln:'Two Hexes in one turn multiply: ×2 then ×2 is ×4.',
+  focus:'Stacks: two Focus Runes multiply.',
+  manarune:`Doubles the ${MANA} you start each turn with, carry-over included. Two runes double it twice.`,
+  replay:`Its steps run again for free; choices (Banish, Clear Mind) are skipped. Repeating Amplify doubles your ${MANA} again.`,
+  finale:'Play everything else first.',
+  deckdmg:"Every card in your deck, hand and piles. A big deck's answer to Ascetic's Bead.",
   echo:`The echoed card is paid for once. Echoes don't stack: a second Twincast only keeps the larger one.`,
   burndmg:`Multiplied by your ${MANA} like any hit.`,
 };
@@ -147,6 +160,17 @@ const RELICS={
   ascetic: {n:"Ascetic's Bead",art:'📿', r:'uncommon',tx:'While your deck is 12 cards or fewer, damage ×2.'},
   hourglass:{n:'Hourglass',    art:'⏳', r:'uncommon',tx:'Fights last 6 turns, not 5.'},
   crescendo:{n:'Crescendo',    art:'🎼', r:'uncommon',tx:'Every hit deals +1 for each card already played this turn.'},
+  leech:   {n:"Spellthief's Ring",art:'💍',r:'common',tx:`Attacks (cards that deal damage or Burn) cost 1 ${MANA} less to play.`},
+  inkwell: {n:'Inkwell',       art:'🖋', r:'common',  tx:`Mana cards also deal 4 when played (multiplied by ${MANA} as usual).`},
+  pendulum:{n:'Pendulum',      art:'🕰', r:'uncommon',tx:`When you play an attack right after a card that isn't one, double your ${MANA} before it hits.`},
+  avalanche:{n:'Avalanche',    art:'🏔', r:'uncommon',tx:'Every hit deals +50% for each attack already played this turn.'},
+  ouroboros:{n:'Ouroboros',    art:'🐍', r:'uncommon',tx:`Whenever you shuffle your discard pile into your deck, double your ${MANA}.`},
+  shard:   {n:'Mirror Shard',  art:'💠', r:'uncommon',tx:'The last card in your hand resolves twice.'},
+  die:     {n:'Loaded Die',    art:'🎲', r:'uncommon',tx:`At the start of each turn, your ${MANA} is multiplied by a roll of 1, 2 or 3.`},
+  sickle:  {n:"Reaper's Sickle",art:'🌙',r:'uncommon',tx:'Foes fall the moment they drop below 15% health.'},
+  pages:   {n:'Twin Pages',    art:'📑', r:'uncommon',tx:'Cards you take from rewards join your deck twice.'},
+  metronome:{n:'Metronome',    art:'🎵', r:'rare',    tx:`Every third card you play in a turn doubles your ${MANA} before it resolves.`},
+  satchel: {n:'Bottomless Satchel',art:'👜',r:'rare', tx:'Cards left in your hand stay there at the end of your turn.'},
   stone:   {n:"Philosopher's Stone",art:'🗿',r:'rare', tx:'Your Sanctum rite happens twice.'},
   glass:   {n:'Glass Wand',    art:'🥂', r:'rare',    tx:'Damage ×3 — but fights last one turn less.'},
   staff:   {n:'Archmage Staff',art:'🦯', r:'rare',    tx:`Mana cards give +1 ${MANA} more.`},

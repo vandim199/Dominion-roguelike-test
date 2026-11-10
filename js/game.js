@@ -26,7 +26,7 @@ const hasR  = k => !!G && G.relics.some(r=>r.key===k);
 const cname = c => DB[c.key].n+plus(c.lv);
 const opsOf = c => DB[c.key].ops(c.lv,c);
 const ctext = c => opsOf(c).map(opText);
-const isSpell = c => opsOf(c).some(o=>['dmg','chain','burn','nova','handdmg','burndmg'].includes(o[0]));
+const isSpell = c => opsOf(c).some(o=>['dmg','chain','burn','nova','handdmg','burndmg','finale','deckdmg'].includes(o[0]));
 const baseCost = c => { const d=DB[c.key]; return d.c + (d.c||2)*(tierMult(c.lv)-1) + d.step*c.lv; };
 const allCards = () => [...G.deck,...G.hand,...G.discard,...G.inPlay,...G.runes,...(G.stolen||[])];
 const deckSize = () => allCards().length + G.exhausted.length;
@@ -36,7 +36,12 @@ const handSize = () => TUNE.handSize+(hasR('robes')?1:0)-(boss('ogre')?1:0);
 const boss = k => !!G && !!G.foe && G.foe.boss===k;
 const manaCap = () => boss('rift') ? 10 : Infinity;
 const cardWorth = c => DB[c.key].noLv ? -1 : baseCost(c);
-const playCost = () => boss('heavy') ? 2 : 1;
+const playCost = c => (boss('heavy') ? 2 : 1) - (c&&hasR('leech')&&isSpell(c) ? 1 : 0);
+// Doubles Mana for a relic, before a card resolves. S is G or a look-ahead copy.
+function dblMana(S,why){ const was=S.mana; S.mana=Math.min(manaCap(),S.mana*2);
+  if(S===G&&S.mana!==was){ fx('mana',S.mana-was); log(`${why}: ${MANA} doubles to ${fmt(S.mana)}.`); } }
+// Is c the last card in hand? Live, it has already left the hand; a look-ahead still counts it.
+const lastInHand = S => S===G ? G.hand.length===0 : S.handN<=1;
 
 function loadBest(){ try{ return +localStorage.getItem(slotKey('spellkeep.best'))||0; }catch(e){ return 0; } }
 function saveBest(n){ try{ if(n>loadBest()) localStorage.setItem(slotKey('spellkeep.best'),String(n)); }catch(e){} }
@@ -45,7 +50,7 @@ async function newRun(seed){
   G={ rng:seed!=null?seed>>>0:(nativeRandom()*4294967296)>>>0, hearts:TUNE.hearts,
       deck:[],hand:[],discard:[],inPlay:[],runes:[],exhausted:[],stolen:[],trash:[],
       mana:0, carry:0, turn:0, fight:-1, foe:null, burn:0, focus:0, vuln:0, empower:1, echo:0,
-      spells:0, played:0, flags:{}, relics:[], bossesSeen:[], phase:'turn', over:false, won:false,
+      spells:0, played:0, last:null, runeAdd:0, runeDbl:0, flags:{}, relics:[], bossesSeen:[], phase:'turn', over:false, won:false,
       stats:{dealt:0,best:0,kills:0,fails:0} };
   for(let i=0;i<6;i++) G.deck.push(mk('zap'));
   for(let i=0;i<3;i++) G.deck.push(mk('channel'));
@@ -69,7 +74,8 @@ function rewardCards(kind){
 /* ---------- deck ---------- */
 function popDeck(){
   if(!G.deck.length){ if(!G.discard.length)return null;
-    G.deck=shuffle(G.discard.slice()); G.discard=[]; log('You shuffle your discard pile into your deck.'); }
+    G.deck=shuffle(G.discard.slice()); G.discard=[]; log('You shuffle your discard pile into your deck.');
+    if(hasR('ouroboros')&&G.phase==='turn'&&!G.won) dblMana(G,'🐍 Ouroboros'); }
   return G.deck.shift()||null;
 }
 function draw(n,bySpell){
@@ -105,7 +111,7 @@ async function startFight(){
   if(kind==='boss') foe={...BOSSES[G.nextBoss],boss:G.nextBoss};
   else foe={...pick(kind==='elite'?ELITES:MINIONS)};
   G.foe={...foe,kind,hp,max:hp,circle:c};
-  G.burn=0; G.focus=0; G.turn=0; G.carry=0; G.won=false; G.phase='turn';
+  G.burn=0; G.focus=0; G.turn=0; G.carry=0; G.runeAdd=0; G.runeDbl=0; G.won=false; G.phase='turn';
   log(`Circle ${c} · ${kind==='boss'?'Boss':kind==='elite'?'Elite':'Foe'} ${f%3+1}/3`,'wave');
   log(`${foe.art} ${foe.n} appears with ${fmt(hp)} health. You have ${plural(turnsMax(),'turn')}.`,'hl');
   if(foe.boss) log(`${foe.n}: ${foe.tx}`,'bad');
@@ -121,10 +127,12 @@ function freezeBest(n){
 }
 
 async function startTurn(){
-  G.turn++; G.played=0; G.spells=0; G.vuln=0; G.empower=1; G.echo=0;
-  G.flags={eaten:0,firstHit:false,twin:false,owl:false};
-  G.mana=TUNE.startMana+(hasR('crystalball')?1:0)+G.carry+G.runes.reduce((s,c)=>s+(c.manarune||0),0);
+  G.turn++; G.played=0; G.spells=0; G.vuln=0; G.empower=1; G.echo=0; G.last=null;
+  G.flags={eaten:0,firstHit:false,twin:false,owl:false,prev:null};
+  G.mana=TUNE.startMana+(hasR('crystalball')?1:0)+G.carry+(G.runeAdd||0);
   if(G.turn===1&&hasR('haste')) G.mana+=2;
+  G.mana*=Math.pow(2,G.runeDbl||0);
+  if(hasR('die')){ const r=1+rnd(3); G.mana*=r; log(`🎲 The Loaded Die rolls ×${r}.`); }
   G.mana=Math.min(G.mana,manaCap()); G.carry=0;
   if(boss('witch')) gainCurse(2,true);
   draw(handSize());
@@ -151,18 +159,20 @@ function gainCurse(n,intoDeck){
 function canPlay(c){
   if(G.over||G.phase!=='turn'||busy) return false;
   const d=DB[c.key]; if(d.unplayable||c.frozen) return false;
-  return G.mana>=playCost();
+  return G.mana>=playCost(c);
 }
 // Damage multiplier for one hit, before the hit's own base.
 function hitMult(S){
   let m=Math.max(1,S.mana)*S.cardMult;
   if(S.vuln) m*=1+S.vuln/100;
+  if(S.focus) m*=1+S.focus/100;
+  if(hasR('avalanche')) m*=1+0.5*S.spells;
   if(hasR('glass')) m*=3;
   if(hasR('ascetic')&&deckSize()<=12) m*=2;
   const v=G.relics.find(r=>r.key==='vintage'); if(v) m*=1+0.5*v.age;
   return m;
 }
-function hitBase(S,b){ return b+S.focus+(hasR('lens')?2:0)+(hasR('crescendo')?S.played:0); }
+function hitBase(S,b){ return b+(hasR('lens')?2:0)+(hasR('crescendo')?S.played:0); }
 function hit(S,b,dry){
   let d=Math.floor(hitBase(S,b)*hitMult(S));
   if(boss('wraith')&&!S.flags.firstHit){ S.flags.firstHit=true; if(!dry) log('The hit passes through the Wraith.','bad'); return 0; }
@@ -196,46 +206,61 @@ function applyOp(S,o,c,dry){
     case 'cycle': S.drawn+=a; break;
     case 'trash': break;
     case 'dmg': for(let i=0;i<(b||1);i++) hit(S,a,dry); break;
-    case 'chain': if(S.spells) hit(S,a*S.spells,dry); break;
-    case 'handdmg': { const n=dry?S.handN-1:G.hand.length; if(n>0) hit(S,a*n,dry); } break;
+    case 'chain': hit(S,a*(S.played+1),dry); break;
+    case 'handdmg': hit(S,a*Math.max(1,dry?S.handN:G.hand.length+1),dry); break;
+    case 'finale': hit(S,a*(lastInHand(S)?3:1),dry); break;
+    case 'deckdmg': hit(S,a*deckSize(),dry); break;
+    case 'manaplayed': addMana(S,a*(S.played+1)+(hasR('staff')?1:0)); break;
+    case 'replay': if(S.last) for(const r of opsOf(S.last)) if(!CHOICE_OPS.includes(r[0])&&r[0]!=='replay') applyOp(S,r,S.last,dry); break;
     case 'burndmg': if(S.burn) hit(S,a*S.burn,dry); break;
     case 'nova': { hit(S,a*Math.max(1,S.mana),dry); S.mana=Math.min(S.mana,1); } break;
     case 'burn': { const n=Math.floor(a*Math.max(1,S.mana)*S.cardMult*(hasR('ember')?2:1)); S.burn+=n; S.burnAdd+=n;
       if(!dry) log(`Burn +${fmt(n)} (now ${fmt(S.burn)}).`); } break;
-    case 'vuln': S.vuln+=a; break;
+    case 'vuln': S.vuln=((1+S.vuln/100)*(1+a/100)-1)*100; break;
     case 'empower': S.empower*=a; break;
-    case 'focus': S.focus+=a; break;
-    case 'manarune': if(!dry) c.manarune=a; S.runeMana=(S.runeMana||0)+a; break;
+    case 'focus': S.focus=((1+S.focus/100)*(1+a/100)-1)*100; break;
+    case 'manarune': if(S===G){ G.runeAdd=(G.runeAdd||0)+a; G.runeDbl=(G.runeDbl||0)+1; } else S.runeMana+=TUNE.startMana+a; break;
     case 'exhaust': break;
   }
 }
 // Resolve a card's steps (times = 1 + echoes). Look-ahead uses resolveDry on a light copy.
 function preCard(S,c){
   let times=1+S.echo; S.echo=0;
+  const spell=isSpell(c);
   if(hasR('twin')&&!S.flags.twin){ S.flags.twin=true; times++; }
+  if(hasR('shard')&&lastInHand(S)) times++;
+  if(hasR('metronome')&&(S.played+1)%3===0) dblMana(S,'🎵 Metronome');
+  if(hasR('pendulum')&&spell&&S.flags.prev==='other') dblMana(S,'🕰 Pendulum');
   S.cardMult=1;
-  if(isSpell(c)){ S.cardMult=S.empower; S.empower=1; if(hasR('familiar')&&!S.flags.owl){ S.flags.owl=true; S.cardMult*=2; } }
+  if(spell){ S.cardMult=S.empower; S.empower=1; if(hasR('familiar')&&!S.flags.owl){ S.flags.owl=true; S.cardMult*=2; } }
   return times;
 }
-function postCard(S,c){ S.cardMult=1; if(isSpell(c)) S.spells++; S.played++; }
+function postCard(S,c,dry){
+  S.cardMult=1;
+  if(hasR('inkwell')&&DB[c.key].t==='mana') hit(S,4,dry);
+  const spell=isSpell(c); if(spell) S.spells++;
+  S.flags.prev=spell?'spell':'other';
+  if(c.key!=='mirror') S.last=c;
+  S.played++;
+}
 function resolveDry(S,c){
   const ops=opsOf(c), times=preCard(S,c);
   for(let t=0;t<times;t++) for(const o of ops) applyOp(S,o,c,true);
-  postCard(S,c); S.handN--;
+  postCard(S,c,true); S.handN--;
 }
 async function resolveCard(c){
   const ops=opsOf(c), times=preCard(G,c);
   for(let t=0;t<times;t++) for(const o of ops){
     if(CHOICE_OPS.includes(o[0])) await choiceOp(o,c); else applyOp(G,o,c,false);
   }
-  postCard(G,c);
+  postCard(G,c,false);
 }
 
 async function playCard(c){
   if(!canPlay(c)||!G.hand.includes(c)) return false;
   busy=true;
   try{
-    const cost=playCost();
+    const cost=playCost(c);
     pull(G.hand,c); G.inPlay.push(c);
     G.dealt=0; G.drawn=0; G.burnAdd=0;
     await resolveCard(c);
@@ -251,7 +276,7 @@ async function playCard(c){
   return true;
 }
 function checkKill(){
-  if(!G.won&&G.foe.hp<=0){ G.won=true; G.foe.hp=0; G.stats.kills++;
+  if(!G.won&&(G.foe.hp<=0||hasR('sickle')&&G.foe.hp<G.foe.max*0.15)){ G.won=true; G.foe.hp=0; G.stats.kills++;
     log(`${G.foe.n} falls on turn ${G.turn}!`,'good'); fx('kill',G.foe); }
 }
 
@@ -259,12 +284,12 @@ function checkKill(){
 function predict(c,S0){
   const S=lightState(S0);
   resolveDry(S,c);
-  S.mana=Math.max(0,S.mana-playCost());
+  S.mana=Math.max(0,S.mana-playCost(c));
   return S;
 }
 function lightState(S0){
   const s=S0||G;
-  return {mana:s.mana,focus:s.focus,vuln:s.vuln,empower:s.empower,echo:s.echo,spells:s.spells,played:s.played,burn:s.burn,
+  return {mana:s.mana,focus:s.focus,vuln:s.vuln,empower:s.empower,echo:s.echo,spells:s.spells,played:s.played,burn:s.burn,last:s.last,
     flags:{...s.flags},cardMult:1,dealt:0,drawn:0,burnAdd:0,runeMana:0,handN:G.hand.length};
 }
 
@@ -281,7 +306,8 @@ async function endTurn(){
       if(!G.won&&boss('dragon')){ const h=Math.round(G.foe.max*0.2); G.foe.hp=Math.min(G.foe.max,G.foe.hp+h); log(`The Dragon heals ${fmt(h)}.`,'bad'); }
     }
     G.carry=Math.floor(G.mana*Math.min(1,TUNE.carry+(hasR('battery')?0.5:0)));
-    G.discard.push(...G.hand,...G.inPlay); G.hand=[]; G.inPlay=[];
+    if(hasR('satchel')&&!G.won){ G.discard.push(...G.inPlay); G.inPlay=[]; }   // the hand stays
+    else { G.discard.push(...G.hand,...G.inPlay); G.hand=[]; G.inPlay=[]; }
     if(G.won){ busy=false; await winFight(); return; }
     if(G.turn>=turnsMax()){ busy=false; await failFight(); return; }
   } finally { busy=false; }
@@ -316,7 +342,8 @@ async function campFlow(){
     const ch=await chooseCards(C.offers,{min:0,max:1,why:'reward',title:'Spoils',sub:raise?'Take one card into your deck, or raise a card you have.':'Take one card into your deck, or none.',
       extra:raise?[['upgrade','✨ Raise a card a tier instead']]:[]});
     if(ch==='upgrade') await raiseCard('Raise a card','Raise one card in your deck a tier.');
-    else if(ch[0]){ G.deck.push(ch[0]); log(`${cname(ch[0])} joins your deck.`,'good'); }
+    else if(ch[0]){ G.deck.push(ch[0]); log(`${cname(ch[0])} joins your deck.`,'good');
+      if(hasR('pages')){ G.deck.push(mk(ch[0].key,ch[0].lv)); log(`📑 Twin Pages: a second ${cname(ch[0])} joins it.`,'good'); } }
     C.step=C.relics?'relic':C.sanctum?'sanctum':'next'; saveNow();
   }
   if(C.step==='relic'){ await relicDraft(C.relics); C.step=C.sanctum?'sanctum':'next'; saveNow(); }

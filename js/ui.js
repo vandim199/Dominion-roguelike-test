@@ -72,7 +72,7 @@ function cardEl(c,where,extra){
   if(where==='hand'&&G&&!d.unplayable&&!G.won&&G.phase==='turn') pv=predict(c);
   const lines=ops.map(o=>`<li class="op op-${o[0]}">${opText(o)}</li>`).join('')||`<li class="op">${d.unplayable?'Cannot be played.':''}</li>`;
   let foot='';
-  if(!d.unplayable) foot=`<span class="cost">${playCost()} ${MANA}</span>`;
+  if(!d.unplayable) foot=`<span class="cost">${playCost(c)} ${MANA}</span>`;
   let badge='';
   if(pv){
     const bits=[];
@@ -117,11 +117,12 @@ function render(){
   $('mana').innerHTML=`<span class="orb">${fmt(G.mana)}</span><span class="mx"><b>×${fmt(Math.max(1,G.mana))}</b><small>damage · ${fmt(keep)} ${MANA} carries over</small></span>`;
   $('mana').style.setProperty('--glow',clamp(Math.log2(1+G.mana)/4,0.1,1).toFixed(2));
   const bf=[];
-  if(G.focus) bf.push(`<span class="buff" title="Every hit deals more">🔷 +${fmt(G.focus)}</span>`);
-  if(G.vuln) bf.push(`<span class="buff" title="Foe takes more damage this turn">🧿 +${G.vuln}%</span>`);
+  const x=p=>`×${+(1+p/100).toFixed(2)}`;
+  if(G.focus) bf.push(`<span class="buff" title="Every hit deals more this fight">🔷 ${x(G.focus)}</span>`);
+  if(G.vuln) bf.push(`<span class="buff" title="Foe takes more damage this turn">🧿 ${x(G.vuln)}</span>`);
   if(G.empower>1) bf.push(`<span class="buff" title="Your next spell hits harder">💪 ×${G.empower}</span>`);
   if(G.echo) bf.push(`<span class="buff" title="Your next card resolves again">👥 +${G.echo}</span>`);
-  const rm=G.runes.reduce((s,c)=>s+(c.manarune||0),0); if(rm) bf.push(`<span class="buff" title="Mana each turn from runes">🔶 +${rm}</span>`);
+  if(G.runeDbl) bf.push(`<span class="buff" title="Each turn starts with +${G.runeAdd||0} ${MANA}, then ${MANA} doubled ${plural(G.runeDbl,'time')}">🔶 ×${2**G.runeDbl}</span>`);
   $('buffs').innerHTML=bf.join('');
   $('pDeck').textContent=`📖 Deck ${G.deck.length}`; $('pDisc').textContent=`🪶 Spent ${G.discard.length}`;
   const et=$('endturn');
