@@ -53,6 +53,7 @@ function score(S,ctx){
   dmg+=dd*0.7;
   dmg+=(S.focus-G.focus)*3*Math.max(2,S.mana)*ctx.after;
   dmg+=S.runeMana*ctx.ds.d*4*ctx.after;
+  dmg+=S.focusGrow*3*Math.max(2,S.mana)*ctx.after*(ctx.after+1)/2;
   // Mana kept for later turns is worth what it will multiply then.
   const keep=Math.min(1,TUNE.carry+(hasR('battery')?0.5:0));
   if(keep&&ctx.after>0) dmg+=keep*S.mana*ctx.ds.d*2.2*Math.min(ctx.after,2);

@@ -25,6 +25,24 @@ From the first human play of version 2: the game is better without the market, b
 - Twincast on a Mana Rune now gives both runes' Mana (it used to keep only one).
 - Overlays (your deck, rewards) scroll from the top, so a long deck is no longer cut off above the fold, and their buttons stay on screen while you scroll.
 
+## Version 2.4: more ways to win than "all Mana, then all Zaps"
+
+A human run on the older version played almost every turn as Channel, Channel, Channel, then Zap, Zap: gain all your Mana first, then spend it on damage. The rules make that the default because Mana multiplies every later hit. These cards reward something else: the state of your hand, the size of your deck, or a long fight.
+
+| Card | Rarity | Text | Rewards |
+|---|---|---|---|
+| 🌊 Ebb Tide | uncommon | +1 ✦ for each card fewer than 5 in your hand | Mana that's better **late** in a turn: as your last card, +5 |
+| 🗡 Last Word | uncommon | Deal 6 for each card fewer than 5 in your hand | a finisher: as your last card, Deal 30 |
+| 🔔 Resonance | rare | Your next spell hits × the cards left in your hand; once per fight | playing it **early**, with a full hand |
+| 📚 Bibliomancy | uncommon | Deal 1 for each card in your deck | a **big** deck, instead of a thin one |
+| 🔷 Focus Rune (reworked) | uncommon | Every hit deals +3 this fight; +3 more at the start of each turn | casting it early in a long fight, and **multi-hit** spells (Magic Missiles, Chain Lightning) |
+
+"Cards in your hand" counts the hand after the card has left it. Spellstorm (Deal 3 per other card in your hand) already did the "more cards in hand" job for damage, so Resonance multiplies instead: Spellstorm, Resonance and Ebb Tide or Last Word pull the same turn in opposite directions.
+
+Focus Rune was +2 a hit, which barely moved a Zap at 5 ✦ (15 → 25) and did nothing for a Wild Magic turn. Now it grows: cast on turn 1, every hit deals +12 by turn 4.
+
+Resonance was tried without "once per fight": a ×4 Empower for one card was the bots' favourite pick and raised the mage bot's circle-8 rate from 28% to 35%. Once per fight it's 32% and 36% on two seeds (28% and 35% without the new cards), within noise.
+
 ## Version 2.3: Chain Lightning, a fairer Thief, starting cards worth raising
 
 - **Chain Lightning deals 5 once for each card already played this turn**, Mana cards included, as separate hits. Play Channel, Ponder, then Chain Lightning: two hits. As a multi-hit spell it loses only one hit to the Wraith, and the Mirror Knight counts the hits together.
@@ -112,7 +130,11 @@ Every card costs 1 ✦.
 | Conflagrate | Spell | uncommon | Deal damage equal to the foe's Burn |
 | Hex | Spell | uncommon | Foe takes +50% damage this turn; +1 ✦ |
 | Empower | Spell | uncommon | +1 ✦; your next spell hits ×2 |
-| Focus Rune | Rune | uncommon | Every hit deals +2 this fight |
+| Focus Rune | Rune | uncommon | Every hit deals +3 this fight; +3 more at the start of each turn |
+| Ebb Tide | Mana | uncommon | +1 ✦ for each card fewer than 5 in your hand |
+| Bibliomancy | Spell | uncommon | Deal 1 for each card in your deck |
+| Last Word | Spell | uncommon | Deal 6 for each card fewer than 5 in your hand |
+| Resonance | Spell | rare | Your next spell hits × the cards left in your hand; once per fight |
 | Amplify | Mana | rare | Double your ✦ |
 | Cataclysm | Spell | rare | Deal 2 per ✦, then ✦ drops to 1 |
 | Wither | Spell | uncommon | Deal 0.5% of the foe's current health per ✦ |
@@ -171,7 +193,7 @@ Wide Sleeves (+1 hand), Mana Crystal (+1 ✦ a turn), Silver Clasp (rewards offe
 - **Is half carry-over fun?** It's the main new decision and no person has tried it. The alternative is to keep Mana resetting and accept that fights are decided by the combo turn.
 - **Late circles stay short** for decks that break. More Bosses that counter a broken engine (like Null Rift) would push back without punishing everyone else.
 - **A Balatro-style shop** could come back as a small stop after each Boss, selling relics. It would need a currency, and Arcana was removed to keep cards scarce.
-- **The card pool** is 29 cards. Rarity hides the rares, but a few runs will show every common.
+- **The card pool** is 33 cards. Rarity hides the rares, but a few runs will show every common.
 
 ## Look
 

@@ -26,7 +26,7 @@ const hasR  = k => !!G && G.relics.some(r=>r.key===k);
 const cname = c => DB[c.key].n+plus(c.lv);
 const opsOf = c => DB[c.key].ops(c.lv,c);
 const ctext = c => opsOf(c).map(opText);
-const isSpell = c => opsOf(c).some(o=>['dmg','chain','burn','nova','handdmg','burndmg','pct'].includes(o[0]));
+const isSpell = c => opsOf(c).some(o=>['dmg','chain','burn','nova','handdmg','burndmg','pct','decksize','emptydmg'].includes(o[0]));
 const baseCost = c => { const d=DB[c.key]; return d.c + (d.c||2)*(tierMult(c.lv)-1) + d.step*c.lv; };
 const allCards = () => [...G.deck,...G.hand,...G.discard,...G.inPlay,...G.runes,...(G.stolen||[])];
 const deckSize = () => allCards().length + G.exhausted.length;
@@ -84,7 +84,7 @@ function draw(n,bySpell){
 function gatherDeck(){
   G.deck=shuffle([...G.deck,...G.hand,...G.discard,...G.inPlay,...G.runes,...G.exhausted,...(G.stolen||[])].filter(c=>c.key!=='curse'));
   G.hand=[]; G.discard=[]; G.inPlay=[]; G.runes=[]; G.exhausted=[]; G.stolen=[];
-  G.deck.forEach(c=>{ c.frozen=false; c.manarune=0; });
+  G.deck.forEach(c=>{ c.frozen=false; c.manarune=0; c.focusgrow=0; });
 }
 function trashCard(c){ G.trash.push(c); }
 
@@ -125,6 +125,7 @@ async function startTurn(){
   G.flags={eaten:0,firstHit:false,twin:false,owl:false};
   G.mana=TUNE.startMana+(hasR('crystalball')?1:0)+G.carry+G.runes.reduce((s,c)=>s+(c.manarune||0),0);
   if(G.turn===1&&hasR('haste')) G.mana+=2;
+  G.focus+=G.runes.reduce((s,c)=>s+(c.focusgrow||0),0);   // Focus Runes grow each turn
   G.mana=Math.min(G.mana,manaCap()); G.carry=0;
   if(boss('witch')) gainCurse(2,true);
   if(boss('goblin')){
@@ -190,6 +191,8 @@ async function choiceOp(o,c){
   }
 }
 const CHOICE_OPS=['cycle','trash'];
+// Cards left in hand while a card resolves (it has already left the hand).
+const handLeft = (S,dry) => dry ? S.handN-1 : G.hand.length;
 function applyOp(S,o,c,dry){
   const [k,a,b]=o;
   switch(k){
@@ -202,6 +205,11 @@ function applyOp(S,o,c,dry){
     case 'trash': break;
     case 'dmg': for(let i=0;i<(b||1);i++) hit(S,a,dry,b||1); break;
     case 'pct': hitPct(S,a,dry); break;
+    case 'decksize': hit(S,a*deckSize(),dry); break;
+    case 'emptydmg': { const n=Math.max(0,5-handLeft(S,dry)); if(n) hit(S,a*n,dry); } break;
+    case 'handmult': S.empower*=Math.max(1,handLeft(S,dry)); break;
+    case 'ebb': addMana(S,a*Math.max(0,5-handLeft(S,dry))+(hasR('staff')?1:0)); break;
+    case 'focusgrow': if(!dry) c.focusgrow=(c.focusgrow||0)+a; S.focusGrow+=a; break;
     case 'dispel': break;
     case 'chain': { const n=S.played; for(let i=0;i<n;i++) hit(S,a,dry,n); } break;
     case 'handdmg': { const n=dry?S.handN-1:G.hand.length; if(n>0) hit(S,a*n,dry); } break;
@@ -274,7 +282,7 @@ function predict(c,S0){
 function lightState(S0){
   const s=S0||G;
   return {mana:s.mana,focus:s.focus,vuln:s.vuln,empower:s.empower,echo:s.echo,spells:s.spells,played:s.played,burn:s.burn,
-    flags:{...s.flags},cardMult:1,dealt:0,drawn:0,burnAdd:0,runeMana:0,handN:G.hand.length};
+    flags:{...s.flags},cardMult:1,dealt:0,drawn:0,burnAdd:0,runeMana:0,focusGrow:0,handN:G.hand.length};
 }
 
 /* ==========================================================

@@ -65,7 +65,7 @@ const TYPE_NAME={mana:'Mana',spell:'Spell',rune:'Rune',curse:'Curse'};
 const RAR_NAME={uncommon:'Uncommon',rare:'Rare'};
 // What Twincast, Empower, Twin Wand and Owl's Eye will do to this card if it's played next:
 // times = how often it resolves, dmg = what its hits are multiplied by. null when nothing.
-const DMG_OPS=['dmg','chain','burn','nova','handdmg','burndmg','pct'];
+const DMG_OPS=['dmg','chain','burn','nova','handdmg','burndmg','pct','decksize','emptydmg'];
 function boostOf(c){
   if(!G||G.won||G.phase!=='turn'||DB[c.key].unplayable||c.frozen) return null;
   const times=1+G.echo+(hasR('twin')&&!G.flags.twin?1:0);
@@ -80,7 +80,7 @@ function cardEl(c,where,extra){
   let pv=null, bo=null;
   if(where==='hand'&&G&&!d.unplayable&&!G.won&&G.phase==='turn'){ pv=predict(c); bo=boostOf(c); }
   // A boosted card shows its factor on each line it changes, and a seal in the corner.
-  const fac=o=>!bo||['echo','empower','exhaust','cycle','trash','dispel'].includes(o[0])?1:bo.times*(DMG_OPS.includes(o[0])?bo.dmg:1);
+  const fac=o=>!bo||['echo','empower','exhaust','cycle','trash','dispel','handmult'].includes(o[0])?1:bo.times*(DMG_OPS.includes(o[0])?bo.dmg:1);
   const lines=ops.map(o=>`<li class="op op-${o[0]}">${opText(o)}${fac(o)>1?` <em class="x">×${fac(o)}</em>`:''}</li>`).join('')||`<li class="op">${d.unplayable?'Cannot be played.':''}</li>`;
   if(bo){ el.classList.add('boosted');
     const why=[]; if(bo.times>1) why.push(bo.times===2?'resolves twice':`resolves ${bo.times} times`); if(bo.dmg>1) why.push(`hits ×${bo.dmg}`);
@@ -132,7 +132,8 @@ function render(){
   $('mana').innerHTML=`<span class="orb">${fmt(G.mana)}</span><span class="mx"><b>×${fmt(Math.max(1,G.mana))}</b><small>damage · ${fmt(keep)} ${MANA} carries over</small></span>`;
   $('mana').style.setProperty('--glow',clamp(Math.log2(1+G.mana)/4,0.1,1).toFixed(2));
   const bf=[];
-  if(G.focus) bf.push(`<span class="buff" title="Every hit deals more">🔷 +${fmt(G.focus)}</span>`);
+  const fg=G.runes.reduce((s,c)=>s+(c.focusgrow||0),0);
+  if(G.focus) bf.push(`<span class="buff" title="Every hit deals more${fg?`; grows by ${fg} each turn`:''}">🔷 +${fmt(G.focus)}${fg?` <small>(+${fmt(fg)}/turn)</small>`:''}</span>`);
   if(G.vuln) bf.push(`<span class="buff" title="Foe takes more damage this turn">🧿 +${G.vuln}%</span>`);
   if(G.empower>1) bf.push(`<span class="buff" title="Your next spell hits harder">💪 ×${G.empower}</span>`);
   if(G.echo) bf.push(`<span class="buff" title="Your next card resolves again">👥 +${G.echo}</span>`);

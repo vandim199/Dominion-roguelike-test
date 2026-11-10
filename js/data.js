@@ -64,6 +64,7 @@ def('banish', {n:'Banish',      c:2, t:'mana', art:'🕳', ops:l=>[['trash',2+l]
 def('wellspring',{n:'Wellspring',c:5,t:'mana', art:'⛲', r:'uncommon', ops:l=>[['mana',4+2*l]]});
 def('familiar',{n:'Familiar',   c:5, t:'mana', art:'🦉', r:'uncommon', ops:l=>[['draw',2+Math.floor(l/2)],['mana',1+Math.ceil(l/2)]]});
 def('echo',   {n:'Twincast',    c:5, t:'mana', art:'👥', r:'uncommon', ops:l=>[['mana',1],['echo',1+l]]});
+def('ebb',    {n:'Ebb Tide',    c:4, t:'mana', art:'🌊', r:'uncommon', ops:l=>[['ebb',1+l]]});
 def('amplify',{n:'Amplify',     c:8, t:'mana', art:'🔆', r:'rare', ops:l=>l?[['mana',2*l],['double',2]]:[['double',2]]});
 
 // --- Damage ---
@@ -81,12 +82,15 @@ def('storm',  {n:'Spellstorm',  c:5, t:'spell', art:'🌪', r:'uncommon', ops:l=
 def('conflag',{n:'Conflagrate', c:5, t:'spell', art:'🌋', r:'uncommon', ops:l=>[['burndmg',1+l]]});
 def('hex',    {n:'Hex',         c:4, t:'spell', art:'🧿', r:'uncommon', ops:l=>[['vuln',50+25*l],['mana',1]]});
 def('empower',{n:'Empower',     c:4, t:'spell', art:'💪', r:'uncommon', ops:l=>[['mana',1+l],['empower',2]]});
+def('tome',   {n:'Bibliomancy', c:4, t:'spell', art:'📚', r:'uncommon', ops:l=>[['decksize',tierMult(l)]]});
+def('lastword',{n:'Last Word',  c:4, t:'spell', art:'🗡', r:'uncommon', ops:l=>[['emptydmg',6*tierMult(l)]]});
+def('resonance',{n:'Resonance', c:6, t:'spell', art:'🔔', r:'rare', ops:l=>l?[['mana',l],['handmult'],['exhaust']]:[['handmult'],['exhaust']]});
 def('cataclysm',{n:'Cataclysm', c:8, t:'spell', art:'💥', r:'rare', ops:l=>[['nova',2*tierMult(l)]]});
 def('wither', {n:'Wither',      c:5, t:'spell', art:'🥀', r:'uncommon', ops:l=>[['pct',0.5+0.25*l]]});
 def('meteor', {n:'Meteor',      c:7, t:'spell', art:'🌠', r:'rare', ops:l=>[['dmg',45*tierMult(l)],['exhaust']]});
 
 // --- Runes: stay out for the rest of the fight ---
-def('focus',  {n:'Focus Rune',  c:5, t:'rune', art:'🔷', r:'uncommon', ops:l=>[['focus',2*tierMult(l)]]});
+def('focus',  {n:'Focus Rune',  c:5, t:'rune', art:'🔷', r:'uncommon', ops:l=>[['focus',3*tierMult(l)],['focusgrow',3*tierMult(l)]]});
 def('wellrune',{n:'Mana Rune',  c:6, t:'rune', art:'🔶', r:'rare', ops:l=>[['manarune',1+l]]});
 
 // --- Junk ---
@@ -112,6 +116,11 @@ function opText(o){
     case 'handdmg':return `Deal ${fmt(a)} per other card in your hand`;
     case 'burndmg':return a===1?"Deal damage equal to the foe's Burn":`Deal ${a}× the foe's Burn`;
     case 'burn':   return `Burn ${fmt(a)}`;
+    case 'decksize':return `Deal ${fmt(a)} for each card in your deck`;
+    case 'emptydmg':return `Deal ${fmt(a)} for each card fewer than 5 in your hand`;
+    case 'handmult':return 'Your next spell hits × the cards left in your hand';
+    case 'ebb':    return `+${a} ${MANA} for each card fewer than 5 in your hand`;
+    case 'focusgrow':return `+${fmt(a)} more at the start of each turn`;
     case 'pct':    return `Deal ${a}% of the foe's current health per ${MANA}`;
     case 'dispel': return 'Dispel this Curse';
     case 'vuln':   return `Foe takes +${a}% damage this turn`;
@@ -132,6 +141,11 @@ const OP_HELP={
   focus:`Added to each hit before the ${MANA} multiplier.`,
   pct:`Your ${MANA} sets the percentage instead of multiplying the damage: at 4 ${MANA}, 0.5% per ${MANA} is 2% of the foe's current health. Other multipliers (Empower, Hex, relics) still apply; Focus and +damage don't.`,
   dispel:`Curses vanish when the fight ends.`,
+  decksize:`Every card you own counts, wherever it is. Multiplied by your ${MANA} like any hit.`,
+  emptydmg:`Counts your hand after this card leaves it: as your last card, 5 × the damage.`,
+  ebb:`Counts your hand after this card leaves it: as your last card, +5 ${MANA} a step. Play it late, then spend the Mana on what you draw or keep it as your multiplier.`,
+  handmult:`Counts your hand after this card leaves it. Play it early, while your hand is full.`,
+  focusgrow:'Keeps growing every turn for the rest of the fight: cast it early.',
   echo:`The echoed card is paid for once. Echoes don't stack: a second Twincast only keeps the larger one.`,
   burndmg:`Multiplied by your ${MANA} like any hit.`,
 };
