@@ -25,6 +25,21 @@ From the first human play of version 2: the game is better without the market, b
 - Twincast on a Mana Rune now gives both runes' Mana (it used to keep only one).
 - Overlays (your deck, rewards) scroll from the top, so a long deck is no longer cut off above the fold, and their buttons stay on screen while you scroll.
 
+## Version 2.3: Chain Lightning, a fairer Thief, starting cards worth raising
+
+- **Chain Lightning deals 5 once for each card already played this turn**, Mana cards included, as separate hits. Play Channel, Ponder, then Chain Lightning: two hits. As a multi-hit spell it loses only one hit to the Wraith, and the Mirror Knight counts the hits together.
+- **The Goblin Thief steals from your draw pile**, not your hand, at the start of each turn, before you draw. You see what it took, and your hand is always full.
+- **Raising a starting card is now a real choice.** Each tier of these grows far more than other cards:
+
+  | | Base | + | ++ | +++ |
+  |---|---|---|---|---|
+  | Zap | Deal 3 | +2 ✦; Deal 10 | +2 ✦; Deal 15 | +2 ✦; Deal 20 |
+  | Channel | +2 ✦ | +5 ✦ | +8 ✦ | +11 ✦ |
+  | Ponder | +1 ✦; +1 Card | +2 ✦; +2 Cards | +3 ✦; +3 Cards | +4 ✦; +4 Cards |
+
+  Zap+ pays for itself (+2 ✦ before its 1 ✦ cost), so it strikes with a higher multiplier than Zap ever could. Channel and Ponder offered as rewards use the same table, so those commons are worth taking now too.
+- **Health grows ×1.7 a fight, not ×1.65**, to pay for all of that. Chain Lightning and the Thief moved the mage bot from 30% to 39% of runs beating circle 8, and the starting cards to 43%. At ×1.7 it's 28% (13.3 fights won), where it was before.
+
 ## Version 2.2: Bosses that don't end runs unfairly, and Wither
 
 - **Mirror Knight judges a multi-hit spell by its total.** Magic Missiles' three hits used to be checked one by one against "a fifth of its health", so they always glanced off. Now 3 × 9 counts as 27. Single small hits still glance. Its health is ×1.15 to make up for it.
@@ -53,7 +68,7 @@ From the first human play of version 2: the game is better without the market, b
 2. *Inside a turn.* Mana cards first, then big spells while ✦ is high, then cheap ones. Draw costs a Mana now to find cards. Empower, Hex and Twincast change the next card. Cataclysm deals 2 per ✦ *and* is multiplied by ✦, then drops you to 1.
 3. *Across a fight.* Unspent Mana half carries over, so every card is also a question of now or later. Burn is multiplied once, when applied, then ticks every turn for the rest of the fight. Runes last the fight. Meteor is once per fight.
 
-**Run shape.** 8 circles, each a Foe, an Elite (×1.5 health) and a Boss (×2.2 health, plus a curse on the rules). Health grows ×1.65 a fight. Beat the 8th Boss to win, then play on into endless circles if you like. 3 hearts: a foe still standing after its last turn costs one. Elites and Bosses offer a relic (5 slots). After a Boss, the Sanctum offers one rite: purge 2 cards, raise one a tier, copy one, or recover a heart. Each circle's Boss is announced at its first fight.
+**Run shape.** 8 circles, each a Foe, an Elite (×1.5 health) and a Boss (×2.2 health, plus a curse on the rules). Health grows ×1.7 a fight. Beat the 8th Boss to win, then play on into endless circles if you like. 3 hearts: a foe still standing after its last turn costs one. Elites and Bosses offer a relic (5 slots). After a Boss, the Sanctum offers one rite: purge 2 cards, raise one a tier, copy one, or recover a heart. Each circle's Boss is announced at its first fight.
 
 ## Why carry-over
 
@@ -74,9 +89,9 @@ Every card costs 1 ✦.
 
 | Card | Type | Rarity | Text (top to bottom) |
 |---|---|---|---|
-| Zap | Spell | starter | Deal 3 |
-| Channel | Mana | common | +2 ✦ |
-| Ponder | Mana | common | +1 ✦; +1 Card |
+| Zap | Spell | starter | Deal 3 (raised: +2 ✦; Deal 10, 15, 20…) |
+| Channel | Mana | common | +2 ✦ (+3 ✦ a tier) |
+| Ponder | Mana | common | +1 ✦; +1 Card (+1 of each a tier) |
 | Ley Line | Mana | common | +1 Card; +2 ✦ |
 | Study | Mana | common | +3 Cards |
 | Clear Mind | Mana | common | +1 ✦; discard any, draw that many |
@@ -92,7 +107,7 @@ Every card costs 1 ✦.
 | Surge | Spell | uncommon | +3 ✦; Deal 6 |
 | Wild Magic | Spell | uncommon | Deal 12; +3 ✦ |
 | Fireball | Spell | uncommon | Deal 22; −2 ✦ |
-| Chain Lightning | Spell | uncommon | Deal 5 per spell already cast this turn |
+| Chain Lightning | Spell | uncommon | Deal 5 once for each card already played this turn |
 | Spellstorm | Spell | uncommon | Deal 3 per other card in your hand |
 | Conflagrate | Spell | uncommon | Deal damage equal to the foe's Burn |
 | Hex | Spell | uncommon | Foe takes +50% damage this turn; +1 ✦ |
@@ -119,7 +134,7 @@ Spellstorm, Conflagrate, Frostbolt, Siphon and Ponder are new in version 2.
 | Time Djinn | 3 turns, not 5 (health ×0.8) | slow ramps |
 | Wraith | the first hit each turn does nothing (just the first of a multi-hit spell) | one big hit a turn |
 | Ancient Dragon | heals 20% each turn | slow decks |
-| Goblin Thief | steals a random card from your hand each turn, for the fight | small hands |
+| Goblin Thief | steals a random card from your draw pile each turn, for the fight | small decks |
 | Toll Golem | discard 2 cards each turn | big hands |
 | Iron Bureaucrat | every card costs 2 ✦ | wide decks |
 | Mirror Knight | spells dealing under a fifth of its health do nothing; a multi-hit spell counts its total (health ×1.15) | many small hits (Burn still works) |

@@ -118,7 +118,7 @@ async function chooseCards(list,o){
       const extra=allCards().length>10?list.filter(c=>c.key==='zap'&&c.lv===0):[];
       return cur.concat(extra).slice(0,o.max);
     }
-    case 'temper': { const u=bestUpgrade().c; return u&&list.includes(u)?[u]:by.length?[by[by.length-1]]:[]; }
+    case 'temper': { const u=bestUpgrade().c, r=u&&list.includes(u)?u:by[by.length-1]; if(r) REC.raised[r.key]=(REC.raised[r.key]||0)+1; return r?[r]:[]; }
     case 'copy': { const c=by[by.length-1]; return c?[c]:[]; }
   }
   return list.slice(0,o.min);
@@ -140,7 +140,7 @@ async function chooseOption(title,sub,opts){
 /* ---------- a run ---------- */
 async function simRun(o){
   BOT=o.bot; LOG=o.keepLog?[]:null; uid=0;
-  REC={bot:o.bot,seed:o.seed,won:false,endless:!!o.endless,plays:{},takes:{},ups:0,relics:[],fights:[],end:null};
+  REC={bot:o.bot,seed:o.seed,won:false,endless:!!o.endless,plays:{},takes:{},ups:0,raised:{},relics:[],fights:[],end:null};
   G=null; await newRun(o.seed*2654435761>>>0);
   let lastFight=-1, fightRec=null;
   while(!G.over && G.fight<o.maxFights){

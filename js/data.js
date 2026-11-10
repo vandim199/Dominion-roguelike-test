@@ -32,7 +32,7 @@ const TUNE = {
   fightsPerCircle:3,                         // minion, elite, boss
   circles:8,                                 // beat the 8th boss to win; endless after
   hp0:40,                                    // the first minion's health
-  growth:1.65,                               // health ×growth each fight
+  growth:1.7,                                // health ×growth each fight
   hpGrowth: f => Math.pow(TUNE.growth, f),   // f = fights before this one
   eliteHp:1.5, bossHp:2.2,
   maxTier: c => c-1,                         // reward cards climb one tier a circle
@@ -54,9 +54,10 @@ const tierMult = lv => Math.max(1+lv, Math.round(Math.pow(1.5,lv)));
 
 /* Card types: mana (gain Mana / draw), spell (damage), rune (lasts the fight), curse. */
 // --- Mana and draw ---
-def('channel',{n:'Channel',     c:2, t:'mana', art:'🌀', ops:l=>[['mana',2+l]]});
+// The starting cards (Zap, Channel, Ponder) grow much faster when raised than other cards, so raising them is a real choice.
+def('channel',{n:'Channel',     c:2, t:'mana', art:'🌀', step:8, ops:l=>[['mana',2+3*l]]});
 def('leyline',{n:'Ley Line',    c:3, t:'mana', art:'〰', ops:l=>[['draw',1],['mana',2+l]]});
-def('ponder', {n:'Ponder',      c:2, t:'mana', art:'💭', ops:l=>[['mana',1+l],['draw',1]]});
+def('ponder', {n:'Ponder',      c:2, t:'mana', art:'💭', step:8, ops:l=>[['mana',1+l],['draw',1+l]]});
 def('study',  {n:'Study',       c:4, t:'mana', art:'📖', ops:l=>[['draw',3+l]]});
 def('reshuffle',{n:'Clear Mind',c:2, t:'mana', art:'🍃', ops:l=>[['mana',1],['cycle',l]]});
 def('banish', {n:'Banish',      c:2, t:'mana', art:'🕳', ops:l=>[['trash',2+l]]});
@@ -66,7 +67,7 @@ def('echo',   {n:'Twincast',    c:5, t:'mana', art:'👥', r:'uncommon', ops:l=>
 def('amplify',{n:'Amplify',     c:8, t:'mana', art:'🔆', r:'rare', ops:l=>l?[['mana',2*l],['double',2]]:[['double',2]]});
 
 // --- Damage ---
-def('zap',    {n:'Zap',         c:1, t:'spell', art:'⚡', r:'basic', ops:l=>[['dmg',3*tierMult(l)]]});
+def('zap',    {n:'Zap',         c:1, t:'spell', art:'⚡', r:'basic', step:12, ops:l=>l?[['mana',2],['dmg',5*tierMult(l)]]:[['dmg',3]]});
 def('firebolt',{n:'Firebolt',   c:3, t:'spell', art:'🔥', ops:l=>[['dmg',7*tierMult(l)]]});
 def('missiles',{n:'Magic Missiles',c:4,t:'spell',art:'✴', ops:l=>[['dmg',3*tierMult(l),3]]});
 def('frostbolt',{n:'Frostbolt', c:3, t:'spell', art:'❄', ops:l=>[['dmg',5*tierMult(l)],['draw',1]]});
@@ -107,7 +108,7 @@ function opText(o){
     case 'echo':   return a===1?'Your next card resolves twice':`Your next card resolves ${a+1} times`;
     case 'trash':  return `Banish up to ${a} cards from your hand`;
     case 'dmg':    return b?`Deal ${fmt(a)}, ${b} times`:`Deal ${fmt(a)}`;
-    case 'chain':  return `Deal ${fmt(a)} per spell already cast this turn`;
+    case 'chain':  return `Deal ${fmt(a)} once for each card already played this turn`;
     case 'handdmg':return `Deal ${fmt(a)} per other card in your hand`;
     case 'burndmg':return a===1?"Deal damage equal to the foe's Burn":`Deal ${a}× the foe's Burn`;
     case 'burn':   return `Burn ${fmt(a)}`;
@@ -127,7 +128,7 @@ const OP_HELP={
   dmg:`Damage is multiplied by the ${MANA} you hold when it lands.`,
   burn:`Burn is multiplied by your ${MANA} once, when applied. The foe takes all its Burn at the end of each of your turns, for the rest of the fight.`,
   nova:`Counts your ${MANA} twice: once in the card, once as the multiplier.`,
-  chain:'A spell is any card that deals damage or Burn.',
+  chain:'Every card counts, Mana cards too. Each hit is separate: the Wraith stops only the first, and the Mirror Knight counts them together.',
   focus:`Added to each hit before the ${MANA} multiplier.`,
   pct:`Your ${MANA} sets the percentage instead of multiplying the damage: at 4 ${MANA}, 0.5% per ${MANA} is 2% of the foe's current health. Other multipliers (Empower, Hex, relics) still apply; Focus and +damage don't.`,
   dispel:`Curses vanish when the fight ends.`,
@@ -181,7 +182,7 @@ const BOSSES={
   djinn:  {n:'Time Djinn',   art:'🧞', tx:'You have 3 turns, not 5.', hp:0.8},
   wraith: {n:'Wraith',       art:'👻', tx:'The first hit each turn passes through it (of a multi-hit spell, only the first hit).'},
   dragon: {n:'Ancient Dragon',art:'🐉',tx:'Heals 20% of its health at the end of each of your turns.'},
-  goblin: {n:'Goblin Thief', art:'🦹', tx:'At the start of each turn, steals a random card from your hand until the fight ends.'},
+  goblin: {n:'Goblin Thief', art:'🦹', tx:'At the start of each turn, steals a random card from your draw pile until the fight ends.'},
   toll:   {n:'Toll Golem',   art:'🗿', tx:'At the start of each turn, discard 2 cards of your choice.'},
   heavy:  {n:'Iron Bureaucrat',art:'📜',tx:`Every card costs 2 ${MANA} to play.`},
   mirror: {n:'Mirror Knight',art:'🪞', tx:'Spells dealing less than a fifth of its health do nothing (a multi-hit spell counts all its hits together).', hp:1.15},

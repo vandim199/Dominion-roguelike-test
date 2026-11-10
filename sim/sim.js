@@ -86,6 +86,8 @@ function report(bot,{runs,names}){
   const cb={}; runs.forEach((r,i)=>Object.entries(r.takes).forEach(([k,n])=>{ (cb[k]=cb[k]||{n:0,runs:[]}); cb[k].n+=n; cb[k].runs.push(cleared[i]); }));
   out.push(`rewards: ${mean(runs.map(r=>Object.values(r.takes).reduce((a,b)=>a+b,0))).toFixed(1)} cards taken, ${mean(runs.map(r=>r.ups)).toFixed(1)} upgrades instead`);
   out.push('taken (copies, runs, fights won): '+Object.entries(cb).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=>`${names.cards[k]} ${v.n}/${v.runs.length}/${mean(v.runs).toFixed(1)}`).join(', '));
+  const rs={}; runs.forEach(r=>Object.entries(r.raised||{}).forEach(([k,n])=>rs[k]=(rs[k]||0)+n));
+  out.push('raised per run (rewards and Sanctum): '+Object.entries(rs).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`${names.cards[k]} ${(n/runs.length).toFixed(2)}`).join(', '));
   const pl={}; runs.forEach(r=>Object.entries(r.plays).forEach(([k,n])=>pl[k]=(pl[k]||0)+n));
   out.push('plays per run: '+Object.entries(pl).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`${names.cards[k]} ${(n/runs.length).toFixed(0)}`).join(', '));
   out.push(`biggest hit: median ${fmt(runs.map(r=>r.end.best).sort((a,b)=>a-b)[runs.length>>1])}; end deck ${mean(runs.map(r=>r.end.deck)).toFixed(0)} cards`);

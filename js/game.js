@@ -127,9 +127,11 @@ async function startTurn(){
   if(G.turn===1&&hasR('haste')) G.mana+=2;
   G.mana=Math.min(G.mana,manaCap()); G.carry=0;
   if(boss('witch')) gainCurse(2,true);
+  if(boss('goblin')){
+    if(!G.deck.length&&G.discard.length){ G.deck=shuffle(G.discard); G.discard=[]; log('You shuffle your discard pile into your deck.'); }
+    const c=pick(G.deck.filter(c=>!DB[c.key].noLv));
+    if(c){ pull(G.deck,c); G.stolen.push(c); log(`🦹 The Goblin Thief steals ${cname(c)} from your draw pile until the fight ends.`,'bad'); } }
   draw(handSize());
-  if(boss('goblin')){ const c=pick(G.hand.filter(c=>!DB[c.key].noLv));
-    if(c){ pull(G.hand,c); G.stolen.push(c); log(`🦹 The Goblin Thief steals your ${cname(c)} until the fight ends.`,'bad'); } }
   log(`Turn ${G.turn}/${turnsMax()} · ${G.mana} ${MANA}`);
   render();
   if(boss('toll')&&!G.won){
@@ -201,7 +203,7 @@ function applyOp(S,o,c,dry){
     case 'dmg': for(let i=0;i<(b||1);i++) hit(S,a,dry,b||1); break;
     case 'pct': hitPct(S,a,dry); break;
     case 'dispel': break;
-    case 'chain': if(S.spells) hit(S,a*S.spells,dry); break;
+    case 'chain': { const n=S.played; for(let i=0;i<n;i++) hit(S,a,dry,n); } break;
     case 'handdmg': { const n=dry?S.handN-1:G.hand.length; if(n>0) hit(S,a*n,dry); } break;
     case 'burndmg': if(S.burn) hit(S,a*S.burn,dry); break;
     case 'nova': { hit(S,a*Math.max(1,S.mana),dry); S.mana=Math.min(S.mana,1); } break;
